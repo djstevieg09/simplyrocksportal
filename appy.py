@@ -1079,7 +1079,9 @@ def telegram_worker_engine():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    # FIXED DIRECT PATH WAY: Bypasses url_for lookup issues entirely!
+    return redirect('/')
+
     
 @app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])
 def complete_manual_renewal(payment_id):

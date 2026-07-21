@@ -1323,6 +1323,53 @@ def admin_amend_user_expiry():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/submit_channel_report', methods=['POST'])
+def submit_channel_report():
+    """Allows standard clients to securely submit channel fault tickets right into the central admin table queue."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+    data = request.json or {}
+    ch_name = data.get('channel_name', '').strip()
+    ch_id = data.get('channel_id', '').strip()
+    issue = data.get('issue_type', '').strip()
+    username = session.get('username')
+    
+    if not ch_name or not ch_id or not issue:
+        return jsonify({'success': False, 'message': 'Missing mandatory ticket data parameters.'}), 400
+        
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            # Commits the user's selected fault data directly into your shared tracking cache database table rows
+            cursor.execute('''
+                INSERT INTO channel_reports (username, channel_name, channel_id, issue_type)
+                VALUES (?, ?, ?, ?)
+            ''', (username, ch_name, ch_id, issue))
+            conn.commit()
+            
+        print(f"FAULT TICKET LOGGED: Channel '{ch_name}' reported by user: {username}")
+        
+        # Dispatch a beautiful amber warning notification card layout string right to your pocket Telegram app thread!
+        alert_msg = (
+            f"<b>📺 LIVE TV STREAM FAULT TICKET RECEIVED</b>\n"
+            f"----------------------------------------\n"
+            f"<b>Portal Source:</b> <b>SimplyRocks Portal</b> 🌐\n"
+            f"<b>Reported By User:</b> <code>{username}</code>\n\n"
+            f"<b>Channel Name:</b> <b>{ch_name}</b>\n"
+            f"<b>Stream ID Key:</b> <code>{ch_id}</code>\n"
+            f"<b>Issue Category:</b> <pre>{issue}</pre>\n"
+            f"----------------------------------------\n"
+            f"👉 <i>Action Required: Verify stream feed health on server, then clear ticket in your admin panel workspace.</i>"
+        )
+        NOTIFICATION_QUEUE.put(alert_msg)
+        
+        return jsonify({'success': True, 'message': 'Stream report fault ticket successfully logged with admin!'})
+    except Exception as e:
+        print(f"CHANNEL REPORT DATA SUBMISSION FAULT: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 
 # ====================================================================

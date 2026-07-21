@@ -852,6 +852,7 @@ def admin_panel():
     """Private queue manager pulling your complete client expiration map directly from your fast local metadata cache table."""
     if not session.get('logged_in') or not session.get('is_admin'):
         return "<h3>🚫 Access Denied: You must be logged in as the master administrator to view this page.</h3>", 403
+
         
     client_expiration_list = []
     current_timestamp = int(time.time())

@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - SimplyRocks</title>
+    <!-- Vector UI Asset Libraries Support link -->
+    <link rel="stylesheet" href="https://cloudflare.com">
+    <style>
+        body { background-color: #0f172a; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        nav { background-color: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        nav h1 { color: #facc15; margin: 0; font-size: 20px; }
+        main { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
+        .card { background-color: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .card h2 { margin-top: 0; font-size: 20px; margin-bottom: 20px; color: #cbd5e1; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th { background-color: #334155; padding: 12px; color: #cbd5e1; font-size: 12px; text-transform: uppercase; }
+        td { padding: 12px; border-bottom: 1px solid #334155; vertical-align: middle; }
+        .media-flex { display: flex; align-items: center; gap: 12px; }
+        .admin-poster { width: 40px; height: 60px; object-fit: cover; border-radius: 4px; background-color: #0f172a; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .badge-pending { background-color: rgba(234,179,8,0.2); color: #facc15; }
+        .badge-done { background-color: rgba(22,163,74,0.2); color: #4ade80; }
+        .actions-cell { display: flex; gap: 8px; }
+        .btn { border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; color: white; }
+        .btn-complete { background-color: #16a34a; }
+        .btn-complete:hover { background-color: #15803d; }
+        .btn-delete { background-color: #dc2626; }
+        .btn-delete:hover { background-color: #b91c1c; }
+        .text-blue { color: #60a5fa; text-decoration: none; font-weight: bold; }
+        .text-blue:hover { text-decoration: underline; }
+    </style>
+
+</head>
+<body>
+
+    <nav>
+        <h1>SimplyRocks Request Manager Console</h1>
+        <a href="/dashboard" style="color: #cbd5e1; text-decoration: none; font-size: 14px;">← Back to Dashboard</a>
+    </nav>
+
+    <main>
+        <!-- LAYER SECTION: Automated Client Expirations Countdown Matrix Tracker with Inline Sync -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Client Account Expirations Countdown Matrix</h2>
+                
+                <!-- DIRECT INLINE REFRESH SYNC ENGINE: Bypasses external script file blocks completely -->
+                <button onclick="
+                    this.disabled = true; 
+                    this.style.opacity = '0.6'; 
+                    this.innerHTML = '🔄 Syncing Database...';
+                    
+                    fetch('/sync_live_panel_expirations', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' } 
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                        } else {
+                            alert('Sync failed: ' + data.message);
+                            this.disabled = false;
+                            this.style.opacity = '1.0';
+                            this.innerHTML = '🔄 Sync Live Panel Data';
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Sync Exception:', err);
+                        alert('Connection timeout while contacting IPTV server.');
+                        this.disabled = false;
+                        this.style.opacity = '1.0';
+                        this.innerHTML = '🔄 Sync Live Panel Data';
+                    });
+                " style="background: linear-gradient(90deg, #3b82f6, #2563eb); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: all 0.2s; display: flex; align-items: center; gap: 6px;">
+                    🔄 Sync Live Panel Data
+                </button>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subscriber Username</th>
+                        <th>Calendar Expiry Date</th>
+                        <th>Current Line Status</th>
+                        <th>Days Left Window</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- FIXED DATA BINDING: Swapped variables names to sync perfectly with your appy.py list! -->
+                    {% if client_expiration_list %}
+                        {% for client in client_expiration_list %}
+                        <tr>
+                            <td class="media-flex" style="display: flex; align-items: center; gap: 12px; padding: 12px 8px;">
+                                <strong style="font-size: 14px; color: #fff;">👤 {{ client.username }}</strong>
+                            </td>
+                            <td><strong style="color: #cbd5e1;">{{ client.expiry_date }}</strong></td>
+                            <td>
+                                <span class="badge badge-done">
+                                    {{ client.status }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if client.days_remaining <= 7 %}
+                                    <span class="badge badge-pending" style="background-color: rgba(220, 38, 38, 0.2); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.4); font-weight: bold; padding: 4px 8px;">
+                                        ⚠️ CRITICAL: {{ client.days_remaining }} Days Left
+                                    </span>
+                                {% else %}
+                                    <span class="badge badge-pending" style="background-color: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); font-weight: bold; padding: 4px 8px;">
+                                        ⏳ {{ client.days_remaining }} Days Left
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <!-- CUSTOM ALIGNED NO-ORDERS PLACEHOLDER LAYOUT -->
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #94a3b8; padding: 40px; font-size: 14px; background-color: #020617; border-radius: 8px; border: 1px solid #1e293b;">
+                            ✅ All lines are completely secure! No active client profiles expiring in the next 31 days found on your panel.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+
+
+
+       <main>
+                     <!-- MASTER USER MEDIA CONTENT REQUESTS QUEUE -->
+        <div class="card">
+            <h2>Master User Submissions Queue</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Media Details</th>
+                        <th>Type</th>
+                        <th>Requested By</th>
+                        <th>Status</th>
+                        <th>Control Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requests %}
+                    <tr id="row-{{ req.id }}">
+                        <td class="media-flex" style="display: flex; align-items: center; gap: 12px;">
+                            <img src="{{ req.poster }}" style="width: 35px; height: 50px; border-radius: 4px; object-fit: cover;" onerror="this.onerror=null; this.src='https://placehold.co';">
+                            <div>
+                                <strong style="font-size: 14px; color: #fff; display: block;">{{ req.title }}</strong>
+                                <span style="color: #94a3b8; display: block; font-size: 11px;">({{ req.year or 'VOD' }})</span>
+                            </div>
+                        </td>
+                        <td style="text-transform: capitalize; color: #cbd5e1;">{{ req.media_type }}</td>
+                        <td><strong style="color: #e2e8f0;">{{ req.username }}</strong></td>
+                        <td id="request-badge-cell-{{ req.id }}">
+                            <span class="badge {% if req.status == 'Pending' %}badge-pending{% else %}badge-done{% endif %}">
+                                {{ req.status }}
+                            </span>
+                        </td>
+                        <td id="request-actions-cell-{{ req.id }}">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                {% if req.status == 'Pending' %}
+                                    <!-- UNTOUCHED: Mark Added button logic remains exactly as you had it -->
+                                    <button onclick="if(confirm('Mark as Added: Have you successfully uploaded this content to your streaming streams?')) {
+                                        fetch('/update_request_status_by_admin/{{ req.id }}', { 
+                                            method: 'POST', 
+                                            headers: { 'Content-Type': 'application/json' }
+                                        })
+                                        .then(res => res.json())
+                                        .then(data => {
+                                            if(data.success) {
+                                                document.getElementById('request-badge-cell-{{ req.id }}').innerHTML = '<span class=\'badge badge-done\'>Completed</span>';
+                                                document.getElementById('request-actions-cell-{{ req.id }}').innerHTML = '<span style=\'color: #64748b; font-size: 12px;\'>Processed</span>';
+                                            } else { alert('Error: ' + data.message); }
+                                        }).catch(err => window.location.reload());
+                                    }" style="background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Mark Added</button>
+                                {% endif %}
+                                
+                                <!-- FIXED REMOVE BUTTON: Correctly targets your Python endpoint /admin/delete_request/<id> -->
+                                <button onclick="if(confirm('Are you sure you want to remove this media request completely out of your dashboard?')) {
+                                    fetch('/admin/delete_request/{{ req.id }}', { 
+                                        method: 'POST', 
+                                        headers: { 'Content-Type': 'application/json' } 
+                                    })
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if(data.success) {
+                                            document.getElementById('row-{{ req.id }}').remove();
+                                        } else { alert('Error: ' + data.message); }
+                                    }).catch(err => window.location.reload());
+                                }" style="background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Remove</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 40px; font-size: 16px;">The master request queue is currently empty.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+
+        <!-- LOWER SECTION LAYER: Live Stream Fault Tickets Queue with Fixed Button -->
+        <div class="card" style="margin-top: 25px; border: 1px solid rgba(239, 68, 68, 0.3);">
+            <h2 style="color: #ef4444; border-bottom: 1px solid rgba(239, 68, 68, 0.2);"><i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i> Live Stream Fault Tickets Log</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="color: #fca5a5;">Channel Description</th>
+                        <th>Stream ID</th>
+                        <th>Reported By</th>
+                        <th>Issue Category</th>
+                        <th>Ticket Management Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if channel_reports %}
+                        {% for report in channel_reports %}
+                        <tr id="report-row-{{ report.id }}">
+                            <td><strong style="color: #ffffff; font-size: 14px;">🚨 {{ report.channel_name }}</strong></td>
+                            <td style="font-family: monospace; color: #94a3b8; font-weight: bold;">{{ report.channel_id }}</td>
+                            <td><strong style="color: #e2e8f0;">{{ report.username }}</strong></td>
+                            <td><span class="badge" style="background-color: rgba(220, 38, 38, 0.15); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.3);">{{ report.issue_type }}</span></td>
+                            <td>
+                                <!-- FIXED FIXED / CLEAR BUTTON: Connects perfectly with /delete_channel_report_by_admin/<id> -->
+                                <button onclick="if(confirm('Confirm Action: Have you successfully resolved or repaired this channel feed fault?')) {
+                                    fetch('/delete_channel_report_by_admin/{{ report.id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if(data.success) {
+                                            document.getElementById('report-row-{{ report.id }}').remove();
+                                            alert('Ticket cleared from workspace matrix successfully.');
+                                        } else { alert('Error: ' + data.message); }
+                                    }).catch(err => window.location.reload());
+                                }" style="background: linear-gradient(90deg, #3b82f6, #60a5fa); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Fixed / Clear ✓</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 30px; font-size: 14px;">The active stream channel error ticket queue is currently empty. All streams are healthy!</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+		
+		        <!-- LAYER CONTAINER SECTION: VOD Help Desk Fault Tickets Queue -->
+        <div class="card" style="margin-top: 25px; border: 1px solid rgba(245, 158, 11, 0.3);">
+            <h2 style="color: #f59e0b; border-bottom: 1px solid rgba(245, 158, 11, 0.2);"><i class="fa-solid fa-film" style="margin-right: 8px;"></i> VOD (Movies & Series) Fault Tickets Log</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="color: #fef3c7;">Content Title</th>
+                        <th>Type</th>
+                        <th>Reported By</th>
+                        <th>Issue Category</th>
+                        <th>Ticket Management Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if vod_reports %}
+                        {% for report in vod_reports %}
+                        <tr id="vod-row-{{ report.id }}">
+                            <td><strong style="color: #ffffff; font-size: 14px;">🎬 {{ report.title }}</strong></td>
+                            <td style="text-transform: capitalize; color: #94a3b8;">{{ report.media_type }}</td>
+                            <td><strong style="color: #e2e8f0;">{{ report.username }}</strong></td>
+                            <td><span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3);">{{ report.issue_type }}</span></td>
+                            <td>
+                                <!-- DIRECT INLINE FIXED / CLEAR BUTTON -->
+                                <button onclick="if(confirm('Confirm Action: Have you successfully resolved or updated this VOD streaming file feed?')) {
+                                    fetch('/delete_vod_report_by_admin/{{ report.id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                                    .then(res => res.json())
+                                    .then(data => {
+                                        if(data.success) {
+                                            document.getElementById('vod-row-{{ report.id }}').remove();
+                                        } else { alert('Error: ' + data.message); }
+                                    }).catch(err => window.location.reload());
+                                }" style="background: linear-gradient(90deg, #f59e0b, #fbbf24); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Fixed / Clear ✓</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 30px; font-size: 14px;">The active VOD error ticket queue is currently empty. All films are streaming perfectly!</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+    </main>
+
+
+		               <!-- NEW FEATURE CONTAINER LAYOUT: Admin Wallet Adjuster and Overview Ledger -->
+        <div class="card" style="border: 1px solid rgba(22, 163, 74, 0.3); background-color: #1e293b; padding: 25px; border-radius: 12px; margin-top:25px;">
+            <h2 style="color: #4ade80; border-bottom: 1px solid rgba(22,163,74,0.2);">Manual User Credit Manager</h2>
+            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Lookup an active customer line username below to manually inject or adjust their referral reward wallet balances.</p>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Target Username:</label>
+                <input type="text" id="admin-target-user" placeholder="Enter user ID (e.g. DC-Firestick)..." style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Credit Amount to Add (£):</label>
+                <input type="number" id="admin-credit-amount" placeholder="e.g. 25.00" style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+            </div>
+            
+            <button onclick="submitManualAdminCredit(this)" style="background-color: #16a34a; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; width: 100%; transition: 0.2s;">⚡ Save Credit to User Wallet</button>
+
+            <h3 style="font-size: 14px; color: #cbd5e1; margin-top: 25px; margin-bottom: 10px; border-top: 1px solid #334155; padding-top: 15px;">Active Wallets Overview Ledger</h3>
+            <table style="font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Available Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if wallets %}
+                        {% for wallet in wallets %}
+                        <tr>
+                            <td><strong style="color: #fff;">👤 {{ wallet.username }}</strong></td>
+                            <td><strong style="color: #4ade80;">£{{ "%.2f"|format(wallet.active_credit) }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="2" style="text-align: center; color: #64748b; padding: 15px;">No active credit entries in the local ledger database.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+		
+		        <!-- LAYER CONTAINER SECTION: Local Portal User Accounts Registration Manager -->
+        <div class="card" style="margin-top: 25px; border: 1px solid rgba(59, 130, 246, 0.3); padding: 25px; border-radius: 12px; background-color: #1e293b;">
+            <h2 style="color: #60a5fa; margin-top:0;"><i class="fa-solid fa-user-plus" style="margin-right: 8px;"></i> Create & Manage Portal Access Accounts</h2>
+            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Register new standalone customer accounts directly into your portal. Users can then log in securely using these credentials.</p>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">New Username:</label>
+                    <input type="text" id="new-user-name" placeholder="e.g. Matt-Butler" style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Account Password:</label>
+                    <input type="text" id="new-user-pass" placeholder="Create secure password..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Account Expiration Date:</label>
+                    <input type="date" id="new-user-expiry" style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; color-scheme: dark;">
+                </div>
+            </div>
+
+            <button onclick="submitNewPortalAccountCreation(this)" style="width: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s; margin-bottom: 25px;">
+                👤 Create New Portal User Account
+            </button>
+
+                       <h3 style="font-size: 14px; color: #cbd5e1; margin-bottom: 10px; border-top: 1px solid #334155; padding-top: 15px;">Active Registered Portal Users</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Password Profile</th>
+                        <th>Current Calendar Expiry</th>
+                        <th>Amend / Correct Date</th>
+                        <th>Account Management Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if portal_users %}
+                        {% for user in portal_users %}
+                        <tr id="portal-user-row-{{ user.username }}">
+                            <td><strong style="color: #ffffff;">👤 {{ user.username }}</strong></td>
+                            <td style="font-family: monospace; color: #94a3b8;"><code>{{ user.password }}</code></td>
+                            <td><span id="current-expiry-display-{{ user.username }}" class="badge badge-active" style="background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">{{ user.expiry_date }}</span></td>
+                            
+                            <!-- DYNAMIC INLINE CALENDAR AMENDMENT PICKER CELL -->
+                            <td>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input type="date" id="amend-date-{{ user.username }}" style="padding: 6px; font-size: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 4px; color: white; width: 130px; color-scheme: dark; outline: none;">
+                                    <button onclick="executeAdminExpiryAmendment('{{ user.username }}')" style="background-color: #eab308; color: #1e293b; border: none; padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Update</button>
+                                </div>
+                            </td>
+                            
+                            <td>
+                                <button onclick="if(confirm('Delete Account: Are you completely sure you want to remove access rights for user: {{ user.username }}?')) {
+                                    fetch('/admin/delete_portal_user/{{ user.username }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                                    .then(res => res.json())
+                                    .then(data => { if(data.success) { document.getElementById('portal-user-row-{{ user.username }}').remove(); } });
+                                }" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Wipe User</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom portal user account files registered yet.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+
+        </div>
+
+        <!-- JAVASCRIPT CALL DISPATCH ENGINE FOR ACCOUNT CREATION -->
+        <script>
+        function submitNewPortalAccountCreation(btn) {
+            const usernameVal = document.getElementById('new-user-name').value.trim();
+            const passwordVal = document.getElementById('new-user-pass').value.trim();
+            const expiryVal = document.getElementById('new-user-expiry').value.trim();
+            
+            if (!usernameVal || !passwordVal || !expiryVal) {
+                alert("⚠️ ENTRY ERROR: All three input fields (Username, Password, and Expiry Date) must be completely filled out!");
+                return;
+            }
+            
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = "⏳ Saving New Account Line...";
+            
+            fetch('/admin/create_portal_user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: usernameVal, password: passwordVal, expiry_date: expiryVal })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    alert('🎉 ' + data.message);
+                    window.location.reload();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                    btn.disabled = false; btn.innerHTML = orig;
+                }
+            })
+            .catch(err => {
+                alert('Connection timeout.');
+                btn.disabled = false; btn.innerHTML = orig;
+            });
+        }
+		
+		        // --- ADMIN EXPIRY MANUAL OVERWRITE SUBMISSION ENGINE ---
+        function executeAdminExpiryAmendment(targetUname) {
+            const chosenDate = document.getElementById(`amend-date-${targetUname}`).value;
+            
+            if (!chosenDate) {
+                alert("⚠️ ENTRY ERROR: Please select a valid target calendar date using the input field picker first!");
+                return;
+            }
+            
+            if(!confirm(`Confirm Action: Do you want to manually overwrite the expiration timeline profile for user line '${targetUname}'?`)) {
+                return;
+            }
+            
+            fetch('/admin/amend_user_expiry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: targetUname,
+                    expiry_date: chosenDate
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('🎉 Success! Expiration timeline profile updated.');
+                    window.location.reload(); // Instantly refreshes display rows grid to render updates
+                } else {
+                    alert('❌ Amendment Failed: ' + data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('❌ Server communication timeout.');
+            });
+        }
+
+        </script>
+		
+
+		
+		        <!-- LAYER CONTAINER SECTION: Local Master Channels Lineup Management Hub -->
+        <div class="card" style="margin-top: 25px; border: 1px solid rgba(239, 68, 68, 0.3); padding: 25px; border-radius: 12px; background-color: #1e293b;">
+            <h2 style="color: #f87171; margin-top:0;"><i class="fa-solid fa-tv" style="margin-right: 8px;"></i> Populate Master Live TV Channels Database</h2>
+            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Manually register active stream channels right into your portal database. Customers can then search and report issues for these specific stations.</p>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Channel Name:</label>
+                    <input type="text" id="add-chan-name" placeholder="e.g. Sky Sports Main Event Ultra HD" style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Stream ID Key:</label>
+                    <input type="text" id="add-chan-stream-id" placeholder="e.g. 54020" style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
+                </div>
+            </div>
+
+            <button onclick="submitNewLiveChannelEntry(this)" style="width: 100%; background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s; margin-bottom: 25px;">
+                📺 Register New Live Stream Channel
+            </button>
+
+            <h3 style="font-size: 14px; color: #cbd5e1; margin-bottom: 10px; border-top: 1px solid #334155; padding-top: 15px;">Currently Registered TV Channels Ledger</h3>
+            <div style="max-height: 250px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Channel Name</th>
+                            <th>Stream ID</th>
+                            <th>Catalog Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if live_channels %}
+                            {% for ch in live_channels %}
+                            <tr id="chan-row-{{ ch.stream_id }}">
+                                <td><strong style="color: #ffffff;">📺 {{ ch.name }}</strong></td>
+                                <td style="font-family: monospace; color: #94a3b8;"><code>{{ ch.stream_id }}</code></td>
+                                <td>
+                                    <button onclick="if(confirm('Remove Channel: Delete {{ ch.name }} out of your portal search registries?')) {
+                                        fetch('/admin/delete_live_channel/{{ ch.stream_id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                                        .then(res => res.json())
+                                        .then(data => { if(data.success) { document.getElementById('chan-row-{{ ch.stream_id }}').remove(); } });
+                                    }" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Remove</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="3" style="text-align: center; color: #64748b; padding: 15px;">No custom live channels saved to database registries yet.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- JAVASCRIPT DISPATCH SWITCH FOR CHANNEL REGISTRATION -->
+        <script>
+        function submitNewLiveChannelEntry(btn) {
+            const chanNameVal = document.getElementById('add-chan-name').value.trim();
+            const streamIdVal = document.getElementById('add-chan-stream-id').value.trim();
+            
+            if (!chanNameVal || !streamIdVal) {
+                alert("⚠️ ENTRY ERROR: You must enter BOTH a Channel Name AND a unique Stream ID parameter!");
+                return;
+            }
+            
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = "⏳ Saving Channel Stream...";
+            
+            fetch('/admin/add_live_channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: chanNameVal, stream_id: streamIdVal })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    alert('📺 ' + data.message);
+                    window.location.reload();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                    btn.disabled = false; btn.innerHTML = orig;
+                }
+            })
+            .catch(err => {
+                alert('Connection timeout.');
+                btn.disabled = false; btn.innerHTML = orig;
+            });
+        }
+        </script>
+
+
+
+        <!-- NEW: DIRECT INLINE JAVASCRIPT HANDLER FUNCTION ENGINE FOR CREDIT MANAGER -->
+        <script>
+        function submitManualAdminCredit(btn) {
+            const targetUser = document.getElementById('admin-target-user').value.trim();
+            const injectAmount = document.getElementById('admin-credit-amount').value.trim();
+            
+            if (!targetUser || !injectAmount) {
+                alert("⚠️ ENTRY ERROR: You must enter BOTH a Target Username AND a numeric Credit Amount!");
+                return;
+            }
+            
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = "⏳ Saving Credit Ledger...";
+            
+            fetch('/admin/adjust_user_credit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_username: targetUser,
+                    amount: injectAmount
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('🎉 Success! ' + data.message);
+                    window.location.reload();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            })
+            .catch(err => {
+                console.error("Credit Manager Error:", err);
+                alert("❌ Connection timeout while saving data rows.");
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            });
+        }
+        </script>
+
+        <!-- LAYER CONTAINER SECTION: Master Payment & Purchase History Logs with Inline Action Tracker -->
+        <div class="card" style="margin-top: 25px;">
+            <h2>Master Payment & Purchase History Logs</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subscriber Line</th>
+                        <th>Reference Order ID</th>
+                        <th>Price & Connection Profile</th>
+                        <th>Fulfilment Status / Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if payment_logs %}
+                        {% for log in payment_logs %}
+                        <tr id="payment-row-{{ log.id }}">
+                            <td><strong style="color: #ffffff;">👤 {{ log.username }}</strong></td>
+                            <td style="font-family: monospace; color: #94a3b8;">{{ log.order_id }}</td>
+                            <td style="color: #cbd5e1; font-weight: bold;">{{ log.amount }}</td>
+                            <td id="status-cell-{{ log.id }}">
+                                {% if 'pending' in log.status.lower() %}
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <span class="badge" style="background-color: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); font-weight: bold;">⏳ PENDING MANUAL EXTENSION</span>
+                                        
+                                        <button onclick="if(confirm('Confirm Action: Have you manually extended this client line inside your master reseller portal panel?')) {
+                                            fetch('/complete_manual_renewal/{{ log.id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                                            .then(res => res.json())
+                                            .then(data => {
+                                                if(data.success) {
+                                                    document.getElementById('status-cell-{{ log.id }}').innerHTML = '<span class=\'badge badge-done\'>✅ COMPLETED</span>';
+                                                } else {
+                                                    alert('Error: ' + data.message);
+                                                }
+                                            })
+                                            .catch(err => {
+                                                console.error(err);
+                                                window.location.reload();
+                                            });
+                                        }" style="background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Mark Done ✓</button>
+                                    </div>
+                                {% elif log.status == 'Completed' %}
+                                    <span class="badge badge-done">✅ COMPLETED</span>
+                                {% else %}
+                                    <span class="badge" style="background-color: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3);">{{ log.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #64748b; padding: 30px;">No transaction records logged inside payment database histories yet.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+
+
+
+        <!-- JAVASCRIPT ENDPOINT ACTION CONSOLE CONTROLLER -->
+        <script>
+        async function markLineAsCompleted(paymentId) {
+            if (!confirm("Confirm Action: Have you manually extended this client line inside your master reseller portal panel?")) return;
+            
+            try {
+                const response = await fetch(`/complete_manual_renewal/${paymentId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Dynamic live visual switch: Changes the cell content layout instantly without refreshing the screen!
+                    document.getElementById(`status-cell-${paymentId}`).innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
+                } else {
+                    alert('Error marking ticket row: ' + data.message);
+                }
+            } catch (e) {
+                console.error("Admin click execution anomaly:", e);
+                alert("Server connection timeout. Please refresh the page.");
+            }
+        }
+
+
+        <!-- JAVASCRIPT ENDPOINT ACTION CONSOLE CONTROLLER -->
+        <script>
+        async function markLineAsCompleted(paymentId) {
+            if (!confirm("Confirm Action: Have you manually extended this client line inside your master reseller portal panel?")) return;
+            
+            try {
+                const response = await fetch(`/complete_manual_renewal/${paymentId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Instantly rewrite the table column elements layout text without refreshing the screen!
+                    const rowContainer = document.getElementById(`payment-row-${paymentId}`).getElementsByTagName('td')[3];
+                    rowContainer.innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
+                    alert(data.message);
+                } else {
+                    alert('Error marking ticket row: ' + data.message);
+                }
+            } catch (e) {
+                console.error("Admin click execution anomaly:", e);
+                alert("Server connection timeout. Please refresh page.");
+            }
+        }
+        </script>
+
+
+
+</main>
+
+    <script>
+        // --- 1. MEDIA QUEUE MANAGEMENT ACTIONS ---
+        async function updateStatus(id, statusText) {
+            try {
+                const response = await fetch(`/admin/update_status/${id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: statusText })
+                });
+                const data = await response.json();
+                if(data.success) {
+                    const badge = document.getElementById(`badge-${id}`);
+                    badge.innerText = statusText;
+                    
+                    // Switches layout dynamically to represent completion on screen
+                    badge.style.backgroundColor = "rgba(22, 163, 74, 0.2)";
+                    badge.style.color = "#4ade80";
+                    alert(data.message || 'Status successfully marked as added.');
+                }
+            } catch(e) {
+                alert('Connection failure updating request status mapping parameters.');
+            }
+        }
+
+        async function deleteRequest(id) {
+            if(!confirm("Are you completely sure you want to purge this client request row out of the database queue?")) return;
+            try {
+                const response = await fetch(`/admin/delete_request/${id}`, { method: 'POST' });
+                const data = await response.json();
+                if(data.success) {
+                    document.getElementById(`row-${id}`).remove();
+                }
+            } catch(e) {
+                alert('Connection failure removing data row entry from database.');
+            }
+        }
+
+        // --- 2. RESTORED MANUAL REWARD WALLET INJECTION SUBMITTER ENGINE ---
+        async function submitManualAdminCredit() {
+            const userTarget = document.getElementById('admin-target-user').value.trim();
+            const amountInput = document.getElementById('admin-credit-amount').value.trim();
+            
+            if(!userTarget || !amountInput) {
+                alert('Both Target Username and Credit Amount parameters are mandatory!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/admin/adjust_user_credit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        target_username: userTarget, 
+                        amount: amountInput 
+                    })
+                });
+                
+                const data = await response.json();
+                if(data.success) {
+                    alert(data.message);
+                    window.location.reload(); // Instantly live updates your active wallets overview data chart ledger row
+                } else {
+                    alert(data.message || 'Failed to apply manual wallet balance.');
+                }
+            } catch(e) {
+                alert('Connection failure mapping manual credit injection parameters route block.');
+            }
+        }
+		
+	    <!-- ISOLATED CODES ENGINE: Positioned safely at bottom to avoid html structure freezes -->
+    <script>
+    async function markLineAsCompleted(paymentId) {
+        if (!confirm("Confirm Action: Have you manually extended this client line inside your master reseller portal panel?")) return;
+        
+        try {
+            const response = await fetch('/complete_manual_renewal/' + paymentId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                // Dynamic live visual switch: Changes the cell content layout instantly without refreshing the screen!
+                const cellElement = document.getElementById('status-cell-' + paymentId);
+                if (cellElement) {
+                    cellElement.innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
+                } else {
+                    window.location.reload(); // Quick safety fallback update if container IDs fail to map
+                }
+            } else {
+                alert('Error marking ticket row: ' + data.message);
+            }
+        } catch (e) {
+            console.error("Admin click execution anomaly:", e);
+            alert("Server connection timeout. Please refresh the page.");
+        }
+    }
+	
+	        // --- LIVE MASTER PANEL DATA REFRESH CONTROLLER ---
+        async function triggerLivePanelSync(btnElement) {
+            const originalText = btnElement.innerHTML;
+            btnElement.disabled = true;
+            btnElement.style.opacity = '0.6';
+            btnElement.innerHTML = '🔄 Syncing Database...';
+            
+            try {
+                const response = await fetch('/sync_live_panel_expirations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload(); // Live reload dashboard panel to refresh line expiry dates
+                } else {
+                    alert('Sync failed: ' + data.message);
+                    btnElement.disabled = false;
+                    btnElement.style.opacity = '1.0';
+                    btnElement.innerHTML = originalText;
+                }
+            } catch (e) {
+                console.error("Live panel refresh exception:", e);
+                alert("Connection timeout while contacting IPTV server.");
+                btnElement.disabled = false;
+                btnElement.style.opacity = '1.0';
+                btnElement.innerHTML = originalText;
+            }
+        }
+
+    </script>
+	
+    </script>
+</body>
+</html>
+

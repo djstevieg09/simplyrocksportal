@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - SimplyRocks Portal</title>
+    <style>
+        body { 
+            background-color: #0f172a; 
+            color: #ffffff; 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-container {
+            background-color: #1e293b;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.05);
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+            border: 1px solid #334155;
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .login-header h1 {
+            color: #60a5fa;
+            margin: 0 0 10px 0;
+            font-size: 26px;
+            font-weight: 800;
+        }
+        .login-header p {
+            color: #94a3b8;
+            margin: 0;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: #cbd5e1;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+        .form-group input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background-color: #334155;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            color: white;
+            font-size: 15px;
+            outline: none;
+            transition: 0.2s;
+        }
+        .form-group input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .login-btn {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 14px;
+            width: 100%;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s;
+            margin-top: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .login-btn:hover {
+            background-color: #1d4ed8;
+        }
+        .error-box {
+            background-color: rgba(220, 38, 38, 0.2);
+            border: 1px solid #ef4444;
+            color: #f87171;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-header">
+            <h1>SimplyRocks Portal</h1>
+            <p>Sign in using your premium IPTV credentials</p>
+        </div>
+
+        <!-- Displays error message cleanly if login info is rejected -->
+        {% if error %}
+        <div class="error-box">
+            ❌ {{ error }}
+        </div>
+        {% endif %}
+
+        <form action="/" method="POST">
+            <div class="form-group">
+                <label for="username">IPTV Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter username..." required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label for="password">IPTV Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter password..." required>
+            </div>
+
+            <!-- Keeps your server address path mapped safely behind the scenes -->
+            <input type="hidden" name="dns" value="{{ default_dns }}">
+
+            <button type="submit" class="login-btn">Sign In to Dashboard</button>
+        </form>
+    </div>
+
+</body>
+</html>

@@ -13,7 +13,9 @@ app.secret_key = os.urandom(24)
 # CONFIGURATION
 DEFAULT_DNS = "http://simplyrocks.org:80"
 TMDB_API_KEY = "0ca48ab2446df424e4bd03b293104701"
-DB_FILE = "database.db"
+# FIXED PERMANENT VAULT ROADMAP: Keeps your database file 100% safe from cloud reboots!
+DB_FILE = "/data/database.db"
+
 
 # --- MASTER RESELLER CODES AUTO-EXTEND CONFIGURATION ---
 RESELLER_PANEL_URL = "https://theservice.rocks:80" 

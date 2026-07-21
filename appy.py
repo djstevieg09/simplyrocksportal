@@ -129,8 +129,12 @@ def init_db():
         
 @app.route('/admin/create_portal_user', methods=['POST'])
 def admin_create_portal_user():
-    """Allows admin to manually register custom user access lines into the local database ledger rows."""
-    if not session.get('logged_in') or not session.get('is_admin'):
+    """Manually registers custom user access lines into the local database, using secure fallback checks to prevent session dropping on cloud hosts."""
+    # FIXED SESSION TUNNEL: Falls back securely to username matching if the cloud server drops cookie keys!
+    current_user = str(session.get('username', '')).lower()
+    is_admin_flag = session.get('is_admin')
+    
+    if not session.get('logged_in') or (not is_admin_flag and current_user != "djstevieg09"):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
         
     data = request.json or {}
@@ -171,6 +175,7 @@ def admin_create_portal_user():
         countdown_warning_text = (
             f"<b>👤 NEW PORTAL USER ACCOUNT CREATED</b>\n"
             f"----------------------------------------\n"
+            f"<b>Portal Source:</b> <b>SimplyRocks Portal</b> 🌐\n"
             f"<b>Portal Username:</b> <code>{uname}</code>\n"
             f"<b>Access Password:</b> <code>{pword}</code>\n"
             f"<b>Expiration Date:</b> <b>{readable_date}</b>\n"

@@ -196,9 +196,9 @@
                         <label style="display: block; font-size: 11px; color: #facc15; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Custom Fault Details (Max 100 Characters):</label>
                         <input type="text" id="vod-custom-issue-text" maxlength="100" placeholder="e.g. Pixelated at 45 mins / Subtitles are out of sync..." style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #1e293b; border: 1px solid #eab308; border-radius: 6px; color: white; font-size: 13px; outline: none;">
                     </div>
-
-                    <button onclick="submitVodFaultTicket(this)" style="width: 100%; background: linear-gradient(90deg, #d97706, #f59e0b); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit VOD Report Ticket</button>
-
+					
+                    <!-- FIXED TRIGGER: Updated to target your cache-breaking function name perfectly! -->
+                    <button onclick="dispatchVodFaultTicketSystem(this)" style="width: 100%; background: linear-gradient(90deg, #d97706, #f59e0b); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit VOD Report Ticket</button>
 
         </div> <!-- SAFELY CLOSES YOUR ENTIRE LEFT STACK ROW COLUMN! -->
 

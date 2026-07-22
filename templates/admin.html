@@ -287,13 +287,13 @@
                             <td style="color: #cbd5e1; font-weight: bold;">👤 {{ report[1] }}</td>
                             
                             <td>
-                                <!-- report[4] = Issue Type (Includes your fallback merged text!) -->
+                                <!-- report[4] = Issue Type (Contains your fallback merged "Other" notes text!) -->
                                 <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
                                     ⚠️ {{ report[4] }}
                                 </span>
                             </td>
                             <td>
-                                <!-- FIXED INTERFACE BUTTON: Targets your new dedicated VOD deletion endpoint -->
+                                <!-- FIXED TRIGGER: Successfully hits your new delete_vod_report_by_admin backend endpoint -->
                                 <button onclick="if(confirm('Clear Ticket: Mark this VOD report as fixed?')) {
                                     fetch('/delete_vod_report_by_admin/{{ report[0] }}', { method: 'POST' })
                                     .then(res => res.json())
@@ -309,6 +309,7 @@
                     </tr>
                     {% endif %}
                 </tbody>
+
 
             </table>
         </div>

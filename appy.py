@@ -1164,7 +1164,7 @@ def admin_clear_channel_report(report_id):
         
 @app.route('/submit_vod_report', methods=['POST'])
 def submit_vod_report():
-    """Allows standard clients to securely submit movie and show fault tickets directly into the admin VOD queue."""
+    """Allows standard clients to securely submit movie and show fault tickets, capturing free-text notes for 'Other' selections."""
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
         
@@ -1172,25 +1172,28 @@ def submit_vod_report():
     vod_title = data.get('title', '').strip()
     media_type = data.get('media_type', '').strip() # 'movie' or 'tv'
     issue = data.get('issue_type', '').strip()
+    
+    # FIX: Ensures variable explicitly captures 'issue_notes' text sent from your frontend script
+    notes = data.get('issue_notes', '').strip()[:100]
     username = session.get('username')
     
-    # FIXED TYPO: Properly checks your verified vod_title variable data frame row
     if not vod_title or not issue:
         return jsonify({'success': False, 'message': 'Missing mandatory VOD ticket data parameters.'}), 400
         
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            # Commits the user's movie fault data cleanly into your physical database tracking table rows
+            # Commits your data including the custom free-text notes into your local tracking database tables row
             cursor.execute('''
-                INSERT INTO vod_reports (username, title, media_type, issue_type)
-                VALUES (?, ?, ?, ?)
-            ''', (username, vod_title, media_type if media_type else 'movie', issue))
+                INSERT INTO vod_reports (username, title, media_type, issue_type, issue_notes)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (username, vod_title, media_type if media_type else 'movie', issue, notes))
             conn.commit()
             
-        print(f"VOD FAULT LOGGED: '{vod_title}' reported by user: {username}")
+        print(f"VOD FAULT LOGGED: '{vod_title}' ({issue}) reported by user: {username}")
         
-        # Dispatch an automated warning notification card straight onto your pocket Telegram app thread!
+        details_line = f"<b>Details:</b> <i>{notes}</i>" if notes else ""
+        
         alert_msg = (
             f"<b>🎬 VOD CATALOG FAULT TICKET RECEIVED</b>\n"
             f"----------------------------------------\n"
@@ -1198,9 +1201,9 @@ def submit_vod_report():
             f"<b>Reported By User:</b> <code>{username}</code>\n\n"
             f"<b>Content Title:</b> <b>{vod_title}</b>\n"
             f"<b>Media Profile:</b> <code>{str(media_type).upper()}</code>\n"
-            f"<b>Issue Category:</b> <pre>{issue}</pre>\n"
-            f"----------------------------------------\n"
-            f"👉 <i>Action Required: Verify video file state on server catalog pools, then clear ticket in your admin panel workspace.</i>"
+            f"<b>Issue Category:</b> <b>{issue}</b>\n"
+            f"{details_line}\n"
+            f"----------------------------------------"
         )
         NOTIFICATION_QUEUE.put(alert_msg)
         

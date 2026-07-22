@@ -274,32 +274,34 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% if vod_reports %}
+                    	{% if vod_reports %}
                         {% for report in vod_reports %}
-                        <tr id="vod-row-{{ report.id }}">
-                            <td><strong style="color: #ffffff; font-size: 14px;">🎬 {{ report.title }}</strong></td>
-                            <td style="text-transform: capitalize; color: #94a3b8;">{{ report.media_type }}</td>
-                            <td><strong style="color: #e2e8f0;">{{ report.username }}</strong></td>
-                            <td><span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3);">{{ report.issue_type }}</span></td>
+                        <tr id="vod-report-row-{{ report[0] }}">
+                            <td><strong style="color: #ffffff;">🎬 {{ report[2] }}</strong></td>
+                            <td style="color: #cbd5e1; text-transform: capitalize;">{{ report[3] }}</td>
+                            <td style="color: #cbd5e1;">{{ report[1] }}</td>
                             <td>
-                                <!-- DIRECT INLINE FIXED / CLEAR BUTTON -->
-                                <button onclick="if(confirm('Confirm Action: Have you successfully resolved or updated this VOD streaming file feed?')) {
-                                    fetch('/delete_vod_report_by_admin/{{ report.id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-                                    .then(res => res.json())
-                                    .then(data => {
-                                        if(data.success) {
-                                            document.getElementById('vod-row-{{ report.id }}').remove();
-                                        } else { alert('Error: ' + data.message); }
-                                    }).catch(err => window.location.reload());
-                                }" style="background: linear-gradient(90deg, #f59e0b, #fbbf24); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;">Fixed / Clear ✓</button>
+                                <!-- DRAW THE TAG BADGE -->
+                                <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; margin-bottom: 4px;">{{ report[4] }}</span>
+                                
+                                <!-- FIXED POSITION MAPPING: Pulls index 5 cleanly out of your database row arrays -->
+                                {% if report[5] %}
+                                    <div style="font-size: 11px; color: #cbd5e1; background-color: rgba(0,0,0,0.25); padding: 5px 10px; border-radius: 4px; border-left: 2px solid #eab308; margin-top: 4px; max-width: 250px; word-wrap: break-word;">
+                                        📝 <b>Notes:</b> <i>{{ report[5] }}</i>
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button onclick="fetch('/delete_request_by_admin/{{ report[0] }}', { method: 'POST' }).then(() => document.getElementById('vod-report-row-{{ report[0] }}').remove())" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Fixed / Clear ✓</button>
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 30px; font-size: 14px;">The active VOD error ticket queue is currently empty. All films are streaming perfectly!</td>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom vod user account files registered yet.</td>
                     </tr>
                     {% endif %}
+
                 </tbody>
             </table>
         </div>

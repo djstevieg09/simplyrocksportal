@@ -123,7 +123,12 @@ def init_db():
             )
         ''')
 
-        
+        # ADDED FOR REASON CAPTURE: Appends custom text column to the VOD table dynamically
+        try:
+            cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+
         conn.commit()
 
         

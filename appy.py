@@ -1174,35 +1174,38 @@ def admin_clear_channel_report(report_id):
         
 @app.route('/submit_vod_report', methods=['POST'])
 def submit_vod_report():
-    """Allows standard clients to securely submit movie and show fault tickets, capturing free-text notes for 'Other' selections."""
+    """Securely submits movie and show fault tickets, appending 'Other' text directly into the issue name to ensure compatibility with existing databases."""
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
         
     data = request.json or {}
     vod_title = data.get('title', '').strip()
-    media_type = data.get('media_type', '').strip() # 'movie' or 'tv'
+    media_type = data.get('media_type', '').strip()
     issue = data.get('issue_type', '').strip()
-    
-    # FIX: Ensures variable explicitly captures 'issue_notes' text sent from your frontend script
     notes = data.get('issue_notes', '').strip()[:100]
     username = session.get('username')
     
     if not vod_title or not issue:
-        return jsonify({'success': False, 'message': 'Missing mandatory VOD ticket data parameters.'}), 400
+        return jsonify({'success': False, 'message': 'Missing mandatory data parameters.'}), 400
+        
+    # BULLETPROOF FALLBACK VALVE: If 'Other' is picked, merge the text right into the main issue column
+    if issue == "Other" and notes:
+        final_issue_string = f"Other: {notes}"
+    else:
+        final_issue_string = issue
         
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            # Commits your data including the custom free-text notes into your local tracking database tables row
+            
+            # This safely writes to your original 6 columns that already exist on your disk!
             cursor.execute('''
-                INSERT INTO vod_reports (username, title, media_type, issue_type, issue_notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (username, vod_title, media_type if media_type else 'movie', issue, notes))
+                INSERT INTO vod_reports (username, title, media_type, issue_type)
+                VALUES (?, ?, ?, ?)
+            ''', (username, vod_title, media_type if media_type else 'movie', final_issue_string))
             conn.commit()
             
-        print(f"VOD FAULT LOGGED: '{vod_title}' ({issue}) reported by user: {username}")
-        
-        details_line = f"<b>Details:</b> <i>{notes}</i>" if notes else ""
+        print(f"VOD FAULT LOGGED: '{vod_title}' -> {final_issue_string} by user: {username}")
         
         alert_msg = (
             f"<b>🎬 VOD CATALOG FAULT TICKET RECEIVED</b>\n"
@@ -1211,15 +1214,14 @@ def submit_vod_report():
             f"<b>Reported By User:</b> <code>{username}</code>\n\n"
             f"<b>Content Title:</b> <b>{vod_title}</b>\n"
             f"<b>Media Profile:</b> <code>{str(media_type).upper()}</code>\n"
-            f"<b>Issue Category:</b> <b>{issue}</b>\n"
-            f"{details_line}\n"
+            f"<b>Issue Category:</b> <b>{final_issue_string}</b>\n"
             f"----------------------------------------"
         )
         NOTIFICATION_QUEUE.put(alert_msg)
         
-        return jsonify({'success': True, 'message': 'VOD catalog fault ticket successfully logged with admin!'})
+        return jsonify({'success': True, 'message': 'VOD catalog fault ticket successfully logged!'})
     except Exception as e:
-        print(f"VOD REPORT DATA SUBMISSION FAULT: {e}")
+        print(f"VOD SUBMISSION FAULT: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

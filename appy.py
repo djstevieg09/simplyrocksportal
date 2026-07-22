@@ -893,7 +893,7 @@ def admin_panel():
     client_expiration_list = []
     current_timestamp = int(time.time())
     
-      with sqlite3.connect(DB_FILE) as conn:
+          with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -901,18 +901,17 @@ def admin_panel():
         cursor.execute("SELECT username, expiry_date, expiry_timestamp FROM user_metadata")
         cached_users = cursor.fetchall()
         
+        # FIXED SECURITY EXTRACTION: Loads your hidden admin username dynamically out of your Render panel vault
         secure_admin_username = os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09"
-
         
         for user in cached_users:
             uname = user['username']
             exp_timestamp = user['expiry_timestamp']
             readable_date = user['expiry_date']
             
-            # FIXED BYPASS FILTER: Skips rendering the admin user profile row using your secure hidden variable
+            # FIXED BYPASS FILTER: Skips rendering the admin user profile row safely
             if not uname or uname.lower() == secure_admin_username.lower():
                 continue
-
             
             if exp_timestamp > 0:
                 try:

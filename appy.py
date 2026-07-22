@@ -1429,6 +1429,28 @@ def admin_force_db_patch_override():
     except Exception as e:
         return f"<h3>❌ Extraction Error Triggered:</h3><p>{str(e)}</p>", 500
 
+@app.route('/delete_vod_report_by_admin/<int:report_id>', methods=['POST'])
+def admin_clear_vod_report(report_id):
+    """Allows the master admin to remove resolved VOD fault tickets from the persistent database disk."""
+    current_user = str(session.get('username', '')).lower()
+    is_admin_flag = session.get('is_admin')
+    
+    if not session.get('logged_in') or (not is_admin_flag and current_user != "djstevieg09"):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+        
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            # Deletes the entry row from the VOD fault logs table specifically
+            cursor.execute("DELETE FROM vod_reports WHERE id = ?", (report_id,))
+            conn.commit()
+        print(f"ADMIN ACTION: Manually cleared resolved VOD ticket ID: {report_id}")
+        return jsonify({'success': True, 'message': 'Ticket resolved and dropped successfully!'})
+    except Exception as e:
+        print(f"ADMIN VOD REMOVAL FAULT: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 
 

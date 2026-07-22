@@ -803,12 +803,15 @@
             }
         }
 
-        // --- FIXED FRONTEND VOD FAULT SUBMISSION CHANNEL ---
+          // --- 7. UNIFIED PRODUCTION VOD TICKETING CONTROLLER ---
         async function submitVodFaultTicket(btn) {
             const title = document.getElementById('selected-vod-title').value;
             const type = document.getElementById('selected-vod-type').value || 'movie';
             const issue = document.getElementById('vod-issue-type').value;
-            const customNotes = document.getElementById('vod-custom-issue-text').value.trim();
+            
+            // FIXED EXTRACTION LAYER: Securely pulls whatever text is typed inside your free-text input box
+            const notesField = document.getElementById('vod-custom-issue-text');
+            const customNotes = notesField ? notesField.value.trim() : "";
             
             if (!title) { alert("Please search and pick a valid Movie or Show title first from the search bar!"); return; }
             if (issue === "Other" && !customNotes) { alert("⚠️ Entry Error: Please supply a short custom fault description text inside the input box!"); return; }
@@ -825,52 +828,19 @@
                         title: title, 
                         media_type: type, 
                         issue_type: issue,
-                        issue_notes: customNotes // Passed directly to Python backend
+                        issue_notes: customNotes // FIXED: Reliably binds your typed notes to your data streams!
                     })
                 });
                 const data = await response.json();
                 if (data.success) {
-                    alert(data.message);
-                    document.getElementById('vod-search-box').value = '';
-                    document.getElementById('selected-vod-title').value = '';
-                    document.getElementById('vod-reporting-options').style.display = 'none';
-                    document.getElementById('vod-custom-notes-wrapper').style.display = 'none';
-                    document.getElementById('vod-custom-issue-text').value = '';
+                    alert('🎉 Success! VOD catalog fault ticket successfully logged.');
+                    window.location.reload(); // Instantly flushes your browser view to render updates cleanly
                 } else { alert('Error: ' + data.message); }
             } catch (err) { alert('Connection timeout. Try again.'); }
             btn.disabled = false; 
             btn.innerHTML = originalText;
         }
 
-
-			// --- NEW: DIRECT FRONTEND VOD FAULT SUBMISSION CHANNEL ---
-			async function submitVodFaultTicket(btn) {
-				const title = document.getElementById('selected-vod-title').value;
-				const type = document.getElementById('selected-vod-type').value || 'movie';
-				const issue = document.getElementById('vod-issue-type').value;
-				
-				if (!title) { alert("Please search and pick a valid Movie or Show title first from the search bar!"); return; }
-				
-				const originalText = btn.innerHTML; 
-				btn.disabled = true; 
-				btn.innerHTML = 'Sending Ticket...';
-				
-				try {
-					const response = await fetch('/submit_vod_report', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ title: title, media_type: type, issue_type: issue })
-					});
-					const data = await response.json();
-					if (data.success) {
-						alert(data.message);
-						document.getElementById('vod-search-box').value = '';
-						document.getElementById('selected-vod-title').value = '';
-					} else { alert('Error: ' + data.message); }
-				} catch (err) { alert('Connection timeout. Try again.'); }
-				btn.disabled = false; 
-				btn.innerHTML = originalText;
-			}
 
 			// --- LIVE MULTI-FIELD ENTRY ENFORCEMENT ENGINE ---
 			function validateReferralFormInputs() {

@@ -1,20 +1,21 @@
 import os
-import sqlite3
-import requests
-import queue      
-import threading  
+import re
 import time
-from datetime import datetime 
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+import random
+import sqlite3
+from datetime import datetime
+from queue import Queue
+from threading import Thread
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
-
-# CONFIGURATION
+# --- GLOBAL CONFIGURATION LAYOUT ---
+# FIXED: 'os' library is now safely imported at the top before this lookup executes!
 DEFAULT_DNS = "http://simplyrocks.org:80"
-TMDB_API_KEY = "0ca48ab2446df424e4bd03b293104701"
+TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
+
 # FIXED PERMANENT VAULT ROADMAP: Keeps your database file 100% safe from cloud reboots!
 DB_FILE = "/data/database.db"
+
 
 
 # --- MASTER RESELLER CODES AUTO-EXTEND CONFIGURATION ---

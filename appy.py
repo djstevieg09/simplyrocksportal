@@ -1166,10 +1166,7 @@ def submit_vod_report():
     issue = data.get('issue_type', '').strip()
     username = session.get('username')
     
-    if not list_title or not media_type or not issue:
-        # Fallback parsing check matching variant keys passed by your dashboard template
-        vod_title = data.get('title', '').strip()
-        
+    # FIXED TYPO: Properly checks your verified vod_title variable data frame row
     if not vod_title or not issue:
         return jsonify({'success': False, 'message': 'Missing mandatory VOD ticket data parameters.'}), 400
         

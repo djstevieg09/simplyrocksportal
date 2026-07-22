@@ -226,8 +226,16 @@
                             <td><strong style="color: #ffffff; font-size: 14px;">🚨 {{ report.channel_name }}</strong></td>
                             <td style="font-family: monospace; color: #94a3b8; font-weight: bold;">{{ report.channel_id }}</td>
                             <td><strong style="color: #e2e8f0;">{{ report.username }}</strong></td>
-                            <td><span class="badge" style="background-color: rgba(220, 38, 38, 0.15); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.3);">{{ report.issue_type }}</span></td>
-                            <td>
+                            <td><span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; margin-bottom: 4px;">{{ report.issue_type }}</span>
+                                
+                                <!-- FIXED INTERFACE DISPLAY CELL: Renders free-text comments immediately underneath the badge -->
+                                {% if report.issue_notes %}
+                                    <div style="font-size: 11px; color: #cbd5e1; background-color: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border-left: 2px solid #eab308; margin-top: 2px; max-width: 250px; word-wrap: break-word;">
+                                        📝 <b>Notes:</b> <i>{{ report.issue_notes }}</i>
+                                    </div>
+                                {% endif %}
+                            </td>
+
                                 <!-- FIXED FIXED / CLEAR BUTTON: Connects perfectly with /delete_channel_report_by_admin/<id> -->
                                 <button onclick="if(confirm('Confirm Action: Have you successfully resolved or repaired this channel feed fault?')) {
                                     fetch('/delete_channel_report_by_admin/{{ report.id }}', { method: 'POST', headers: { 'Content-Type': 'application/json' } })

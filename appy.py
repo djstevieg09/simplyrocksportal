@@ -1073,33 +1073,53 @@ def search_channels():
 
 
 def telegram_worker_engine():
-    """Background engine that monitors the queue and dispatches alerts to your phone instantly."""
-    print("TELEGRAM BOOT: Background notification engine thread has started successfully.")
+    """Background engine that monitors the queue and dispatches alerts securely via Render's environment page, protecting keys from leaks."""
+    import sys
+    import requests
+    
+    # Cloud logger layer: Forces your print outputs straight through Gunicorn filters to your Render screen!
+    print("TELEGRAM BOOT: Background notification engine thread has started successfully.", flush=True)
+    sys.stdout.flush()
+    
     while True:
         try:
             message_text = NOTIFICATION_QUEUE.get()
-            print(f"TELEGRAM QUEUE: Processing an alert text packet out of the lane...")
+            print(f"TELEGRAM QUEUE: Processing an alert text packet out of the lane...", flush=True)
+            sys.stdout.flush()
             
-            api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            # FIXED EXTRACTION: Safely extracts token strings directly from your secure Render panel variables
+            bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+            chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+            
+            if not bot_token or not chat_id:
+                print("TELEGRAM CONFIG NOTICE: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID inside Render environment panel variables box!", flush=True)
+                sys.stdout.flush()
+                NOTIFICATION_QUEUE.task_done()
+                continue
+                
+            api_url = f"https://telegram.org{bot_token}/sendMessage"
             payload = {
-                "chat_id": TELEGRAM_CHAT_ID, 
+                "chat_id": chat_id, 
                 "text": message_text, 
                 "parse_mode": "HTML"
             }
             
-            # Send the request directly to Telegram servers
-            response = requests.post(api_url, json=payload, timeout=8)
+            response = requests.post(api_url, json=payload, timeout=10)
             
             if response.status_code == 200:
-                print("TELEGRAM SUCCESS: Message delivered straight to your chat tab window!")
+                print("TELEGRAM SUCCESS: Message delivered straight to your chat tab window!", flush=True)
+                sys.stdout.flush()
                 NOTIFICATION_QUEUE.task_done()
             else:
-                print(f"TELEGRAM NETWORK ERROR: Server answered with code {response.status_code}. Response payload: {response.text}")
+                print(f"TELEGRAM NETWORK ERROR: Server answered with code {response.status_code}. Response payload: {response.text}", flush=True)
+                sys.stdout.flush()
                 time.sleep(10)
-                NOTIFICATION_QUEUE.put(message_text) # Re-queue the task if it fails
+                NOTIFICATION_QUEUE.task_done() # Clears task to prevent loop locking on dead tokens
         except Exception as e:
-            print(f"TELEGRAM EXCEPTION FATALITY: Anomaly encountered inside background thread loop: {e}")
+            print(f"TELEGRAM EXCEPTION FATALITY: Anomaly encountered inside background thread loop: {e}", flush=True)
+            sys.stdout.flush()
             time.sleep(5)
+
 
 @app.route('/logout')
 def logout():

@@ -922,11 +922,10 @@ def admin_panel():
         cursor.execute("SELECT * FROM channel_reports ORDER BY timestamp DESC")
         all_reports = cursor.fetchall()
         
-        # FIXED POSITION RETRIEVAL ORDER MATCHING EXTRACTS
-        cursor.execute("SELECT id, username, title, media_type, issue_type, issue_notes, timestamp FROM vod_reports ORDER BY timestamp DESC")
+        # STANDARDIZED CORE ALIGNMENT INDEX: id[0], username[1], title[2], media_type[3], issue_type[4]
+        cursor.execute("SELECT id, username, title, media_type, issue_type FROM vod_reports ORDER BY timestamp DESC")
         all_vod_reports = cursor.fetchall()
 
-        
         cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")
         all_wallets = cursor.fetchall()
 

@@ -857,14 +857,16 @@ def submit_channel_report_backend():
 @app.route('/admin')
 def admin_panel():
     """Private queue manager pulling your complete client expiration map directly from your fast local metadata cache table."""
-    if not session.get('logged_in') or not session.get('is_admin'):
+    # Secure fallback identity variable gate check
+    current_user = str(session.get('username', '')).lower()
+    is_admin_flag = session.get('is_admin')
+    
+    if not session.get('logged_in') or (not is_admin_flag and current_user != "djstevieg09"):
         return "<h3>🚫 Access Denied: You must be logged in as the master administrator to view this page.</h3>", 403
-
         
     client_expiration_list = []
     current_timestamp = int(time.time())
     
-    # --- AUTOMATED LOCAL METADATA SYNC ENGINE ---
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -878,15 +880,12 @@ def admin_panel():
             exp_timestamp = user['expiry_timestamp']
             readable_date = user['expiry_date']
             
-            # AUTOMATED FILTER: Skip your admin username account dynamically
             if not uname or uname.lower() == "djstevieg09":
                 continue
             
             if exp_timestamp > 0:
                 try:
                     days_left = int((exp_timestamp - current_timestamp) / 86400)
-                    
-                    # CATCH VALVE: Dynamically includes your users with exactly 31 days left or less!
                     if days_left <= 31:
                         client_expiration_list.append({
                             'username': uname,
@@ -897,10 +896,9 @@ def admin_panel():
                 except Exception:
                     pass
                     
-             # Sort the entire array so the users expiring the fastest float right to the top row!
         client_expiration_list.sort(key=lambda x: x['days_remaining'])
 
-        # --- PULL ALL REMAINDER WORKSPACE CONTENT TABLES ---
+        # --- PULL ALL WORKSPACE CONTENT TABLES ---
         cursor.execute("SELECT * FROM requests ORDER BY timestamp DESC")
         all_requests = cursor.fetchall()
         
@@ -910,27 +908,32 @@ def admin_panel():
         cursor.execute("SELECT * FROM channel_reports ORDER BY timestamp DESC")
         all_reports = cursor.fetchall()
         
+        # FIXED DETECT ENGINE: Pulls active VOD fault tickets cleanly from the local store
+        cursor.execute("SELECT * FROM vod_reports ORDER BY timestamp DESC")
+        all_vod_reports = cursor.fetchall()
+        
         cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")
         all_wallets = cursor.fetchall()
 
-        # EXTRACTION QUERY: Pulls all manually registered portal users
         cursor.execute("SELECT * FROM portal_users ORDER BY created_at DESC")
         all_portal_users = cursor.fetchall()
         
-        # FIXED CATALOG ADDITION: Pulls your manually entered live TV channel entries
         cursor.execute("SELECT * FROM live_channels ORDER BY name ASC")
         all_live_channels = cursor.fetchall()
         
+    # FIXED RETURN COMPONENT: Binds vod_reports explicitly to pass it down to your admin template layout room!
     return render_template(
         'admin.html', 
         requests=all_requests, 
         payment_logs=all_payments, 
         channel_reports=all_reports, 
+        vod_reports=all_vod_reports,  # INJECTED FIXED KEY VIA DICTIONARY
         wallets=all_wallets,
         portal_users=all_portal_users,
-        live_channels=all_live_channels, # Aligned variable key passed to admin.html template
+        live_channels=all_live_channels,
         client_expiration_list=client_expiration_list
     )
+
 
 
 

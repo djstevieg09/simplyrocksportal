@@ -273,7 +273,7 @@
                         <th>Ticket Management Action</th>
                     </tr>
                 </thead>
-                                <tbody>
+                <tbody>
                     {% if vod_reports %}
                         {% for report in vod_reports %}
                         <tr id="vod-report-row-{{ report[0] }}">
@@ -283,21 +283,21 @@
                             <!-- report[3] = Media Type (Movie / TV) -->
                             <td style="color: #cbd5e1; text-transform: capitalize;">{{ report[3] }}</td>
                             
-                            <!-- report[1] = Reported By Username (Corrected from 6 to 1) -->
+                            <!-- report[1] = Reported By Username -->
                             <td style="color: #cbd5e1; font-weight: bold;">👤 {{ report[1] }}</td>
                             
                             <td>
-                                <!-- report[4] = Issue Type / Appended String (e.g. Other: text) -->
+                                <!-- report[4] = Issue Type (Includes your fallback merged text!) -->
                                 <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
                                     ⚠️ {{ report[4] }}
                                 </span>
                             </td>
                             <td>
-                                <!-- report[0] = Unique Ticket ID (Corrected endpoint trigger to use delete_request_by_admin) -->
+                                <!-- FIXED INTERFACE BUTTON: Targets your new dedicated VOD deletion endpoint -->
                                 <button onclick="if(confirm('Clear Ticket: Mark this VOD report as fixed?')) {
-                                    fetch('/delete_request_by_admin/{{ report[0] }}', { method: 'POST' })
+                                    fetch('/delete_vod_report_by_admin/{{ report[0] }}', { method: 'POST' })
                                     .then(res => res.json())
-                                    .then(data => { if(data.success) { document.getElementById('vod-report-row-{{ report[0] }}').remove(); } else { window.location.reload(); } })
+                                    .then(data => { if(data.success) { document.getElementById('vod-report-row-{{ report[0] }}').remove(); } else { alert('Error: ' + data.message); } })
                                     .catch(() => window.location.reload());
                                 }" style="background: transparent; color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Fixed / Clear ✓</button>
                             </td>

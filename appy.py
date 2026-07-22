@@ -1155,43 +1155,55 @@ def admin_clear_channel_report(report_id):
         return jsonify({'success': False, 'message': str(e)}), 500
         
 @app.route('/submit_vod_report', methods=['POST'])
-def submit_vod_report_backend():
-    """Logs a broken movie or series ticket safely into SQLite and triggers a custom Telegram notification card."""
+def submit_vod_report():
+    """Allows standard clients to securely submit movie and show fault tickets directly into the admin VOD queue."""
     if not session.get('logged_in'):
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
         
     data = request.json or {}
-    title = data.get('title', '').strip()
-    media_type = data.get('media_type', 'movie').upper()
-    issue_type = data.get('issue_type', '').strip()
+    vod_title = data.get('title', '').strip()
+    media_type = data.get('media_type', '').strip() # 'movie' or 'tv'
+    issue = data.get('issue_type', '').strip()
+    username = session.get('username')
     
-    if not title or not issue_type:
-        return jsonify({'success': False, 'message': 'Missing target title or issue categories'}), 400
-
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO vod_reports (username, title, media_type, issue_type) 
-            VALUES (?, ?, ?, ?)
-        ''', (session['username'], title, data.get('media_type'), issue_type))
-        conn.commit()
+    if not list_title or not media_type or not issue:
+        # Fallback parsing check matching variant keys passed by your dashboard template
+        vod_title = data.get('title', '').strip()
         
-    print(f"VOD TICKETS: User {session['username']} reported issue for {media_type}: {title}")
-    
-    # Format notification alert layout card for your Telegram pocket thread lanes
-    vod_alert_text = (
-        f"<b>🎬 NEW VOD FAULT TICKET SUBMITTED</b>\n"
-        f"----------------------------------------\n"
-        f"<b>Content Title:</b> <code>{title}</code>\n"
-        f"<b>Media Profile:</b> <b>{media_type}</b>\n"
-        f"<b>Reported Fault:</b> <code style='color: #fca5a5;'>{issue_type}</code>\n\n"
-        f"<b>Submitted By:</b> <code>{session['username']}</code>\n"
-        f"----------------------------------------\n"
-        f"👉 <i>Action Prompt: Audit vod file integrity inside your master server storage pools.</i>"
-    )
-    NOTIFICATION_QUEUE.put(vod_alert_text)
-    
-    return jsonify({'success': True, 'message': 'VOD issue logged successfully!'})
+    if not vod_title or not issue:
+        return jsonify({'success': False, 'message': 'Missing mandatory VOD ticket data parameters.'}), 400
+        
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            # Commits the user's movie fault data cleanly into your physical database tracking table rows
+            cursor.execute('''
+                INSERT INTO vod_reports (username, title, media_type, issue_type)
+                VALUES (?, ?, ?, ?)
+            ''', (username, vod_title, media_type if media_type else 'movie', issue))
+            conn.commit()
+            
+        print(f"VOD FAULT LOGGED: '{vod_title}' reported by user: {username}")
+        
+        # Dispatch an automated warning notification card straight onto your pocket Telegram app thread!
+        alert_msg = (
+            f"<b>🎬 VOD CATALOG FAULT TICKET RECEIVED</b>\n"
+            f"----------------------------------------\n"
+            f"<b>Portal Source:</b> <b>SimplyRocks Portal</b> 🌐\n"
+            f"<b>Reported By User:</b> <code>{username}</code>\n\n"
+            f"<b>Content Title:</b> <b>{vod_title}</b>\n"
+            f"<b>Media Profile:</b> <code>{str(media_type).upper()}</code>\n"
+            f"<b>Issue Category:</b> <pre>{issue}</pre>\n"
+            f"----------------------------------------\n"
+            f"👉 <i>Action Required: Verify video file state on server catalog pools, then clear ticket in your admin panel workspace.</i>"
+        )
+        NOTIFICATION_QUEUE.put(alert_msg)
+        
+        return jsonify({'success': True, 'message': 'VOD catalog fault ticket successfully logged with admin!'})
+    except Exception as e:
+        print(f"VOD REPORT DATA SUBMISSION FAULT: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/delete_vod_report_by_admin/<int:report_id>', methods=['POST'])
 def admin_clear_vod_report(report_id):

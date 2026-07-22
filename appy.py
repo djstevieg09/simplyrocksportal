@@ -922,9 +922,10 @@ def admin_panel():
         cursor.execute("SELECT * FROM channel_reports ORDER BY timestamp DESC")
         all_reports = cursor.fetchall()
         
-        # FIXED DETECT ENGINE: Pulls active VOD fault tickets cleanly from the local store
-        cursor.execute("SELECT * FROM vod_reports ORDER BY timestamp DESC")
+        # FIXED POSITION RETRIEVAL ORDER MATCHING EXTRACTS
+        cursor.execute("SELECT id, username, title, media_type, issue_type, issue_notes, timestamp FROM vod_reports ORDER BY timestamp DESC")
         all_vod_reports = cursor.fetchall()
+
         
         cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")
         all_wallets = cursor.fetchall()

@@ -27,7 +27,7 @@ TELEGRAM_BOT_TOKEN = "8719424779:AAEnfEX8spacJpLVKurxZV-VuOTDOmFMaRo"
 TELEGRAM_CHAT_ID = "5077921091"
 
 def init_db():
-    """Unconditionally initialises and mounts all 7 system database tables safely before any web routes execute."""
+    """Initialises database structures and forces data column schema expansions on persistent disk tables safely."""
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         
@@ -103,7 +103,7 @@ def init_db():
             )
         ''')
 
-        # 7. FIXED: Secure Local Portal User Accounts Ledger Table Structure Mount
+        # 7. Secure Local Portal User Accounts Ledger Table Structure Mount
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS portal_users (
                 username TEXT PRIMARY KEY,
@@ -123,13 +123,22 @@ def init_db():
             )
         ''')
 
-        # ADDED FOR REASON CAPTURE: Appends custom text column to the VOD table dynamically
+        # ====================================================================
+        # FIXED DATABASE MIGRATION ENGINE (FOR PERSISTENT DISKS)
+        # ====================================================================
+        # Forces the database file on your persistent disk to expand and add the missing text column
         try:
             cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
+            print("DATABASE AUTOMATION: Successfully injected 'issue_notes' column into persistent storage disk!")
+        except sqlite3.OperationalError as e:
+            # If the column is already present on disk, it will pass through with zero errors
+            if "duplicate column name" in str(e).lower():
+                pass
+            else:
+                print(f"DATABASE UPDATE NOTICE: {e}")
 
         conn.commit()
+
 
         
 @app.route('/admin/create_portal_user', methods=['POST'])

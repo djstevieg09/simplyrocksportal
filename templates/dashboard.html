@@ -790,6 +790,59 @@
 				}
 			}
 
+		        // --- NEW COMPONENT ADDED: HANDLES OTHER CHOICE TOGGLES ---
+        function toggleVodOtherTextInput(chosenValue) {
+            const wrapper = document.getElementById('vod-custom-notes-wrapper');
+            const inputField = document.getElementById('vod-custom-issue-text');
+            if (chosenValue === "Other") {
+                wrapper.style.display = 'block';
+                inputField.focus();
+            } else {
+                wrapper.style.display = 'none';
+                inputField.value = ''; // Clears text if they switch back to a standard option
+            }
+        }
+
+        // --- FIXED FRONTEND VOD FAULT SUBMISSION CHANNEL ---
+        async function submitVodFaultTicket(btn) {
+            const title = document.getElementById('selected-vod-title').value;
+            const type = document.getElementById('selected-vod-type').value || 'movie';
+            const issue = document.getElementById('vod-issue-type').value;
+            const customNotes = document.getElementById('vod-custom-issue-text').value.trim();
+            
+            if (!title) { alert("Please search and pick a valid Movie or Show title first from the search bar!"); return; }
+            if (issue === "Other" && !customNotes) { alert("⚠️ Entry Error: Please supply a short custom fault description text inside the input box!"); return; }
+            
+            const originalText = btn.innerHTML; 
+            btn.disabled = true; 
+            btn.innerHTML = 'Sending Ticket...';
+            
+            try {
+                const response = await fetch('/submit_vod_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        title: title, 
+                        media_type: type, 
+                        issue_type: issue,
+                        issue_notes: customNotes // Passed directly to Python backend
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('vod-search-box').value = '';
+                    document.getElementById('selected-vod-title').value = '';
+                    document.getElementById('vod-reporting-options').style.display = 'none';
+                    document.getElementById('vod-custom-notes-wrapper').style.display = 'none';
+                    document.getElementById('vod-custom-issue-text').value = '';
+                } else { alert('Error: ' + data.message); }
+            } catch (err) { alert('Connection timeout. Try again.'); }
+            btn.disabled = false; 
+            btn.innerHTML = originalText;
+        }
+
+
 			// --- NEW: DIRECT FRONTEND VOD FAULT SUBMISSION CHANNEL ---
 			async function submitVodFaultTicket(btn) {
 				const title = document.getElementById('selected-vod-title').value;

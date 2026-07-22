@@ -195,7 +195,7 @@ def admin_create_portal_user():
             f"<b>Expiration Date:</b> <b>{readable_date}</b>\n"
             f"----------------------------------------"
         )
-        NOTIFICATION_QUEUE.put(countdown_warning_text)
+        send_telegram_alert_direct(countdown_warning_text)
         
         return jsonify({'success': True, 'message': f"Account line '{uname}' saved to portal registry ledger!"})
     except Exception as e:
@@ -379,7 +379,7 @@ def login():
                         f"<i>Action Required: Contact client for premium line package extension renewal.</i>\n"
                         f"----------------------------------------"
                     )
-                    NOTIFICATION_QUEUE.put(countdown_warning_text)
+                    send_telegram_alert_direct(countdown_warning_text)
                     print(f"TELEGRAM SUCCESS: Warning alert queued safely for client line: {username}")
                 else:
                     alert_sent_status = already_sent if days_left_gate <= 7 else 0
@@ -641,7 +641,7 @@ def create_referral_line():
             f"📅 <b>Expiry:</b> {readable_expiry}\n"
             f"----------------------------------------"
         )
-        NOTIFICATION_QUEUE.put(notification_text)
+        send_telegram_alert_direct(notification_text)
         
         return jsonify({
             'success': True,
@@ -701,7 +701,7 @@ def submit_request():
     )
     
     # 3. Push it directly into your thread-safe worker queue to fire it out instantly
-    NOTIFICATION_QUEUE.put(request_alert_text)
+    send_telegram_alert_direct(request_alert_text)
     
     return jsonify({'success': True, 'message': 'Request submitted successfully!'})
 
@@ -806,7 +806,7 @@ def log_payment():
             f"----------------------------------------\n"
             f"👉 <i>Reseller Notice: System table records have updated (+365 days) automatically. No action needed!</i>"
         )
-        NOTIFICATION_QUEUE.put(alert_text)
+        send_telegram_alert_direct(alert_text)
         
         return jsonify({'success': True, 'message': 'Subscription successfully extended by 365 days!'})
     except Exception as e:
@@ -864,7 +864,7 @@ def submit_channel_report_backend():
         f"<b>Submitted By:</b> <code>{session['username']}</code>\n"
         f"----------------------------------------"
     )
-    NOTIFICATION_QUEUE.put(ticket_alert_text)
+    send_telegram_alert_direct(ticket_alert_text)
     
     return jsonify({'success': True, 'message': 'Ticket submitted successfully!'})
  
@@ -992,7 +992,7 @@ def admin_manual_inject_credit_final():
     print(f"ADMIN UTILITY: Manually adjusted credit balance by £{amount_float} for user line: {matched_username}")
     
     # Send confirmation alert directly to your Telegram bot channel
-    NOTIFICATION_QUEUE.put(f"<b>⚙️ MANUAL CREDIT ALLOCATION APPLIED</b>\n----------------------------------------\n<b>Target User:</b> <code>{matched_username}</code>\n<b>Added Value:</b> +£{amount_float} GBP\n----------------------------------------")
+    send_telegram_alert_direct(f"<b>⚙️ MANUAL CREDIT ALLOCATION APPLIED</b>\n----------------------------------------\n<b>Target User:</b> <code>{matched_username}</code>\n<b>Added Value:</b> +£{amount_float} GBP\n----------------------------------------")
     
     return jsonify({'success': True, 'message': f'Successfully credited £{amount_float} to user {matched_username}!'})
 
@@ -1072,53 +1072,30 @@ def search_channels():
     return jsonify(matches)
 
 
-def telegram_worker_engine():
-    """Background engine that monitors the queue and dispatches alerts securely via Render's environment page, protecting keys from leaks."""
-    import sys
+def send_telegram_alert_direct(message_text):
+    """Bypasses multi-worker queue blockades by pushing alert strings directly to Telegram API servers instantly."""
     import requests
-    
-    # Cloud logger layer: Forces your print outputs straight through Gunicorn filters to your Render screen!
-    print("TELEGRAM BOOT: Background notification engine thread has started successfully.", flush=True)
-    sys.stdout.flush()
-    
-    while True:
-        try:
-            message_text = NOTIFICATION_QUEUE.get()
-            print(f"TELEGRAM QUEUE: Processing an alert text packet out of the lane...", flush=True)
-            sys.stdout.flush()
+    try:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN') or "8719424779:AAEnfEX8spacJpLVKurxZV-VuOTDOmFMaRo"
+        chat_id = os.environ.get('TELEGRAM_CHAT_ID') or "5077921091"
+        
+        if not bot_token or not chat_id:
+            print("TELEGRAM NOTICE: Missing Bot Token or Chat ID variables.", flush=True)
+            return False
             
-            # FIXED EXTRACTION: Safely extracts token strings directly from your secure Render panel variables
-            bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-            chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-            
-            if not bot_token or not chat_id:
-                print("TELEGRAM CONFIG NOTICE: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID inside Render environment panel variables box!", flush=True)
-                sys.stdout.flush()
-                NOTIFICATION_QUEUE.task_done()
-                continue
-                
-            api_url = f"https://telegram.org{bot_token}/sendMessage"
-            payload = {
-                "chat_id": chat_id, 
-                "text": message_text, 
-                "parse_mode": "HTML"
-            }
-            
-            response = requests.post(api_url, json=payload, timeout=10)
-            
-            if response.status_code == 200:
-                print("TELEGRAM SUCCESS: Message delivered straight to your chat tab window!", flush=True)
-                sys.stdout.flush()
-                NOTIFICATION_QUEUE.task_done()
-            else:
-                print(f"TELEGRAM NETWORK ERROR: Server answered with code {response.status_code}. Response payload: {response.text}", flush=True)
-                sys.stdout.flush()
-                time.sleep(10)
-                NOTIFICATION_QUEUE.task_done() # Clears task to prevent loop locking on dead tokens
-        except Exception as e:
-            print(f"TELEGRAM EXCEPTION FATALITY: Anomaly encountered inside background thread loop: {e}", flush=True)
-            sys.stdout.flush()
-            time.sleep(5)
+        api_url = f"https://telegram.org{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id, 
+            "text": message_text, 
+            "parse_mode": "HTML"
+        }
+        
+        response = requests.post(api_url, json=payload, timeout=8)
+        print(f"TELEGRAM DIRECT PUSH CODE: {response.status_code}", flush=True)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"TELEGRAM DIRECT PUSH FATALITY: {e}", flush=True)
+        return False
 
 
 
@@ -1237,7 +1214,7 @@ def submit_vod_report():
             f"<b>Issue Category:</b> <b>{final_issue_string}</b>\n"
             f"----------------------------------------"
         )
-        NOTIFICATION_QUEUE.put(alert_msg)
+        send_telegram_alert_direct(alert_msg)
         
         return jsonify({'success': True, 'message': 'VOD catalog fault ticket successfully logged!'})
     except Exception as e:
@@ -1398,7 +1375,7 @@ def submit_channel_report():
             f"----------------------------------------\n"
             f"👉 <i>Action Required: Verify stream feed health on server, then clear ticket in your admin panel workspace.</i>"
         )
-        NOTIFICATION_QUEUE.put(alert_msg)
+        send_telegram_alert_direct(alert_msg)
         
         return jsonify({'success': True, 'message': 'Stream report fault ticket successfully logged with admin!'})
     except Exception as e:
@@ -1462,7 +1439,7 @@ def admin_clear_vod_report(report_id):
 # ====================================================================
 # MASTER PORTAL WORKSPACE BOOTSTRAP EXECUTOR
 # ====================================================================
-threading.Thread(target=telegram_worker_engine, daemon=True).start()
+
 
 if __name__ == '__main__':
     # FIXED: Forces the system to run your 5-table setup checks right on launch!

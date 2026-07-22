@@ -182,15 +182,23 @@
                     <input type="hidden" id="selected-vod-type">
                     
                     <label style="display: block; font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Select Fault Category:</label>
-                    <select id="vod-issue-type" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; margin-bottom: 15px; cursor: pointer;">
+                    <!-- FIXED DROPDOWN: Fires a visual display switcher when changing values -->
+                    <select id="vod-issue-type" onchange="toggleVodOtherTextInput(this.value)" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; margin-bottom: 15px; cursor: pointer;">
                         <option value="Video Buffering / Constantly Freezing">⚠️ Video Buffering / Freezing</option>
                         <option value="Missing Subtitles / Wrong Language">🔊 Missing Subtitles / Audio Layout</option>
                         <option value="Broken Link / File Will Not Play">❌ Broken Link / File Will Not Play</option>
                         <option value="Wrong Media Movie File Uploaded">🎬 Wrong Movie Uploaded / Cuts Off</option>
+                        <option value="Other">📝 Other (Type Custom Fault Reason)</option>
                     </select>
+
+                    <!-- NEW DYNAMIC INPUT CELL: Hidden by default, slides down on "Other" selection -->
+                    <div id="vod-custom-notes-wrapper" style="display: none; margin-bottom: 15px;">
+                        <label style="display: block; font-size: 11px; color: #facc15; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Custom Fault Details (Max 100 Characters):</label>
+                        <input type="text" id="vod-custom-issue-text" maxlength="100" placeholder="e.g. Pixelated at 45 mins / Subtitles are out of sync..." style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #1e293b; border: 1px solid #eab308; border-radius: 6px; color: white; font-size: 13px; outline: none;">
+                    </div>
+
                     <button onclick="submitVodFaultTicket(this)" style="width: 100%; background: linear-gradient(90deg, #d97706, #f59e0b); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit VOD Report Ticket</button>
-                </div>
-            </div>
+
 
         </div> <!-- SAFELY CLOSES YOUR ENTIRE LEFT STACK ROW COLUMN! -->
 

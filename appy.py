@@ -1223,22 +1223,6 @@ def submit_vod_report():
         print(f"VOD SUBMISSION FAULT: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
-
-@app.route('/delete_vod_report_by_admin/<int:report_id>', methods=['POST'])
-def admin_clear_vod_report(report_id):
-    """Allows admin to purge a resolved VOD error ticket out of your workspace database rows cleanly using an inline click."""
-    if not session.get('logged_in') or not session.get('is_admin'):
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-          
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM vod_reports WHERE id = ?", (report_id,))
-            conn.commit()
-        return jsonify({'success': True, 'message': 'VOD ticket resolved and cleared smoothly!'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
 @app.route('/admin/add_live_channel', methods=['POST'])
 def admin_add_live_channel():
     """Allows admin to register a custom stream name and Stream ID into the local channels database ledger."""

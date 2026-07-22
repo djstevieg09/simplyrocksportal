@@ -1398,6 +1398,35 @@ def submit_channel_report():
         print(f"CHANNEL REPORT DATA SUBMISSION FAULT: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/admin/force_db_patch_override')
+def admin_force_db_patch_override():
+    """Forces an immediate structural column rewrite onto your persistent storage disk, bypassing runtime connection constraints."""
+    if not session.get('logged_in') or str(session.get('username', '')).lower() != "djstevieg09":
+        return "Unauthorized Access Gate", 403
+        
+    log_messages = []
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            
+            # 1. Inspect current columns inside the persistent table rows layout
+            cursor.execute("PRAGMA table_info(vod_reports)")
+            columns = [row[1] for row in cursor.fetchall()]
+            log_messages.append(f"Current columns found on disk: {columns}")
+            
+            # 2. If 'issue_notes' is missing from your disk array, force inject it
+            if 'issue_notes' not in columns:
+                cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
+                conn.commit()
+                log_messages.append("🚀 SUCCESS: Forced 'issue_notes' column into your persistent database!")
+            else:
+                log_messages.append("✅ Column already present inside disk registry array layout.")
+                
+        return f"<h3>Database Migration Diagnostic Output:</h3><p>{'<br>'.join(log_messages)}</p>"
+    except Exception as e:
+        return f"<h3>❌ Extraction Error Triggered:</h3><p>{str(e)}</p>", 500
+
+
 
 
 

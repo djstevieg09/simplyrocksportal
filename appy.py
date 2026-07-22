@@ -893,7 +893,7 @@ def admin_panel():
     client_expiration_list = []
     current_timestamp = int(time.time())
     
-          with sqlite3.connect(DB_FILE) as conn:
+    with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -963,11 +963,6 @@ def admin_panel():
         live_channels=all_live_channels,
         client_expiration_list=client_expiration_list
     )
-
-
-
-
-
 @app.route('/admin/adjust_user_credit', methods=['POST'])
 def admin_manual_inject_credit_final():
     """Allows admin to manually inject balance credit to any user profile case-insensitively, accepting all frontend payload key variants."""

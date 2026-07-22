@@ -8,15 +8,19 @@ from queue import Queue
 from threading import Thread
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 
-# --- GLOBAL CONFIGURATION LAYOUT ---
-# FIXED: 'os' library is now safely imported at the top before this lookup executes!
+# --- 1. INITIALISE MAIN FLASK APP INSTANCE (MUST BE DECLARED FIRST) ---
+app = Flask(__name__)
+app.secret_key = "simplyrocks_secure_master_portal_key_string_09"
+
+# --- 2. GLOBAL SYSTEM CONFIGURATION & HARDWARE LINK PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 
 # FIXED PERMANENT VAULT ROADMAP: Keeps your database file 100% safe from cloud reboots!
 DB_FILE = "/data/database.db"
 
-
+# --- 3. QUEUE STORAGE CONFIGURATIONS ---
+NOTIFICATION_QUEUE = Queue()
 
 # --- MASTER RESELLER CODES AUTO-EXTEND CONFIGURATION ---
 # FIXED SECURITY BRIDGE: 100% Sanitized. Credentials pull exclusively from hidden Render variables.

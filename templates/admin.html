@@ -273,36 +273,43 @@
                         <th>Ticket Management Action</th>
                     </tr>
                 </thead>
-                <tbody>
-                    	{% if vod_reports %}
+                                <tbody>
+                    {% if vod_reports %}
                         {% for report in vod_reports %}
                         <tr id="vod-report-row-{{ report[0] }}">
+                            <!-- report[2] = Content Title -->
                             <td><strong style="color: #ffffff;">🎬 {{ report[2] }}</strong></td>
+                            
+                            <!-- report[3] = Media Type (Movie / TV) -->
                             <td style="color: #cbd5e1; text-transform: capitalize;">{{ report[3] }}</td>
-                            <td style="color: #cbd5e1;">{{ report[1] }}</td>
+                            
+                            <!-- report[1] = Reported By Username (Corrected from 6 to 1) -->
+                            <td style="color: #cbd5e1; font-weight: bold;">👤 {{ report[1] }}</td>
+                            
                             <td>
-                                <!-- DRAW THE TAG BADGE -->
-                                <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; margin-bottom: 4px;">{{ report[4] }}</span>
-                                
-                                <!-- FIXED POSITION MAPPING: Pulls index 5 cleanly out of your database row arrays -->
-                                {% if report[5] %}
-                                    <div style="font-size: 11px; color: #cbd5e1; background-color: rgba(0,0,0,0.25); padding: 5px 10px; border-radius: 4px; border-left: 2px solid #eab308; margin-top: 4px; max-width: 250px; word-wrap: break-word;">
-                                        📝 <b>Notes:</b> <i>{{ report[5] }}</i>
-                                    </div>
-                                {% endif %}
+                                <!-- report[4] = Issue Type / Appended String (e.g. Other: text) -->
+                                <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
+                                    ⚠️ {{ report[4] }}
+                                </span>
                             </td>
                             <td>
-                                <button onclick="fetch('/delete_request_by_admin/{{ report[0] }}', { method: 'POST' }).then(() => document.getElementById('vod-report-row-{{ report[0] }}').remove())" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Fixed / Clear ✓</button>
+                                <!-- report[0] = Unique Ticket ID (Corrected endpoint trigger to use delete_request_by_admin) -->
+                                <button onclick="if(confirm('Clear Ticket: Mark this VOD report as fixed?')) {
+                                    fetch('/delete_request_by_admin/{{ report[0] }}', { method: 'POST' })
+                                    .then(res => res.json())
+                                    .then(data => { if(data.success) { document.getElementById('vod-report-row-{{ report[0] }}').remove(); } else { window.location.reload(); } })
+                                    .catch(() => window.location.reload());
+                                }" style="background: transparent; color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s;">Fixed / Clear ✓</button>
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom vod user account files registered yet.</td>
+                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom VOD fault tickets registered yet.</td>
                     </tr>
                     {% endif %}
-
                 </tbody>
+
             </table>
         </div>
 

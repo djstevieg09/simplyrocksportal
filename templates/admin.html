@@ -286,14 +286,32 @@
                             <!-- report[1] = Reported By Username -->
                             <td style="color: #cbd5e1; font-weight: bold;">👤 {{ report[1] }}</td>
                             
+                            <!-- ISSUE CATEGORY CELL: Strips out custom text from this cell so it ONLY shows standard options or an Other tag badge -->
                             <td>
-                                <!-- report[4] = Issue Type (Contains your fallback merged "Other" notes text!) -->
-                                <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
-                                    ⚠️ {{ report[4] }}
-                                </span>
+                                {% if report[4].startswith('Other:') %}
+                                    <span class="badge" style="background-color: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
+                                        📝 Custom Issue
+                                    </span>
+                                {% else %}
+                                    <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-block; padding: 5px 10px; border-radius: 4px;">
+                                        ⚠️ {{ report[4] }}
+                                    </span>
+                                {% endif %}
                             </td>
+
+                            <!-- CUSTOM FAULT DETAILS CELL: Slices off 'Other:' and displays ONLY the user's free text natively! -->
                             <td>
-                                <!-- FIXED TRIGGER: Successfully hits your new delete_vod_report_by_admin backend endpoint -->
+                                {% if report[4].startswith('Other:') %}
+                                    <div style="font-size: 13px; color: #ffffff; background-color: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #eab308; max-width: 300px; word-wrap: break-word; font-style: italic; box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);">
+                                        "{{ report[4][7:] }}"
+                                    </div>
+                                {% else %}
+                                    <span style="font-size: 12px; color: #64748b; font-style: italic;">Standard Option Picked</span>
+                                {% endif %}
+                            </td>
+
+                            <td>
+                                <!-- report[0] = Unique Ticket ID pointing to your single corrected bottom route -->
                                 <button onclick="if(confirm('Clear Ticket: Mark this VOD report as fixed?')) {
                                     fetch('/delete_vod_report_by_admin/{{ report[0] }}', { method: 'POST' })
                                     .then(res => res.json())
@@ -305,10 +323,11 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom VOD fault tickets registered yet.</td>
+                        <td colspan="6" style="text-align: center; color: #64748b; padding: 20px;">No custom VOD fault tickets registered yet.</td>
                     </tr>
                     {% endif %}
                 </tbody>
+
 
 
             </table>

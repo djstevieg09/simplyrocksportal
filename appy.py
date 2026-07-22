@@ -231,9 +231,8 @@ def admin_delete_portal_user(username):
 # Trigger the clean build immediately on file parse!
 init_db()
 
-# Instantiates global thread data queues
-NOTIFICATION_QUEUE = queue.Queue()
-
+# FIXED DEFINITION: Capitalized to match your explicit top-level module imports
+NOTIFICATION_QUEUE = Queue()
 
 import hashlib
 

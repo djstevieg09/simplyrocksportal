@@ -270,10 +270,12 @@
                         <th>Type</th>
                         <th>Reported By</th>
                         <th>Issue Category</th>
+                        <th style="color: #facc15;">Custom Fault Details</th> <!-- ADDED THIS MISSING HEADER -->
                         <th>Ticket Management Action</th>
                     </tr>
                 </thead>
                 <tbody>
+
                     {% if vod_reports %}
                         {% for report in vod_reports %}
                         <tr id="vod-report-row-{{ report[0] }}">

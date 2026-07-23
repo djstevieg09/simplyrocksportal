@@ -15,6 +15,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'simplyrocks_secure_master_portal_key_string_09')
+if app.secret_key == 'simplyrocks_secure_master_portal_key_string_09':
+    print("SECURITY WARNING: FLASK_SECRET_KEY env var is not set. Using the built-in "
+          "fallback key is NOT safe for production - anyone who reads this source "
+          "code can forge session cookies. Set FLASK_SECRET_KEY to a long random "
+          "string in your environment.", flush=True)
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
@@ -37,10 +42,24 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 # Xtream default password for sync
 XTREAM_DEFAULT_PASSWORD = os.environ.get('XTREAM_DEFAULT_PASSWORD', '')
 
+# --- PAYPAL SERVER-SIDE VERIFICATION CONFIG ---
+# These are DIFFERENT from the public JS SDK client-id used in dashboard.html.
+# Create a REST app at developer.paypal.com to get a Client ID + Secret, then
+# set them as environment variables. The secret must NEVER appear in any HTML
+# or JS sent to the browser.
+PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID')
+PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET')
+PAYPAL_API_BASE = os.environ.get('PAYPAL_API_BASE', 'https://api-m.paypal.com')
+
+# Simple in-memory token cache so we don't re-authenticate with PayPal on every request.
+_paypal_token_cache = {"token": None, "expires_at": 0}
+
 # Fixed pricing
 SPOTIFY_PRICE = 45.00  # GBP
 FRIEND_RENEWAL_BONUS = 10.00  # GBP for referrer on renewal
 NEW_FRIEND_BONUS = 25.00  # GBP for new referral line
+REFERRAL_LINE_PRICE = 75.00  # GBP price of a new 1-year friend line
+CONNECTION_TIER_PRICES = {"1": 75.00, "2": 100.00, "3": 125.00, "4": 150.00}  # GBP
 
 
 def init_db():
@@ -227,6 +246,16 @@ def init_db():
         except sqlite3.OperationalError as e:
             print(f"REFERRAL INDEX NOTICE: {e}")
 
+        # NEW: unique index on payments.order_id so a real PayPal order_id
+        # can never be logged/credited twice (replay protection).
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_order_id_unique
+                ON payments (order_id)
+            ''')
+        except sqlite3.OperationalError as e:
+            print(f"PAYMENTS ORDER_ID INDEX NOTICE: {e}")
+
         conn.commit()
 
 
@@ -379,6 +408,117 @@ def verify_xtream_credentials(dns, username, password):
     return False, None
 
 
+# =============================================================================
+# PAYPAL SERVER-SIDE VERIFICATION HELPERS
+# =============================================================================
+# The browser can be edited by anyone using its developer tools, so the price
+# and "success" state that the front-end JS sends can never be trusted on
+# their own. Before any of the money-related routes below grant a benefit
+# (renewal, Spotify order, new referral line), they now ask PayPal directly
+# "did this order really happen, and for how much?" using these helpers.
+
+def get_paypal_access_token():
+    """
+    Fetch (and cache) an OAuth2 access token from PayPal using this app's
+    server-side client credentials. This is completely separate from the
+    public JS SDK client-id used in dashboard.html.
+    """
+    now = time.time()
+    if _paypal_token_cache["token"] and _paypal_token_cache["expires_at"] > now + 30:
+        return _paypal_token_cache["token"]
+
+    if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
+        raise RuntimeError("PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not configured.")
+
+    resp = requests.post(
+        f"{PAYPAL_API_BASE}/v1/oauth2/token",
+        auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
+        data={"grant_type": "client_credentials"},
+        headers={"Accept": "application/json", "Accept-Language": "en_US"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    _paypal_token_cache["token"] = data["access_token"]
+    _paypal_token_cache["expires_at"] = now + data.get("expires_in", 300)
+    return _paypal_token_cache["token"]
+
+
+def verify_paypal_order(order_id, expected_amount, expected_currency="GBP"):
+    """
+    Fetch an order directly from PayPal and confirm it is real, was captured,
+    and matches the amount we expect (within a 1p rounding tolerance).
+
+    Returns (True, order_json) on success, or (False, reason_string) on failure.
+    """
+    if not order_id:
+        return False, "Missing order_id"
+
+    try:
+        token = get_paypal_access_token()
+    except Exception as e:
+        return False, f"PayPal auth error: {e}"
+
+    try:
+        resp = requests.get(
+            f"{PAYPAL_API_BASE}/v2/checkout/orders/{order_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except Exception as e:
+        return False, f"PayPal lookup error: {e}"
+
+    if resp.status_code != 200:
+        return False, f"PayPal order lookup failed ({resp.status_code})"
+
+    order = resp.json()
+
+    status = order.get("status")
+    if status != "COMPLETED":
+        return False, f"Order status is '{status}', expected COMPLETED"
+
+    try:
+        purchase_unit = order["purchase_units"][0]
+        captured_amount = purchase_unit["payments"]["captures"][0]["amount"]
+        actual_value = float(captured_amount["value"])
+        actual_currency = captured_amount["currency_code"]
+    except (KeyError, IndexError, ValueError):
+        return False, "Could not read captured amount from PayPal order"
+
+    if actual_currency != expected_currency:
+        return False, f"Currency mismatch: got {actual_currency}, expected {expected_currency}"
+
+    if abs(actual_value - float(expected_amount)) > 0.01:
+        return False, f"Amount mismatch: PayPal shows {actual_value}, expected {expected_amount}"
+
+    return True, order
+
+
+def order_id_already_used(order_id):
+    """Prevent replay: has this order_id already been logged in payments?"""
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM payments WHERE order_id = ?", (order_id,))
+        return cursor.fetchone() is not None
+
+
+def get_wallet_balance(username):
+    """Real server-side wallet balance lookup - never trust a client-claimed balance."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT earned_balance, spent_balance
+            FROM referral_wallets
+            WHERE LOWER(username) = LOWER(?)
+        """, (username.lower(),))
+        row = cursor.fetchone()
+        if not row:
+            return 0.0
+        return (row['earned_balance'] or 0.0) - (row['spent_balance'] or 0.0)
+
+
 # --- USER REGISTRATION & LOGIN ---
 
 @app.route('/register', methods=['POST'])
@@ -449,7 +589,6 @@ def login():
         if username.lower() == secure_admin_username.lower() and password == secure_admin_password:
             session['logged_in'] = True
             session['username'] = username
-            session['password'] = password
             session['is_admin'] = True
             session['expiry_date'] = "Reseller Control"
             log_activity(username, "Admin login")
@@ -460,8 +599,10 @@ def login():
     if success and user_info:
         session['logged_in'] = True
         session['username'] = username
-        session['password'] = password
         session['is_admin'] = False
+        # NOTE: we intentionally do NOT store the plaintext password in the
+        # session anymore. Nothing else in the app read it, and it's not
+        # something that should sit inside a browser cookie even signed.
 
         log_activity(username, "User login")
 
@@ -708,21 +849,7 @@ def get_referral_balance():
 
     username = session.get('username')
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT earned_balance, spent_balance
-                FROM referral_wallets
-                WHERE LOWER(username) = LOWER(?)
-            """, (username.lower(),))
-            row = cursor.fetchone()
-            if row:
-                earned = row['earned_balance'] or 0.0
-                spent = row['spent_balance'] or 0.0
-                balance = earned - spent
-            else:
-                balance = 0.0
+        balance = get_wallet_balance(username)
         return jsonify({'balance': balance})
     except Exception as e:
         print("GET_REFERRAL_BALANCE ERROR:", e)
@@ -799,7 +926,8 @@ def get_referral_friends():
 def renew_friend_line():
     """
     User-initiated: renew a referred friend's IPTV line.
-    Called after successful PayPal payment from the dashboard.
+    Called after a PayPal payment from the dashboard - now verified server-side
+    against PayPal directly before anything is written or credited.
     """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
@@ -808,7 +936,6 @@ def renew_friend_line():
     referrer = session.get('username')
     friend_username = (data.get('friend_username') or '').strip()
     order_id = (data.get('orderID') or '').strip()
-    amount_str = (data.get('amount') or '0').strip()
     discount_str = (data.get('discount_redeemed') or '0').strip()
     connections = (data.get('connections') or '1').strip()
 
@@ -816,13 +943,30 @@ def renew_friend_line():
         return jsonify({'success': False, 'message': 'Missing friend_username or orderID'}), 400
 
     try:
-        amount_val = float(amount_str)
-    except ValueError:
-        amount_val = 0.0
-    try:
         discount_val = float(discount_str)
     except ValueError:
         discount_val = 0.0
+
+    # Reject a PayPal order_id that's already been logged for any payment.
+    if order_id_already_used(order_id):
+        return jsonify({'success': False, 'message': 'This order has already been processed.'}), 400
+
+    # Check the referrer's real wallet balance before honoring any discount.
+    real_balance = get_wallet_balance(referrer)
+    if discount_val > real_balance + 0.01:
+        return jsonify({'success': False, 'message': 'Wallet discount exceeds your available balance.'}), 400
+
+    # Price comes from the server's own tier table, not whatever the browser sent.
+    base_price = CONNECTION_TIER_PRICES.get(connections, 75.00)
+    expected_amount = max(0.0, base_price - discount_val)
+
+    if expected_amount > 0:
+        ok, result = verify_paypal_order(order_id, expected_amount, "GBP")
+        if not ok:
+            print(f"RENEW_FRIEND_LINE VERIFICATION FAILED for {referrer}: {result}")
+            return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
+
+    amount_val = expected_amount
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -1047,14 +1191,17 @@ def remove_managed_friend():
 
 @app.route('/log_payment', methods=['POST'])
 def log_payment():
-    """Log IPTV renewal payment from PayPal (or free wallet redemption)."""
+    """
+    Log IPTV renewal payment from PayPal (or free wallet redemption).
+    Now verified server-side against PayPal directly before anything is
+    written or credited.
+    """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
     data = request.json or {}
     username = session.get('username')
     order_id = (data.get('orderID') or '').strip()
-    amount = (data.get('amount') or '0').strip()
     discount_str = (data.get('discount_redeemed') or '0').strip()
     connections = (data.get('connections') or '1').strip()
 
@@ -1062,13 +1209,37 @@ def log_payment():
         return jsonify({'success': False, 'message': 'Missing orderID'}), 400
 
     try:
-        amount_val = float(amount)
-    except ValueError:
-        amount_val = 0.0
-    try:
         discount_val = float(discount_str)
     except ValueError:
         discount_val = 0.0
+
+    # Reject a PayPal order_id that's already been logged for any payment.
+    if order_id_already_used(order_id):
+        return jsonify({'success': False, 'message': 'This order has already been processed.'}), 400
+
+    # Check the user's real wallet balance before honoring any discount.
+    if discount_val > 0:
+        real_balance = get_wallet_balance(username)
+        if discount_val > real_balance + 0.01:
+            return jsonify({'success': False, 'message': 'Wallet discount exceeds your available balance.'}), 400
+
+    # Price comes from the server's own tier table, not whatever the browser sent.
+    base_price = CONNECTION_TIER_PRICES.get(connections, 75.00)
+    expected_amount = max(0.0, base_price - discount_val)
+
+    if expected_amount <= 0:
+        # Free wallet redemption path - no PayPal order exists at all, so there
+        # is nothing to check with PayPal, but the wallet balance check above
+        # already confirmed the "free" renewal is genuinely covered by credit.
+        if not order_id.startswith("WALLET-FREE-REDEEM-"):
+            return jsonify({'success': False, 'message': 'Invalid order reference for free redemption.'}), 400
+    else:
+        ok, result = verify_paypal_order(order_id, expected_amount, "GBP")
+        if not ok:
+            print(f"LOG_PAYMENT VERIFICATION FAILED for {username}: {result}")
+            return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
+
+    amount_val = expected_amount
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -1111,7 +1282,11 @@ def log_payment():
 
 @app.route('/buy_spotify', methods=['POST'])
 def buy_spotify():
-    """Log a Spotify order and apply wallet discount."""
+    """
+    Log a Spotify order and apply wallet discount.
+    Now verified server-side against PayPal directly before anything is
+    written or credited.
+    """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
@@ -1130,7 +1305,20 @@ def buy_spotify():
     except ValueError:
         discount_val = 0.0
 
+    if order_id_already_used(order_id):
+        return jsonify({'success': False, 'message': 'This order has already been processed.'}), 400
+
+    real_balance = get_wallet_balance(portal_user)
+    if discount_val > real_balance + 0.01:
+        return jsonify({'success': False, 'message': 'Wallet discount exceeds your available balance.'}), 400
+
     amount_val = max(0.0, SPOTIFY_PRICE - discount_val)
+
+    if amount_val > 0:
+        ok, result = verify_paypal_order(order_id, amount_val, "GBP")
+        if not ok:
+            print(f"BUY_SPOTIFY VERIFICATION FAILED for {portal_user}: {result}")
+            return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -1182,7 +1370,12 @@ def buy_spotify():
 
 @app.route('/create_referral_line', methods=['POST'])
 def create_referral_line():
-    """Create a new friend line + reward referrer."""
+    """
+    Create a new friend line + reward referrer.
+    Now REQUIRES and verifies a real PayPal order server-side before creating
+    the line - previously this route created a paid IPTV line for free with
+    no payment check at all.
+    """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
 
@@ -1191,9 +1384,19 @@ def create_referral_line():
     first_name = (data.get('first_name') or '').strip()
     last_name = (data.get('last_name') or '').strip()
     phone = (data.get('phone') or '').strip()
+    order_id = (data.get('orderID') or '').strip()
 
     if not first_name or not last_name or not phone:
         return jsonify({'success': False, 'message': 'Missing friend details'}), 400
+    if not order_id:
+        return jsonify({'success': False, 'message': 'Missing orderID'}), 400
+    if order_id_already_used(order_id):
+        return jsonify({'success': False, 'message': 'This order has already been processed.'}), 400
+
+    ok, result = verify_paypal_order(order_id, REFERRAL_LINE_PRICE, "GBP")
+    if not ok:
+        print(f"CREATE_REFERRAL_LINE VERIFICATION FAILED for {referrer}: {result}")
+        return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
 
     try:
         base = re.sub(r'[^a-zA-Z0-9]', '', f"{first_name}{last_name}")[:10] or "friend"
@@ -1230,6 +1433,14 @@ def create_referral_line():
                 VALUES (?, ?, ?, ?)
             ''', (referrer, friend_username, 'NEW_FRIEND', NEW_FRIEND_BONUS))
 
+            # This payment was never logged before. Logging it also means
+            # order_id_already_used() correctly blocks a replay of this
+            # exact order on any future request.
+            cursor.execute('''
+                INSERT INTO payments (username, order_id, amount, status)
+                VALUES (?, ?, ?, 'Completed')
+            ''', (referrer, order_id, f"{REFERRAL_LINE_PRICE:.2f}"))
+
             conn.commit()
 
         send_telegram_alert_direct(
@@ -1238,10 +1449,11 @@ def create_referral_line():
             f"<b>Friend:</b> <code>{friend_username}</code>\n"
             f"<b>Phone:</b> <code>{phone}</code>\n"
             f"<b>Expiry (portal):</b> {expiry_date}\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>\n"
             f"<b>Referrer Wallet Bonus:</b> £{NEW_FRIEND_BONUS:.2f}"
         )
 
-        log_activity(referrer, f"Created referral friend '{friend_username}'")
+        log_activity(referrer, f"Created referral friend '{friend_username}' (order {order_id})")
 
         return jsonify({
             'success': True,

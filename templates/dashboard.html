@@ -555,7 +555,6 @@
     <script src="https://www.paypal.com/sdk/js?client-id=ATdPR1St1opgGEMuPFAy_fB40wlVWHQROIw6QcFUzNETlUOORBD-dYxoQVr6I4xHfIqALFi28mBxfTJx&currency=GBP"></script>
 
     <script>
-        // These globals match your existing script
         let basePrice = 75.00;
         let currentPrice = "75.00";
         let currentConnections = "1";
@@ -850,7 +849,7 @@
             }
         }
 
-        // --- Referral Friends List & Inline PayPal + Remove ---
+        // --- Friends You Referred / Managed ---
 
         async function fetchReferralFriends() {
             const container = document.getElementById('friends-list');
@@ -880,18 +879,6 @@
                             <div style="flex:1;">
                                 <div><strong>${friend.friend_username}</strong></div>
                                 <div style="font-size:11px; color:#9ca3af;">${expiryLine}</div>
-                                <div style="font-size:11px; color:#9ca3af; margin-top:2px;">
-                                    Password:
-                                    <span id="pw-mask-${friendIdSafe}" style="font-family:monospace;">********</span>
-                                    <span id="pw-real-${friendIdSafe}" style="display:none; font-family:monospace;">
-                                        ${friend.friend_password}
-                                    </span>
-                                    <button type="button"
-                                            onclick="toggleFriendPassword('${friendIdSafe}')"
-                                            style="background:none; border:none; color:#60a5fa; font-size:10px; cursor:pointer; padding:0 0 0 4px;">
-                                        Show
-                                    </button>
-                                </div>
                                 <div id="renew-container-${friendIdSafe}" style="margin-top:6px; display:none;">
                                     <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">
                                         Pay for <strong>${friend.friend_username}</strong> renewal:
@@ -915,20 +902,6 @@
                 });
             } catch (e) {
                 container.innerHTML = '<p style="color:#f87171;">Error loading friends list.</p>';
-            }
-        }
-
-        function toggleFriendPassword(idSafe) {
-            const maskSpan = document.getElementById('pw-mask-' + idSafe);
-            const realSpan = document.getElementById('pw-real-' + idSafe);
-            if (!maskSpan || !realSpan) return;
-            const isHidden = realSpan.style.display === 'none' || realSpan.style.display === '';
-            if (isHidden) {
-                realSpan.style.display = 'inline';
-                maskSpan.style.display = 'none';
-            } else {
-                realSpan.style.display = 'none';
-                maskSpan.style.display = 'inline';
             }
         }
 
@@ -1010,10 +983,6 @@
             }
         }
 
-        // --- Media search, channel search, VOD ticket functions ---
-        // (Use your existing implementations from the earlier version;
-        // if you’ve not changed them, they match what we loaded before.)
-
         async function searchMedia() {
             const query = document.getElementById('search-input').value;
             const resultsDiv = document.getElementById('results');
@@ -1073,8 +1042,6 @@
                 alert('Payload error.');
             }
         }
-
-        // Channel search & VOD ticket: same as your original script (omitted for brevity)
 
         document.addEventListener('click', function(e) {
             const chBox = document.getElementById('channel-search-input');

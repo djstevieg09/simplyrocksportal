@@ -606,6 +606,75 @@
             </div>
         </div>
 
+        <!-- VOD Library: what's already on the system -->
+        <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
+            <div class="section-header-row">
+                <h2 style="color:#4ade80;">VOD Library (Already On The System)</h2>
+                <span class="pill-info">{{ vod_library_count or 0 }} title(s) catalogued</span>
+            </div>
+            <p class="muted">
+                Pull the real movie and series list straight from your IPTV panel (the same
+                data TiviMate/IPTV Smarters download when you log in), or paste titles in
+                manually below. Either way, the portal automatically flags matching search
+                results as "Already Available" when people go to request something.
+            </p>
+            <button class="btn btn-blue" style="width:100%; margin-bottom:10px;" onclick="triggerVodLibrarySync(this)">
+                🔄 Sync From IPTV Panel
+            </button>
+
+            <label class="section-title">Search Catalog:</label>
+            <input type="text" id="vod-library-search" class="form-field" placeholder="Type to search what's already catalogued..."
+                   oninput="searchVodLibrary(this.value)">
+
+            <div style="border-top:1px solid #334155; margin:10px 0; padding-top:10px;">
+                <label class="section-title">Manual Bulk Import - Paste Titles (one per line):</label>
+                <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
+                    <select id="vod-library-import-type" class="form-field" style="margin-bottom:0; max-width:160px;">
+                        <option value="movie">Movies</option>
+                        <option value="tv">TV Shows</option>
+                    </select>
+                    <span class="muted">Optional: end a line with a year, e.g. "Gladiator (2000)"</span>
+                </div>
+                <textarea id="vod-library-import-text" class="form-field" rows="5"
+                          placeholder="Gladiator (2000)&#10;The Dark Knight (2008)&#10;Inception"></textarea>
+                <button class="btn btn-success" style="width:100%;" onclick="submitVodLibraryImport(this)">Import List</button>
+            </div>
+
+            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Catalogued Titles</h3>
+            <div id="vod-library-results" style="max-height:260px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Type</th>
+                            <th>Year</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vod-library-table-body">
+                        {% if vod_library %}
+                            {% for entry in vod_library %}
+                            <tr id="vod-lib-row-{{ entry.id }}">
+                                <td><strong>{{ entry.title }}</strong></td>
+                                <td style="text-transform:uppercase; font-size:11px;">{{ entry.media_type }}</td>
+                                <td>{{ entry.year or '-' }}</td>
+                                <td>
+                                    <button class="btn btn-danger btn-small" onclick="deleteVodLibraryEntry({{ entry.id }})">Remove</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
+                                No titles catalogued yet - paste a list above to get started.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Spotify orders -->
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Spotify Orders</h2>
@@ -1132,6 +1201,123 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => alert("Server timeout."));
+        }
+
+        // --- VOD Library (Already On The System) ---
+        let vodLibrarySearchTimeout = null;
+
+        function renderVodLibraryRows(entries) {
+            const tbody = document.getElementById('vod-library-table-body');
+            if (!tbody) return;
+            if (!entries || !entries.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
+                            No matching titles found.
+                        </td>
+                    </tr>`;
+                return;
+            }
+            tbody.innerHTML = entries.map(entry => `
+                <tr id="vod-lib-row-${entry.id}">
+                    <td><strong>${entry.title}</strong></td>
+                    <td style="text-transform:uppercase; font-size:11px;">${entry.media_type}</td>
+                    <td>${entry.year || '-'}</td>
+                    <td>
+                        <button class="btn btn-danger btn-small" onclick="deleteVodLibraryEntry(${entry.id})">Remove</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function searchVodLibrary(query) {
+            if (vodLibrarySearchTimeout) clearTimeout(vodLibrarySearchTimeout);
+            vodLibrarySearchTimeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/admin/search_vod_library?q=${encodeURIComponent(query.trim())}`);
+                    const data = await resp.json();
+                    renderVodLibraryRows(data);
+                } catch (e) {
+                    console.log("VOD library search error:", e);
+                }
+            }, 250);
+        }
+
+        function submitVodLibraryImport(btn) {
+            const mediaType = document.getElementById('vod-library-import-type').value;
+            const titlesText = document.getElementById('vod-library-import-text').value.trim();
+            if (!titlesText) {
+                alert("Paste at least one title to import.");
+                return;
+            }
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Importing...";
+            fetch('/admin/import_vod_library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ media_type: mediaType, titles_text: titlesText })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('vod-library-import-text').value = '';
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        function deleteVodLibraryEntry(id) {
+            if (!confirm("Remove this title from the catalog?")) return;
+            fetch('/admin/delete_vod_library_entry/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const row = document.getElementById('vod-lib-row-' + id);
+                    if (row) row.remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => window.location.reload());
+        }
+
+        function triggerVodLibrarySync(btn) {
+            if (!confirm("Pull the current movie and series list from your IPTV panel? "
+                       + "This can take a minute or more for large libraries.")) return;
+
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Syncing... this may take a minute";
+
+            fetch('/admin/sync_vod_library_from_panel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Sync failed: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Connection timeout or error while syncing. Large libraries can take a while - "
+                    + "if this keeps happening, your hosting platform's request timeout may need increasing.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
         }
 
         // --- Channels ---

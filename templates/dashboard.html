@@ -879,6 +879,15 @@
                             <div style="flex:1;">
                                 <div><strong>${friend.friend_username}</strong></div>
                                 <div style="font-size:11px; color:#9ca3af;">${expiryLine}</div>
+                                <div style="margin-top:4px;">
+                                    <label style="font-size:11px; color:#9ca3af;">Connections:</label>
+                                    <select id="friend-conn-${friendIdSafe}" style="margin-left:4px; padding:2px 4px; font-size:11px; background-color:#020617; color:#e5e7eb; border:1px solid #475569; border-radius:4px;">
+                                        <option value="1" data-price="75.00">1</option>
+                                        <option value="2" data-price="100.00">2</option>
+                                        <option value="3" data-price="125.00">3</option>
+                                        <option value="4" data-price="150.00">4</option>
+                                    </select>
+                                </div>
                                 <div id="renew-container-${friendIdSafe}" style="margin-top:6px; display:none;">
                                     <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">
                                         Pay for <strong>${friend.friend_username}</strong> renewal:
@@ -912,7 +921,7 @@
             const isHidden = cont.style.display === 'none' || cont.style.display === '';
             if (isHidden) {
                 cont.style.display = 'block';
-                renderFriendPayPal(divId, friendUsername);
+                renderFriendPayPal(divId, friendUsername, idSafe);
             } else {
                 cont.style.display = 'none';
                 const paypalDiv = document.getElementById(divId);
@@ -920,61 +929,58 @@
             }
         }
 
-        function renderFriendPayPal(divId, friendUsername) {
-    // Get selected connections & price from the main selector
-    const select = document.getElementById('connection-tier-select');
-    let friendConnections = "1";
-    let base = 75.00;
+        function renderFriendPayPal(divId, friendUsername, idSafe) {
+            const sel = document.getElementById('friend-conn-' + idSafe);
+            let friendConnections = "1";
+            let base = 75.00;
+            if (sel) {
+                const opt = sel.options[sel.selectedIndex];
+                friendConnections = opt.value;
+                const p = parseFloat(opt.getAttribute('data-price'));
+                if (!isNaN(p)) base = p;
+            }
 
-    if (select) {
-        const opt = select.options[select.selectedIndex];
-        friendConnections = opt.value;
-        const p = parseFloat(opt.getAttribute('data-price'));
-        if (!isNaN(p)) base = p;
-    }
+            let friendDiscount = Math.min(maxAvailableWalletBalance, base);
+            const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
+            const cont = document.getElementById(divId);
+            if (!cont) return;
+            cont.innerHTML = '';
 
-    let friendDiscount = Math.min(maxAvailableWalletBalance, base);
-    const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
-    const cont = document.getElementById(divId);
-    if (!cont) return;
-    cont.innerHTML = '';
-
-    paypal.Buttons({
-        createOrder: function(data, actions) {
-            return actions.order.create({
-                purchase_units: [{
-                    amount: { currency_code: "GBP", value: finalAmount },
-                    description: `Friend Renewal (${friendConnections} Conn) for ${friendUsername} via {{ username }} (Discount: £${friendDiscount.toFixed(2)})`,
-                    custom_id: "{{ username }}"
-                }]
-            });
-        },
-        onApprove: function(data, actions) {
-            return actions.order.capture().then(async function(details) {
-                const resp = await fetch('/renew_friend_line', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        friend_username: friendUsername,
-                        orderID: details.id,
-                        amount: finalAmount,
-                        discount_redeemed: friendDiscount.toString(),
-                        connections: friendConnections   // optional, if you want to log it server-side
-                    })
-                });
-                const dataRes = await resp.json();
-                if (dataRes.success) {
-                    alert(dataRes.message);
-                    await fetchWalletBalance();
-                    fetchReferralFriends();
-                } else {
-                    alert('Error renewing friend: ' + dataRes.message);
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { currency_code: "GBP", value: finalAmount },
+                            description: `Friend Renewal (${friendConnections} Conn) for ${friendUsername} via {{ username }} (Discount: £${friendDiscount.toFixed(2)})`,
+                            custom_id: "{{ username }}"
+                        }]
+                    });
+                },
+                onApprove: function(data, actions) {
+                    return actions.order.capture().then(async function(details) {
+                        const resp = await fetch('/renew_friend_line', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                friend_username: friendUsername,
+                                orderID: details.id,
+                                amount: finalAmount,
+                                discount_redeemed: friendDiscount.toString(),
+                                connections: friendConnections
+                            })
+                        });
+                        const dataRes = await resp.json();
+                        if (dataRes.success) {
+                            alert(dataRes.message);
+                            await fetchWalletBalance();
+                            fetchReferralFriends();
+                        } else {
+                            alert('Error renewing friend: ' + dataRes.message);
+                        }
+                    });
                 }
-            });
+            }).render('#' + divId);
         }
-    }).render('#' + divId);
-}
-
 
         async function removeManagedFriend(friendUsername) {
             if (!confirm(`Remove ${friendUsername} from your managed list?`)) return;

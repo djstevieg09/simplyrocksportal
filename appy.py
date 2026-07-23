@@ -10,44 +10,36 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
+# --- FLASK APP ---
 app = Flask(__name__)
 app.secret_key = "simplyrocks_secure_master_portal_key_string_09"
 
-# --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
+# --- CONFIG ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
-
 DB_FILE = "/data/database.db"
-
-# --- 3. QUEUE STORAGE CONFIGURATIONS ---
 NOTIFICATION_QUEUE = Queue()
 
-# --- MASTER RESELLER CONFIG ---
 RESELLER_PANEL_URL = "https://theservice.rocks:80"
 RESELLER_USERNAME = os.environ.get('RESELLER_USER')
 RESELLER_PASSWORD = os.environ.get('RESELLER_PASS')
 
-# --- TELEGRAM BOT CONFIG ---
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Xtream default password for sync
 XTREAM_DEFAULT_PASSWORD = os.environ.get('XTREAM_DEFAULT_PASSWORD', '')
 
-# Fixed pricing
-SPOTIFY_PRICE = 45.00  # GBP
-FRIEND_RENEWAL_BONUS = 10.00  # GBP for referrer on renewal
-NEW_FRIEND_BONUS = 25.00  # GBP for new referral line
+SPOTIFY_PRICE = 45.00
+FRIEND_RENEWAL_BONUS = 10.00
+NEW_FRIEND_BONUS = 25.00
 
 
+# --- DB INIT ---
 def init_db():
-    """Initialise database structures and ensure schema is up to date."""
     with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
+        c = conn.cursor()
 
-        # requests table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -61,8 +53,7 @@ def init_db():
             )
         ''')
 
-        # payments table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -73,8 +64,7 @@ def init_db():
             )
         ''')
 
-        # referral_wallets table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS referral_wallets (
                 username TEXT PRIMARY KEY,
                 earned_balance REAL DEFAULT 0.0,
@@ -83,8 +73,7 @@ def init_db():
             )
         ''')
 
-        # channel_reports table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS channel_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -95,8 +84,7 @@ def init_db():
             )
         ''')
 
-        # user_metadata table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS user_metadata (
                 username TEXT PRIMARY KEY,
                 expiry_date TEXT NOT NULL,
@@ -106,8 +94,7 @@ def init_db():
             )
         ''')
 
-        # vod_reports table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS vod_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -118,8 +105,7 @@ def init_db():
             )
         ''')
 
-        # portal_users table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS portal_users (
                 username TEXT PRIMARY KEY,
                 password TEXT NOT NULL,
@@ -129,8 +115,7 @@ def init_db():
             )
         ''')
 
-        # live_channels table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS live_channels (
                 stream_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -138,8 +123,7 @@ def init_db():
             )
         ''')
 
-        # announcements table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message TEXT NOT NULL,
@@ -148,8 +132,7 @@ def init_db():
             )
         ''')
 
-        # spotify_orders table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS spotify_orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 portal_username TEXT NOT NULL,
@@ -162,8 +145,7 @@ def init_db():
             )
         ''')
 
-        # referral_friends table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS referral_friends (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 referrer_username TEXT NOT NULL,
@@ -174,8 +156,7 @@ def init_db():
             )
         ''')
 
-        # activity_log table
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS activity_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT,
@@ -186,8 +167,7 @@ def init_db():
             )
         ''')
 
-        # pending_users table for registration approvals
-        cursor.execute('''
+        c.execute('''
             CREATE TABLE IF NOT EXISTS pending_users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
@@ -197,164 +177,25 @@ def init_db():
             )
         ''')
 
-        # Migration for vod_reports.issue_notes
         try:
-            cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
+            c.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
-                print(f"DATABASE UPDATE NOTICE: {e}")
+                print("DB MIGRATION:", e)
 
         conn.commit()
 
 
-def seed_uk_channels():
-    """Populate live_channels table with a broad set of popular UK channels in FHD/HD/SD variants."""
-    base_channels = [
-        # BBC family
-        "BBC One",
-        "BBC Two",
-        "BBC Three",
-        "BBC Four",
-        "CBBC",
-        "CBeebies",
-        "BBC News",
-        "BBC Parliament",
-
-        # ITV family
-        "ITV1",
-        "ITV2",
-        "ITV3",
-        "ITV4",
-        "ITVBe",
-
-        # Channel 4 family
-        "Channel 4",
-        "E4",
-        "More4",
-        "Film4",
-        "4seven",
-
-        # Channel 5 family
-        "Channel 5",
-        "5STAR",
-        "5USA",
-        "5Action",
-        "Paramount Network",
-
-        # Sky Entertainment / Lifestyle
-        "Sky One",
-        "Sky Atlantic",
-        "Sky Witness",
-        "Sky Max",
-        "Sky Comedy",
-        "Sky Crime",
-        "Sky Documentaries",
-        "Sky Nature",
-        "Sky Arts",
-
-        # Sky Cinema (Movies)
-        "Sky Cinema Premiere",
-        "Sky Cinema Action",
-        "Sky Cinema Comedy",
-        "Sky Cinema Drama",
-        "Sky Cinema Thriller",
-        "Sky Cinema Family",
-        "Sky Cinema Greats",
-        "Sky Cinema Scifi & Horror",
-
-        # Sky Sports
-        "Sky Sports Main Event",
-        "Sky Sports Premier League",
-        "Sky Sports Football",
-        "Sky Sports Cricket",
-        "Sky Sports Golf",
-        "Sky Sports F1",
-        "Sky Sports Arena",
-        "Sky Sports News",
-
-        # TNT Sports
-        "TNT Sports 1",
-        "TNT Sports 2",
-        "TNT Sports 3",
-        "TNT Sports 4",
-
-        # UKTV / Freeview entertainment
-        "Dave",
-        "Drama",
-        "Yesterday",
-        "GOLD",
-        "W",
-        "Alibi",
-
-        # News
-        "Sky News",
-        "GB News",
-        "TalkTV",
-        "CNN International",
-
-        # Kids
-        "Cartoon Network",
-        "Boomerang",
-        "Cartoonito",
-        "Nickelodeon",
-        "Nick Jr.",
-        "Nicktoons",
-        "POP",
-        "Tiny Pop",
-        "CITV",
-
-        # Music
-        "4Music",
-        "MTV",
-        "MTV Music",
-        "Kerrang!",
-        "Box Hits",
-    ]
-
-    variants = ["FHD", "HD", "SD"]
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            count = 0
-            for base_name in base_channels:
-                safe_base = (
-                    base_name.upper()
-                    .replace(" ", "-")
-                    .replace("&", "AND")
-                    .replace(".", "")
-                )
-                for v in variants:
-                    name = f"{base_name} {v}"
-                    stream_id = f"UK-{safe_base}-{v}"
-                    cursor.execute('''
-                        INSERT INTO live_channels (stream_id, name)
-                        VALUES (?, ?)
-                        ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
-                    ''', (stream_id, name))
-                    count += 1
-            conn.commit()
-        print(f"UK CHANNEL SEED: Loaded/updated {count} channel variants into live_channels.")
-    except Exception as e:
-        print(f"UK CHANNEL SEED ERROR: {e}")
-
-
-# Trigger DB init and channel seed
 init_db()
-seed_uk_channels()
-NOTIFICATION_QUEUE = Queue()
-CACHED_CHANNELS = []
 
 
 def is_admin():
-    """Central admin check, using session and environment-based master username."""
     secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09").lower()
     current_user = str(session.get('username', '')).lower()
     return session.get('logged_in') and (session.get('is_admin') or current_user == secure_admin_username)
 
 
 def log_activity(username, action):
-    """Record a simple audit log entry."""
     try:
         ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         ua = request.headers.get('User-Agent', '')
@@ -363,156 +204,321 @@ def log_activity(username, action):
         ua = ''
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            c = conn.cursor()
+            c.execute('''
                 INSERT INTO activity_log (username, action, ip_address, user_agent)
                 VALUES (?, ?, ?, ?)
             ''', (username, action, ip, ua))
             conn.commit()
     except Exception as e:
-        print(f"ACTIVITY LOG ERROR: {e}")
+        print("ACTIVITY LOG ERROR:", e)
 
 
 def send_telegram_alert_direct(message_text):
-    """Send a formatted text message to Telegram using environment tokens."""
     try:
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-
         if not bot_token or not chat_id:
-            print("TELEGRAM NOTICE: Missing secure environment keys.", flush=True)
             return False
-
         api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-
-        payload = {
-            "chat_id": chat_id,
-            "text": message_text,
-            "parse_mode": "HTML"
-        }
-
-        response = requests.post(api_url, json=payload, timeout=8)
-        print(f"TELEGRAM DIRECT PUSH CODE: {response.status_code}", flush=True)
-        return response.status_code == 200
+        payload = {"chat_id": chat_id, "text": message_text, "parse_mode": "HTML"}
+        r = requests.post(api_url, json=payload, timeout=8)
+        return r.status_code == 200
     except Exception as e:
-        print(f"TELEGRAM DIRECT PUSH ERROR: {e}", flush=True)
+        print("TELEGRAM ERROR:", e)
         return False
 
 
 def verify_xtream_credentials(dns, username, password):
-    """
-    Authenticates clients securely against local portal_users database.
-    """
+    """Use local portal_users as auth backend."""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM portal_users WHERE LOWER(username) = LOWER(?)",
+            c = conn.cursor()
+            c.execute(
+                "SELECT * FROM portal_users WHERE LOWER(username)=LOWER(?)",
                 (username.strip().lower(),)
             )
-            user_row = cursor.fetchone()
-
-        if user_row and check_password_hash(user_row['password'], password.strip()):
-            mock_info = {
-                'auth': 1,
-                'status': 'Active',
-                'exp_date': user_row['expiry_timestamp']
-            }
-            return True, mock_info
+            row = c.fetchone()
+        if row and check_password_hash(row['password'], password.strip()):
+            return True, {'auth': 1, 'status': 'Active', 'exp_date': row['expiry_timestamp']}
     except Exception as e:
-        print(f"LOCAL LOGIN MAPPING ERROR: {e}")
+        print("LOGIN MAP ERROR:", e)
     return False, None
 
 
-# --- USER REGISTRATION, LOGIN, DASHBOARD, ADMIN, ETC. ---
-# (Everything from your previous working script remains identical up to /get_referral_friends)
+# --- REGISTRATION & LOGIN ---
 
-# --- Registration, login, admin endpoints omitted here for brevity in this explanation ---
-# YOU SHOULD KEEP all the routes exactly as in your last working version
-# and only replace the three routes below:
-#  - /get_referral_friends
-#  - /renew_friend_line
-#  - /admin/reassign_referral_friend
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json or {}
+    uname = data.get('username', '').strip()
+    pword = data.get('password', '').strip()
+    email = data.get('email', '').strip()
 
-# For your actual file, paste all earlier routes from your last known-good app.py
-# and then replace /get_referral_friends, /renew_friend_line, /admin/reassign_referral_friend
-# with the versions below.
+    if not uname or not pword:
+        return jsonify({'success': False, 'message': 'Username and password are required.'}), 400
+    if len(uname) < 3:
+        return jsonify({'success': False, 'message': 'Username must be at least 3 characters.'}), 400
+    if len(pword) < 4:
+        return jsonify({'success': False, 'message': 'Password must be at least 4 characters.'}), 400
 
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("SELECT username FROM portal_users WHERE LOWER(username)=LOWER(?)", (uname.lower(),))
+            if c.fetchone():
+                return jsonify({'success': False, 'message': 'This username is already approved and in use.'}), 400
+            c.execute("SELECT username FROM pending_users WHERE LOWER(username)=LOWER(?)", (uname.lower(),))
+            if c.fetchone():
+                return jsonify({'success': False, 'message': 'This username is already awaiting approval.'}), 400
+
+            hashed = generate_password_hash(pword)
+            c.execute("INSERT INTO pending_users (username,password,email) VALUES (?,?,?)",
+                      (uname, hashed, email or None))
+            conn.commit()
+
+        log_activity(uname, "Registration submitted (pending approval)")
+        send_telegram_alert_direct(
+            f"<b>📝 NEW REGISTRATION PENDING APPROVAL</b>\n"
+            f"<b>Username:</b> <code>{uname}</code>\n"
+            f"<b>Email:</b> <code>{email or 'N/A'}</code>"
+        )
+        return jsonify({'success': True, 'message': 'Registration submitted. Admin must approve your account.'})
+    except Exception as e:
+        print("REGISTRATION ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/', endpoint='login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'GET':
+        return render_template('login.html', default_dns=DEFAULT_DNS)
+
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    if not username or not password:
+        return render_template('login.html', error="Please supply both username and password.")
+
+    secure_admin_username = os.environ.get('PORTAL_ADMIN_USER')
+    secure_admin_password = os.environ.get('PORTAL_ADMIN_PASS')
+    if secure_admin_username and secure_admin_password:
+        if username.lower() == secure_admin_username.lower() and password == secure_admin_password:
+            session['logged_in'] = True
+            session['username'] = username
+            session['password'] = password
+            session['is_admin'] = True
+            session['expiry_date'] = "Reseller Control"
+            log_activity(username, "Admin login")
+            return redirect('/admin')
+
+    success, info = verify_xtream_credentials(DEFAULT_DNS, username, password)
+    if not success:
+        return render_template('login.html', error="Invalid username/password, or not approved yet.")
+
+    session['logged_in'] = True
+    session['username'] = username
+    session['password'] = password
+    session['is_admin'] = False
+    log_activity(username, "User login")
+
+    raw_exp = info.get('exp_date')
+    exp_ts = 0
+    if raw_exp is None or str(raw_exp).strip().lower() in ['null', '', '0', 'none', 'false']:
+        session['expiry_date'] = "Unlimited Account"
+        readable_date = "Unlimited Account"
+    else:
+        try:
+            ts = int(raw_exp)
+            if ts < 100000000:
+                session['expiry_date'] = "Unlimited Account"
+                readable_date = "Unlimited Account"
+            else:
+                exp_ts = ts
+                readable_date = datetime.fromtimestamp(ts).strftime('%B %d, %Y')
+                session['expiry_date'] = readable_date
+        except Exception:
+            session['expiry_date'] = "Active Line"
+            readable_date = "Active Line"
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("SELECT alert_sent FROM user_metadata WHERE LOWER(username)=LOWER(?)", (username.lower(),))
+            row = c.fetchone()
+            already_sent = row['alert_sent'] if row else 0
+            now = int(time.time())
+            days_left = int((exp_ts - now) / 86400) if exp_ts > 0 else 999
+            if 0 <= days_left <= 7 and not already_sent:
+                alert_sent = 1
+                send_telegram_alert_direct(
+                    f"<b>⏳ APPROACHING EXPIRATION</b>\n"
+                    f"<b>User:</b> <code>{username}</code>\n"
+                    f"<b>Expiry:</b> {readable_date}\n"
+                    f"<b>Days Left:</b> {days_left}"
+                )
+            else:
+                alert_sent = already_sent if days_left <= 7 else 0
+
+            c.execute('''
+                INSERT INTO user_metadata (username, expiry_date, expiry_timestamp, alert_sent)
+                VALUES (?,?,?,?)
+                ON CONFLICT(username) DO UPDATE SET
+                    expiry_date=excluded.expiry_date,
+                    expiry_timestamp=excluded.expiry_timestamp,
+                    alert_sent=excluded.alert_sent,
+                    last_updated=CURRENT_TIMESTAMP
+            ''', (username, readable_date, exp_ts, alert_sent))
+            conn.commit()
+    except Exception as e:
+        print("LOCAL CACHE ERROR:", e)
+
+    return redirect(url_for('dashboard'))
+
+
+# --- DASHBOARD ---
+
+@app.route('/dashboard')
+def dashboard():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+
+    days_remaining = None
+    show_warning = False
+    if session.get('password') and session.get('username'):
+        success, info = verify_xtream_credentials(DEFAULT_DNS, session['username'], session['password'])
+        if success and info:
+            raw = info.get('exp_date')
+            if raw and str(raw).strip().lower() not in ['null', '', '0', 'none', 'false']:
+                try:
+                    ts = int(raw)
+                    now = int(time.time())
+                    days_remaining = int((ts - now) / 86400)
+                    if days_remaining <= 7:
+                        show_warning = True
+                except Exception:
+                    pass
+
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM requests WHERE username=? ORDER BY timestamp DESC", (session['username'],))
+        reqs = c.fetchall()
+
+        c.execute("SELECT message FROM announcements WHERE active=1 ORDER BY created_at DESC LIMIT 1")
+        row = c.fetchone()
+        announcement = row['message'] if row else None
+
+        c.execute("""
+            SELECT order_id, amount, status, timestamp
+            FROM payments
+            WHERE username = ?
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """, (session['username'],))
+        pays = c.fetchall()
+
+        c.execute("""
+            SELECT earned_balance, spent_balance FROM referral_wallets
+            WHERE LOWER(username)=LOWER(?)
+        """, (session['username'].lower(),))
+        wrow = c.fetchone()
+        if wrow:
+            total_earned = wrow['earned_balance'] or 0.0
+            total_spent = wrow['spent_balance'] or 0.0
+        else:
+            total_earned = 0.0
+            total_spent = 0.0
+
+    return render_template(
+        'dashboard.html',
+        username=session['username'],
+        requests=reqs,
+        expiry_date=session.get('expiry_date', 'Active Line'),
+        show_warning=show_warning,
+        days_left=days_remaining,
+        announcement=announcement,
+        payments=pays,
+        total_earned=total_earned,
+        total_spent=total_spent
+    )
+
+
+# --- SIMPLE MEDIA SEARCH ---
+
+@app.route('/search_media')
+def search_media():
+    if not session.get('logged_in'):
+        return jsonify({"results": []}), 401
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({"results": []})
+    try:
+        url = "https://api.themoviedb.org/3/search/multi"
+        r = requests.get(url, params={
+            'api_key': TMDB_API_KEY,
+            'language': 'en-US',
+            'query': q,
+            'page': 1,
+            'include_adult': 'false'
+        }, timeout=6)
+        if r.status_code == 200:
+            return jsonify(r.json())
+    except Exception as e:
+        print("TMDB ERROR:", e)
+    return jsonify({"results": []})
+
+
+# --- REFERRAL FRIENDS / RENEWALS ---
 
 @app.route('/get_referral_friends')
 def get_referral_friends():
-    """Return a list of referred friends for the logged-in user."""
     if not session.get('logged_in'):
         return jsonify([]), 401
-
-    referrer = session.get('username')
-    results = []
+    ref = session.get('username')
+    out = []
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            c = conn.cursor()
+            c.execute('''
                 SELECT friend_username, friend_password, expiry_timestamp
                 FROM referral_friends
-                WHERE LOWER(referrer_username) = LOWER(?)
+                WHERE LOWER(referrer_username)=LOWER(?)
                 ORDER BY created_at DESC
-            ''', (referrer.lower(),))
-            rows = cursor.fetchall()
-            now_ts = int(time.time())
-            for row in rows:
-                friend_user = row[0]
-                friend_pass = row[1]
-                exp_ts = row[2]
+            ''', (ref.lower(),))
+            rows = c.fetchall()
+            now = int(time.time())
+            for u, pw, exp_ts in rows:
                 if exp_ts > 0:
                     readable = datetime.fromtimestamp(exp_ts).strftime('%B %d, %Y')
-                    days_left = int((exp_ts - now_ts) / 86400)
+                    days_left = int((exp_ts - now) / 86400)
                 else:
                     readable = "Unknown"
                     days_left = None
-                results.append({
-                    'friend_username': friend_user,
-                    'friend_password': friend_pass,
+                out.append({
+                    'friend_username': u,
+                    'friend_password': pw,
                     'expiry_date': readable,
                     'days_left': days_left
                 })
     except Exception as e:
-        print(f"GET_REFERRAL_FRIENDS ERROR: {e}")
-    return jsonify(results)
+        print("GET_REFERRAL_FRIENDS ERROR:", e)
+    return jsonify(out)
 
 
 @app.route('/renew_friend_line', methods=['POST'])
 def renew_friend_line():
-    """
-    User-initiated: renew a referred friend's IPTV line.
-    Called after successful PayPal payment from the dashboard.
-
-    Expects JSON:
-      {
-        "friend_username": "friendUser",
-        "orderID": "PAYPAL-ID",
-        "amount": "75.00",
-        "discount_redeemed": "10.00"
-      }
-
-    Behaviour:
-    - Logs payment under the referrer's username (session user).
-    - Extends friend's expiry_timestamp by 1 year from now in referral_friends.
-    - Credits FRIEND_RENEWAL_BONUS to referrer's wallet.
-    - Sends Telegram notification to admin with all details.
-    """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-
     data = request.json or {}
     referrer = session.get('username')
     friend_username = (data.get('friend_username') or '').strip()
     order_id = (data.get('orderID') or '').strip()
     amount_str = (data.get('amount') or '0').strip()
     discount_str = (data.get('discount_redeemed') or '0').strip()
-
     if not friend_username or not order_id:
         return jsonify({'success': False, 'message': 'Missing friend_username or orderID'}), 400
-
     try:
         amount_val = float(amount_str)
     except ValueError:
@@ -524,24 +530,20 @@ def renew_friend_line():
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-
-            # 1) Log payment row under referrer
-            cursor.execute('''
+            c = conn.cursor()
+            c.execute('''
                 INSERT INTO payments (username, order_id, amount, status)
-                VALUES (?, ?, ?, 'Completed')
-            ''', (referrer, order_id, f"{amount_val:.2f}", 'Completed'))
+                VALUES (?,?,?, 'Completed')
+            ''', (referrer, order_id, f"{amount_val:.2f}"))
 
-            # 2) Extend friend's expiry by 1 year (from now)
-            one_year_ts = int(time.time()) + (365 * 86400)
-            cursor.execute("""
+            one_year = int(time.time()) + 365 * 86400
+            c.execute("""
                 UPDATE referral_friends
                 SET expiry_timestamp = ?
-                WHERE LOWER(friend_username) = LOWER(?)
-            """, (one_year_ts, friend_username.lower()))
+                WHERE LOWER(friend_username)=LOWER(?)
+            """, (one_year, friend_username.lower()))
 
-            # 3) Credit renewal bonus into referrer's referral_wallet
-            cursor.execute("""
+            c.execute("""
                 INSERT INTO referral_wallets (username, earned_balance, spent_balance)
                 VALUES (?, ?, 0.0)
                 ON CONFLICT(username) DO UPDATE SET
@@ -550,7 +552,7 @@ def renew_friend_line():
 
             conn.commit()
 
-        readable_expiry = datetime.fromtimestamp(one_year_ts).strftime('%B %d, %Y')
+        readable = datetime.fromtimestamp(one_year).strftime('%B %d, %Y')
         send_telegram_alert_direct(
             f"<b>🔁 FRIEND LINE RENEWAL</b>\n"
             f"<b>Referrer:</b> <code>{referrer}</code>\n"
@@ -558,148 +560,88 @@ def renew_friend_line():
             f"<b>Order ID:</b> <code>{order_id}</code>\n"
             f"<b>Paid:</b> £{amount_val:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
-            f"<b>New Local Expiry (Portal):</b> {readable_expiry}"
+            f"<b>New Local Expiry (Portal):</b> {readable}"
         )
-
         log_activity(referrer, f"Renewed friend line {friend_username} (order {order_id})")
-
-        return jsonify({'success': True, 'message': f"Friend line '{friend_username}' renewed. Admin will extend it on the IPTV panel."})
+        return jsonify({'success': True, 'message': f"Friend line '{friend_username}' renewed. Admin will extend it."})
     except Exception as e:
-        print(f"RENEW_FRIEND_LINE ERROR: {e}")
+        print("RENEW_FRIEND_LINE ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/admin/reassign_referral_friend', methods=['POST'])
 def admin_reassign_referral_friend():
-    """
-    Admin: move ANY portal user under ANY referrer so they appear as a managed friend.
-
-    Behaviour:
-    - Verifies new_referrer exists in portal_users.
-    - Verifies friend_username exists in portal_users.
-    - If a referral_friends row already exists for friend_username:
-        - UPDATE referrer_username to new_referrer (optionally filter by old_referrer).
-    - If no referral_friends row exists:
-        - INSERT a new row in referral_friends with:
-            referrer_username = new_referrer,
-            friend_username   = friend_username,
-            friend_password   = 'N/A',
-            expiry_timestamp  = 0.
-    """
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
     data = request.json or {}
     friend_username = (data.get('friend_username') or '').strip()
     new_referrer = (data.get('new_referrer') or '').strip()
     old_referrer = (data.get('old_referrer') or '').strip()
-
     if not friend_username or not new_referrer:
-        return jsonify({
-            'success': False,
-            'message': 'friend_username and new_referrer are required.'
-        }), 400
-
+        return jsonify({'success': False, 'message': 'friend_username and new_referrer are required.'}), 400
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
+            c = conn.cursor()
+            c.execute("SELECT username FROM portal_users WHERE LOWER(username)=LOWER(?)", (new_referrer.lower(),))
+            if not c.fetchone():
+                return jsonify({'success': False, 'message': f"New referrer '{new_referrer}' does not exist."}), 400
+            c.execute("SELECT username FROM portal_users WHERE LOWER(username)=LOWER(?)", (friend_username.lower(),))
+            if not c.fetchone():
+                return jsonify({'success': False, 'message': f"Friend '{friend_username}' does not exist."}), 400
 
-            # Ensure new referrer exists as a portal user
-            cursor.execute(
-                "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
-                (new_referrer.lower(),)
-            )
-            if not cursor.fetchone():
-                return jsonify({
-                    'success': False,
-                    'message': f"New referrer '{new_referrer}' does not exist as a portal user."
-                }), 400
-
-            # Ensure friend exists as a portal user
-            cursor.execute(
-                "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
-                (friend_username.lower(),)
-            )
-            friend_row = cursor.fetchone()
-            if not friend_row:
-                return jsonify({
-                    'success': False,
-                    'message': f"Friend user '{friend_username}' does not exist in portal_users."
-                }), 400
-
-            # Check for existing referral_friends rows for this friend
-            cursor.execute("""
-                SELECT id, referrer_username
-                FROM referral_friends
-                WHERE LOWER(friend_username) = LOWER(?)
+            c.execute("""
+                SELECT id FROM referral_friends
+                WHERE LOWER(friend_username)=LOWER(?)
             """, (friend_username.lower(),))
-            rows = cursor.fetchall()
+            rows = c.fetchall()
 
             if not rows:
-                # No referral record yet: create one
-                cursor.execute("""
-                    INSERT INTO referral_friends
-                        (referrer_username, friend_username, friend_password, expiry_timestamp)
+                c.execute("""
+                    INSERT INTO referral_friends (referrer_username, friend_username, friend_password, expiry_timestamp)
                     VALUES (?, ?, ?, 0)
                 """, (new_referrer, friend_username, 'N/A'))
                 conn.commit()
+                log_activity(session.get('username', 'admin'),
+                             f"Created referral_friends for {friend_username} under {new_referrer}")
+                return jsonify({'success': True,
+                                'message': f"No existing record; created link: '{friend_username}' now managed by '{new_referrer}'."})
 
-                log_activity(
-                    session.get('username', 'admin'),
-                    f"Created new referral_friends row: friend '{friend_username}' now managed by '{new_referrer}'"
-                )
-
-                return jsonify({
-                    'success': True,
-                    'message': (
-                        f"No existing referral record; created new link: "
-                        f"friend '{friend_username}' is now managed by '{new_referrer}'."
-                    )
-                })
-
-            # There is already at least one referral_friends row for this friend
             if old_referrer:
-                cursor.execute("""
+                c.execute("""
                     UPDATE referral_friends
-                    SET referrer_username = ?
-                    WHERE LOWER(friend_username) = LOWER(?)
-                      AND LOWER(referrer_username) = LOWER(?)
+                    SET referrer_username=?
+                    WHERE LOWER(friend_username)=LOWER(?) AND LOWER(referrer_username)=LOWER(?)
                 """, (new_referrer, friend_username.lower(), old_referrer.lower()))
             else:
-                cursor.execute("""
+                c.execute("""
                     UPDATE referral_friends
-                    SET referrer_username = ?
-                    WHERE LOWER(friend_username) = LOWER(?)
+                    SET referrer_username=?
+                    WHERE LOWER(friend_username)=LOWER(?)
                 """, (new_referrer, friend_username.lower()))
-
-            if cursor.rowcount == 0:
-                msg = (
-                    f"Friend '{friend_username}' has referral records, but none under "
-                    f"current referrer '{old_referrer}'."
-                    if old_referrer else
-                    "No matching friend record found to reassign."
-                )
-                return jsonify({'success': False, 'message': msg}), 404
-
+            if c.rowcount == 0:
+                return jsonify({'success': False,
+                                'message': f"Friend '{friend_username}' has records but none under '{old_referrer}'."}), 404
             conn.commit()
 
-        log_activity(
-            session.get('username', 'admin'),
-            f"Reassigned referral friend '{friend_username}' to referrer '{new_referrer}'"
-            + (f" (from '{old_referrer}')" if old_referrer else "")
-        )
-
-        return jsonify({
-            'success': True,
-            'message': f"Friend '{friend_username}' is now managed by '{new_referrer}'."
-        })
+        log_activity(session.get('username', 'admin'),
+                     f"Reassigned friend '{friend_username}' to referrer '{new_referrer}'")
+        return jsonify({'success': True,
+                        'message': f"Friend '{friend_username}' is now managed by '{new_referrer}'."})
     except Exception as e:
-        print(f"ADMIN REASSIGN_REFERRAL ERROR: {e}")
+        print("ADMIN REASSIGN ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# --- all your remaining routes (channel reports, VOD, admin panel, etc.) should remain unchanged ---
-# Make sure this file ends cleanly:
+# --- LOGOUT ---
+
+@app.route('/logout')
+def logout():
+    uname = session.get('username')
+    session.clear()
+    if uname:
+        log_activity(uname, "Logout")
+    return redirect('/')
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

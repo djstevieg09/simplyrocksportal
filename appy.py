@@ -11,6 +11,7 @@ from threading import Thread
 import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.fernet import Fernet, InvalidToken
 
 # --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
 app = Flask(__name__)
@@ -53,6 +54,52 @@ PAYPAL_API_BASE = os.environ.get('PAYPAL_API_BASE', 'https://api-m.paypal.com')
 
 # Simple in-memory token cache so we don't re-authenticate with PayPal on every request.
 _paypal_token_cache = {"token": None, "expires_at": 0}
+
+# --- SPOTIFY PASSWORD ENCRYPTION ---
+# Spotify account passwords need to be retrievable (you have to actually log
+# into the customer's Spotify account), so they can't be one-way hashed like
+# portal login passwords. Instead they're encrypted at rest with a key that
+# only your server knows, so they're not sitting in the database - or your
+# admin panel - as plain readable text.
+#
+# Generate a key once with:
+#   python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# then set it as the SPOTIFY_ENCRYPTION_KEY environment variable. Do NOT
+# change this value later or existing encrypted passwords won't decrypt.
+SPOTIFY_ENCRYPTION_KEY = os.environ.get('SPOTIFY_ENCRYPTION_KEY')
+_spotify_fernet = None
+if SPOTIFY_ENCRYPTION_KEY:
+    try:
+        _spotify_fernet = Fernet(SPOTIFY_ENCRYPTION_KEY.encode())
+    except Exception as e:
+        print(f"SPOTIFY_ENCRYPTION_KEY is set but invalid: {e}", flush=True)
+        _spotify_fernet = None
+else:
+    print("SECURITY WARNING: SPOTIFY_ENCRYPTION_KEY env var is not set. Spotify "
+          "passwords will be stored in PLAIN TEXT until you set this. Generate "
+          "one with: python3 -c \"from cryptography.fernet import Fernet; "
+          "print(Fernet.generate_key().decode())\"", flush=True)
+
+
+def encrypt_spotify_password(plain_text):
+    """Encrypt a Spotify password before storing it. Falls back to storing
+    plain text (with a warning already printed at startup) if no key is set,
+    so the app still works while you're getting the key configured."""
+    if not _spotify_fernet:
+        return plain_text
+    return _spotify_fernet.encrypt(plain_text.encode()).decode()
+
+
+def decrypt_spotify_password(stored_value):
+    """Decrypt a stored Spotify password for admin viewing."""
+    if not _spotify_fernet:
+        return stored_value
+    try:
+        return _spotify_fernet.decrypt(stored_value.encode()).decode()
+    except (InvalidToken, ValueError):
+        # Value was stored before encryption was enabled, or the key changed.
+        return stored_value
+
 
 # Fixed pricing
 SPOTIFY_PRICE = 45.00  # GBP
@@ -237,6 +284,19 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Migration: allow requests to specify a particular season/episode of
+        # a TV show, instead of only ever requesting the whole series.
+        try:
+            cursor.execute("ALTER TABLE requests ADD COLUMN season_number INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+        try:
+            cursor.execute("ALTER TABLE requests ADD COLUMN episode_number INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Unique index on referral_friends to prevent duplicates
         try:
             cursor.execute('''
@@ -330,10 +390,22 @@ CACHED_CHANNELS = []
 
 
 def is_admin():
-    """Central admin check, using session and environment-based master username."""
-    secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09").lower()
+    """
+    Central admin check, using session and environment-based master username.
+    NOTE: there is intentionally NO hardcoded fallback username anymore. If
+    PORTAL_ADMIN_USER is not set in your environment, nobody can access admin
+    routes via username-matching (the is_admin session flag from a genuine
+    admin login still works as normal).
+    """
+    if not session.get('logged_in'):
+        return False
+    if session.get('is_admin'):
+        return True
+    secure_admin_username = os.environ.get('PORTAL_ADMIN_USER')
+    if not secure_admin_username:
+        return False
     current_user = str(session.get('username', '')).lower()
-    return session.get('logged_in') and (session.get('is_admin') or current_user == secure_admin_username)
+    return current_user == secure_admin_username.lower()
 
 
 def log_activity(username, action):
@@ -797,6 +869,104 @@ def search_media():
         return jsonify({"results": []})
 
 
+@app.route('/get_tv_seasons')
+def get_tv_seasons():
+    """
+    Return only the seasons of a TV show that have actually aired, so people
+    can't request a season that hasn't come out yet.
+    Expects ?tmdb_id=TMDB-<id> (the same imdbID format used elsewhere) or a
+    plain numeric TMDB id.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'seasons': []}), 401
+
+    raw_id = (request.args.get('tmdb_id') or '').strip()
+    tv_id = raw_id.replace('TMDB-', '').strip()
+    if not tv_id.isdigit():
+        return jsonify({'seasons': []}), 400
+
+    try:
+        url = f"https://api.themoviedb.org/3/tv/{tv_id}"
+        resp = requests.get(url, params={
+            'api_key': TMDB_API_KEY,
+            'language': 'en-US'
+        }, timeout=6)
+
+        if resp.status_code != 200:
+            print("GET_TV_SEASONS TMDB ERROR:", resp.status_code)
+            return jsonify({'seasons': []})
+
+        data = resp.json()
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        released_seasons = []
+        for s in data.get('seasons', []):
+            air_date = s.get('air_date')
+            # Only include seasons that have an air date AND that date has
+            # already happened - unreleased/upcoming seasons are excluded.
+            if air_date and air_date <= today_str:
+                released_seasons.append({
+                    'season_number': s.get('season_number'),
+                    'name': s.get('name') or f"Season {s.get('season_number')}",
+                    'episode_count': s.get('episode_count'),
+                    'air_date': air_date
+                })
+
+        released_seasons.sort(key=lambda x: x['season_number'])
+        return jsonify({'seasons': released_seasons})
+    except Exception as e:
+        print("GET_TV_SEASONS EXCEPTION:", e)
+        return jsonify({'seasons': []})
+
+
+@app.route('/get_tv_season_episodes')
+def get_tv_season_episodes():
+    """
+    Return only the episodes of a specific season that have actually aired,
+    so people can't request an episode that hasn't come out yet.
+    Expects ?tmdb_id=TMDB-<id>&season_number=<n>
+    """
+    if not session.get('logged_in'):
+        return jsonify({'episodes': []}), 401
+
+    raw_id = (request.args.get('tmdb_id') or '').strip()
+    season_number = (request.args.get('season_number') or '').strip()
+    tv_id = raw_id.replace('TMDB-', '').strip()
+
+    if not tv_id.isdigit() or not season_number.isdigit():
+        return jsonify({'episodes': []}), 400
+
+    try:
+        url = f"https://api.themoviedb.org/3/tv/{tv_id}/season/{season_number}"
+        resp = requests.get(url, params={
+            'api_key': TMDB_API_KEY,
+            'language': 'en-US'
+        }, timeout=6)
+
+        if resp.status_code != 200:
+            print("GET_TV_SEASON_EPISODES TMDB ERROR:", resp.status_code)
+            return jsonify({'episodes': []})
+
+        data = resp.json()
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        released_episodes = []
+        for ep in data.get('episodes', []):
+            air_date = ep.get('air_date')
+            if air_date and air_date <= today_str:
+                released_episodes.append({
+                    'episode_number': ep.get('episode_number'),
+                    'name': ep.get('name') or f"Episode {ep.get('episode_number')}",
+                    'air_date': air_date
+                })
+
+        released_episodes.sort(key=lambda x: x['episode_number'])
+        return jsonify({'episodes': released_episodes})
+    except Exception as e:
+        print("GET_TV_SEASON_EPISODES EXCEPTION:", e)
+        return jsonify({'episodes': []})
+
+
 @app.route('/submit_request', methods=['POST'])
 def submit_request():
     """User: submit a movie/TV request, with Telegram alert."""
@@ -812,27 +982,48 @@ def submit_request():
     imdb_id = (data.get('imdbID') or '').strip()
     poster = (data.get('poster') or '').strip()
 
+    # Optional: a specific season and/or episode of a TV show. Both are
+    # None/blank for movies and for "whole series" TV requests.
+    def _parse_int(value):
+        try:
+            if value in (None, '', 'null'):
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    season_number = _parse_int(data.get('season_number'))
+    episode_number = _parse_int(data.get('episode_number'))
+
     if not title:
         return jsonify({'success': False, 'message': 'Missing title'}), 400
+
+    # Build a human-readable scope suffix for logs/alerts, e.g.
+    # " - Season 2, Episode 5" or " - Season 3 (entire season)".
+    scope_label = ""
+    if season_number and episode_number:
+        scope_label = f" - Season {season_number}, Episode {episode_number}"
+    elif season_number:
+        scope_label = f" - Season {season_number} (entire season)"
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO requests (username, title, year, media_type, imdb_id, poster)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (username, title, year, media_type, imdb_id, poster))
+                INSERT INTO requests (username, title, year, media_type, imdb_id, poster, season_number, episode_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, title, year, media_type, imdb_id, poster, season_number, episode_number))
             conn.commit()
 
         send_telegram_alert_direct(
             f"<b>🎞 NEW MEDIA REQUEST</b>\n"
             f"<b>User:</b> <code>{username}</code>\n"
-            f"<b>Title:</b> {title} {f'({year})' if year else ''}\n"
+            f"<b>Title:</b> {title} {f'({year})' if year else ''}{scope_label}\n"
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>ID:</b> <code>{imdb_id or 'N/A'}</code>"
         )
 
-        log_activity(username, f"Submitted media request: {title} [{media_type}] {year}")
+        log_activity(username, f"Submitted media request: {title} [{media_type}] {year}{scope_label}")
         return jsonify({'success': True, 'message': 'Request submitted.'})
     except Exception as e:
         print("SUBMIT_REQUEST ERROR:", e)
@@ -1321,6 +1512,8 @@ def buy_spotify():
             return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
 
     try:
+        encrypted_sp = encrypt_spotify_password(sp)
+
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
 
@@ -1331,7 +1524,7 @@ def buy_spotify():
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (
-                portal_user, su, sp,
+                portal_user, su, encrypted_sp,
                 amount_val, discount_val, 'Pending'
             ))
 
@@ -1622,44 +1815,62 @@ def submit_vod_report():
 
 # --- ADMIN PANEL & HELPERS ---
 
+def build_client_expiration_list(max_days=31):
+    """
+    Build the list of portal users expiring within `max_days` days, sourced
+    directly from portal_users (the authoritative table for account expiry).
+    We previously read this from user_metadata, but that table is only ever
+    populated when a user logs in themselves - so any account created
+    directly by an admin (via Create Portal User) that hasn't logged in yet
+    would silently never show up here. Reading portal_users directly fixes
+    that and makes this the real source of truth for both the initial page
+    load and the "Sync" button.
+    """
+    secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or '').lower()
+    current_timestamp = int(time.time())
+    client_expiration_list = []
+
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT username, expiry_date, expiry_timestamp FROM portal_users")
+        all_users = cursor.fetchall()
+
+    for user in all_users:
+        uname = user['username']
+        exp_timestamp = user['expiry_timestamp'] or 0
+        readable_date = user['expiry_date']
+
+        if not uname:
+            continue
+        if secure_admin_username and uname.lower() == secure_admin_username:
+            continue
+        if exp_timestamp <= 0:
+            continue
+
+        days_left = int((exp_timestamp - current_timestamp) / 86400)
+        if days_left <= max_days:
+            client_expiration_list.append({
+                'username': uname,
+                'expiry_date': readable_date,
+                'days_remaining': days_left,
+                'status': 'Expired' if days_left < 0 else 'Active'
+            })
+
+    client_expiration_list.sort(key=lambda x: x['days_remaining'])
+    return client_expiration_list
+
+
 @app.route('/admin')
 def admin_panel():
     if not is_admin():
         return "<h3>Access Denied</h3>", 403
 
-    client_expiration_list = []
-    current_timestamp = int(time.time())
+    client_expiration_list = build_client_expiration_list()
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
-        cursor.execute("SELECT username, expiry_date, expiry_timestamp FROM user_metadata")
-        cached_users = cursor.fetchall()
-        secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09").lower()
-
-        for user in cached_users:
-            uname = user['username']
-            exp_timestamp = user['expiry_timestamp']
-            readable_date = user['expiry_date']
-
-            if not uname or uname.lower() == secure_admin_username:
-                continue
-
-            if exp_timestamp > 0:
-                try:
-                    days_left = int((exp_timestamp - current_timestamp) / 86400)
-                    if days_left <= 31:
-                        client_expiration_list.append({
-                            'username': uname,
-                            'expiry_date': readable_date,
-                            'days_remaining': days_left,
-                            'status': 'Active'
-                        })
-                except Exception:
-                    pass
-
-        client_expiration_list.sort(key=lambda x: x['days_remaining'])
 
         cursor.execute("SELECT * FROM requests ORDER BY timestamp DESC")
         all_requests = cursor.fetchall()
@@ -1832,12 +2043,31 @@ def reject_user():
 
 @app.route('/sync_live_panel_expirations', methods=['POST'])
 def sync_live_panel_expirations():
-    """Placeholder for syncing expiry from reseller panel."""
+    """
+    Recalculate the client expiration matrix directly from portal_users (the
+    real source of truth for expiry dates) and return it fresh.
+
+    NOTE: this does NOT call your actual external IPTV reseller panel -
+    RESELLER_PANEL_URL / RESELLER_USERNAME / RESELLER_PASSWORD are still
+    unused, since that reseller panel's API isn't something this app has
+    access to or details about. What this DOES do is guarantee the matrix
+    you see always reflects the current, real portal_users table rather
+    than a potentially stale/missing cache - so pressing "Sync" always
+    gives you an accurate, up-to-the-second list of who's expiring soon.
+    """
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
-    # TODO: Implement actual call to reseller API and update user_metadata.
-    return jsonify({'success': True, 'message': 'Sync placeholder (implement reseller API).'})
+    try:
+        client_expiration_list = build_client_expiration_list()
+        return jsonify({
+            'success': True,
+            'message': f"Refreshed - {len(client_expiration_list)} client(s) expiring within 31 days.",
+            'clients': client_expiration_list
+        })
+    except Exception as e:
+        print("SYNC_LIVE_PANEL_EXPIRATIONS ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/update_request_status_by_admin/<int:req_id>', methods=['POST'])
@@ -2139,6 +2369,37 @@ def complete_manual_renewal(payment_id):
         return jsonify({'success': True})
     except Exception as e:
         print("COMPLETE_MANUAL_RENEWAL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/reveal_spotify_password/<int:order_id>')
+def reveal_spotify_password(order_id):
+    """
+    Admin-only: decrypt and return the Spotify password for a specific order,
+    on demand. This keeps the password out of the page's normal HTML/network
+    response until an admin explicitly asks for it.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT spotify_password FROM spotify_orders WHERE id = ?", (order_id,))
+            row = cursor.fetchone()
+
+        if not row:
+            return jsonify({'success': False, 'message': 'Order not found.'}), 404
+
+        plain_password = decrypt_spotify_password(row['spotify_password'])
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Viewed Spotify password for order #{order_id}")
+
+        return jsonify({'success': True, 'password': plain_password})
+    except Exception as e:
+        print("REVEAL_SPOTIFY_PASSWORD ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

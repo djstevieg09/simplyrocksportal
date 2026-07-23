@@ -241,7 +241,7 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="4" style="text-align:center; color:#64748b; padding:20px;">
+                        <td colspan="4" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
                             No clients expiring within the next 31 days.
                         </td>
                     </tr>
@@ -292,7 +292,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align:center; color:#64748b; padding:20px;">
+                        <td colspan="5" style="text-align:center; color:#64748b; padding:20px; font-size:13px;">
                             No media requests in queue.
                         </td>
                     </tr>
@@ -331,7 +331,7 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align:center; color:#64748b; padding:18px;">
+                        <td colspan="5" style="text-align:center; color:#64748b; padding:18px; font-size:13px;">
                             No live TV fault tickets.
                         </td>
                     </tr>
@@ -384,7 +384,7 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="6" style="text-align:center; color:#64748b; padding:18px;">
+                        <td colspan="6" style="text-align:center; color:#64748b; padding:18px; font-size:13px;">
                             No VOD fault tickets.
                         </td>
                     </tr>
@@ -393,7 +393,7 @@
             </table>
         </div>
 
-        <!-- Wallet manager -->
+        <!-- Manual wallet credit manager -->
         <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
             <h2 style="color:#4ade80;">Manual Wallet Credit Manager</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -422,7 +422,7 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="2" style="text-align:center; color:#64748b; padding:10px;">No active wallet balances.</td>
+                        <td colspan="2" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No active wallet balances.</td>
                     </tr>
                     {% endif %}
                 </tbody>
@@ -490,7 +490,7 @@
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="5" style="text-align:center; color:#64748b; padding:10px;">No portal users yet.</td>
+                            <td colspan="5" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No portal users yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -538,7 +538,7 @@
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px;">No live channels saved.</td>
+                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No live channels saved.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -580,7 +580,7 @@
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="7" style="text-align:center; color:#64748b; padding:10px;">No Spotify orders yet.</td>
+                            <td colspan="7" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No Spotify orders yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -606,11 +606,11 @@
                             {% for log in payment_logs %}
                             <tr id="payment-row-{{ log.id }}">
                                 <td><strong>👤 {{ log.username }}</strong></td>
-                                <td style="font-family:monospace; color:#9ca3af;">{{ log.order_id }}</td>
-                                <td style="font-weight:bold;">{{ log.amount }}</td>
+                                <td style="font-family:monospace; color:#94a3b8;">{{ log.order_id }}</td>
+                                <td style="color:#cbd5e1; font-weight:bold;">{{ log.amount }}</td>
                                 <td id="status-cell-{{ log.id }}">
                                     {% if 'pending' in log.status.lower() %}
-                                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                                         <span class="badge-chip badge-chip-yellow">⏳ Pending Manual</span>
                                         <button class="btn btn-success btn-small" onclick="markLineAsCompleted({{ log.id }})">Mark Done ✓</button>
                                     </div>
@@ -624,9 +624,45 @@
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="4" style="text-align:center; color:#64748b; padding:18px;">
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:18px; font-size:13px;">
                                 No payment records logged yet.
                             </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+            <h2>Activity Log</h2>
+            <p style="font-size:12px; color:#94a3b8;">
+                Recent important actions (logins, renewals, Spotify orders, referrals).
+            </p>
+            <div style="max-height:260px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>IP</th>
+                            <th>When</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if activity_rows %}
+                            {% for row in activity_rows %}
+                            <tr>
+                                <td style="font-size:12px;"><strong>{{ row.username }}</strong></td>
+                                <td style="font-size:12px; color:#e5e7eb;">{{ row.action }}</td>
+                                <td style="font-size:11px; color:#9ca3af;">{{ row.ip_address }}</td>
+                                <td style="font-size:11px; color:#9ca3af;">{{ row.timestamp }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:12px; font-size:12px;">No activity entries recorded yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>

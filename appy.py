@@ -795,6 +795,15 @@ def renew_friend_line():
                     earned_balance = earned_balance + ?
             """, (referrer, FRIEND_RENEWAL_BONUS, FRIEND_RENEWAL_BONUS))
 
+            # Deduct wallet if used
+            if discount_val > 0:
+                cursor.execute("""
+                    INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                    VALUES (?, 0.0, ?)
+                    ON CONFLICT(username) DO UPDATE SET
+                        spent_balance = spent_balance + ?
+                """, (referrer, discount_val, discount_val))
+
             conn.commit()
 
         readable = datetime.fromtimestamp(one_year_ts).strftime('%B %d, %Y')
@@ -979,7 +988,244 @@ def remove_managed_friend():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# --- CHANNEL, VOD, ADMIN, LOGOUT (unchanged from your working script) ---
+# --- PAYMENT & WALLET OPERATIONS (DASHBOARD) ---
+
+@app.route('/log_payment', methods=['POST'])
+def log_payment():
+    """Log IPTV renewal payment from PayPal (or free wallet redemption)."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    username = session.get('username')
+    order_id = (data.get('orderID') or '').strip()
+    amount = (data.get('amount') or '0').strip()
+    discount_str = (data.get('discount_redeemed') or '0').strip()
+    connections = (data.get('connections') or '1').strip()
+
+    if not order_id:
+        return jsonify({'success': False, 'message': 'Missing orderID'}), 400
+
+    try:
+        amount_val = float(amount)
+    except ValueError:
+        amount_val = 0.0
+    try:
+        discount_val = float(discount_str)
+    except ValueError:
+        discount_val = 0.0
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO payments (username, order_id, amount, status)
+                VALUES (?, ?, ?, ?)
+            ''', (username, order_id, f"{amount_val:.2f}", 'Pending Manual'))
+
+            if discount_val > 0:
+                cursor.execute('''
+                    INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                    VALUES (?, 0.0, ?)
+                    ON CONFLICT(username) DO UPDATE SET
+                        spent_balance = spent_balance + ?
+                ''', (username, discount_val, discount_val))
+
+            conn.commit()
+
+        readable_connections = f"{connections} connection{'s' if str(connections) != '1' else ''}"
+
+        send_telegram_alert_direct(
+            f"<b>💳 IPTV RENEWAL PAYMENT</b>\n"
+            f"<b>User:</b> <code>{username}</code>\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>\n"
+            f"<b>Plan:</b> {readable_connections}\n"
+            f"<b>Paid:</b> £{amount_val:.2f}\n"
+            f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
+            f"<b>Status:</b> Pending manual extension"
+        )
+
+        log_activity(username, f"IPTV renewal payment logged (order {order_id}, {connections} conn)")
+
+        return jsonify({'success': True, 'message': 'Payment logged; admin will extend your line.'})
+    except Exception as e:
+        print("LOG_PAYMENT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/buy_spotify', methods=['POST'])
+def buy_spotify():
+    """Log a Spotify order and apply wallet discount."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    portal_user = session.get('username')
+    order_id = (data.get('orderID') or '').strip()
+    su = (data.get('spotify_username') or '').strip()
+    sp = (data.get('spotify_password') or '').strip()
+    discount_str = (data.get('discount_redeemed') or '0').strip()
+
+    if not order_id or not su or not sp:
+        return jsonify({'success': False, 'message': 'Missing Spotify details or orderID'}), 400
+
+    try:
+        discount_val = float(discount_str)
+    except ValueError:
+        discount_val = 0.0
+
+    amount_val = max(0.0, SPOTIFY_PRICE - discount_val)
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO spotify_orders (
+                    portal_username, spotify_username, spotify_password,
+                    amount, discount_used, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                portal_user, su, sp,
+                amount_val, discount_val, 'Pending'
+            ))
+
+            cursor.execute('''
+                INSERT INTO payments (username, order_id, amount, status)
+                VALUES (?, ?, ?, ?)
+            ''', (portal_user, order_id, f"{amount_val:.2f}", 'Completed'))
+
+            if discount_val > 0:
+                cursor.execute('''
+                    INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                    VALUES (?, 0.0, ?)
+                    ON CONFLICT(username) DO UPDATE SET
+                        spent_balance = spent_balance + ?
+                ''', (portal_user, discount_val, discount_val))
+
+            conn.commit()
+
+        send_telegram_alert_direct(
+            f"<b>🎵 NEW SPOTIFY ORDER</b>\n"
+            f"<b>Portal User:</b> <code>{portal_user}</code>\n"
+            f"<b>Spotify User:</b> <code>{su}</code>\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>\n"
+            f"<b>Paid:</b> £{amount_val:.2f}\n"
+            f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
+            f"<b>Status:</b> Pending upgrade"
+        )
+
+        log_activity(portal_user, f"Spotify order logged for {su} (order {order_id})")
+
+        return jsonify({'success': True, 'message': 'Spotify order logged.'})
+    except Exception as e:
+        print("BUY_SPOTIFY ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/create_referral_line', methods=['POST'])
+def create_referral_line():
+    """Create a new friend line + reward referrer."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    referrer = session.get('username')
+    first_name = (data.get('first_name') or '').strip()
+    last_name = (data.get('last_name') or '').strip()
+    phone = (data.get('phone') or '').strip()
+
+    if not first_name or not last_name or not phone:
+        return jsonify({'success': False, 'message': 'Missing friend details'}), 400
+
+    try:
+        base = re.sub(r'[^a-zA-Z0-9]', '', f"{first_name}{last_name}")[:10] or "friend"
+        suffix = ''.join(random.choices(string.digits, k=3))
+        friend_username = f"{base}{suffix}".lower()
+        plain_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        hashed = generate_password_hash(plain_password)
+
+        expiry_ts = int(time.time()) + 365 * 86400
+        expiry_date = datetime.fromtimestamp(expiry_ts).strftime('%Y-%m-%d')
+
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (friend_username, hashed, expiry_date, expiry_ts))
+
+            cursor.execute('''
+                INSERT INTO referral_friends (referrer_username, friend_username, friend_password, expiry_timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (referrer, friend_username, plain_password, expiry_ts))
+
+            cursor.execute('''
+                INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                VALUES (?, ?, 0.0)
+                ON CONFLICT(username) DO UPDATE SET
+                    earned_balance = earned_balance + ?
+            ''', (referrer, NEW_FRIEND_BONUS, NEW_FRIEND_BONUS))
+
+            conn.commit()
+
+        send_telegram_alert_direct(
+            f"<b>👤 NEW FRIEND LINE CREATED</b>\n"
+            f"<b>Referrer:</b> <code>{referrer}</code>\n"
+            f"<b>Friend:</b> <code>{friend_username}</code>\n"
+            f"<b>Phone:</b> <code>{phone}</code>\n"
+            f"<b>Expiry (portal):</b> {expiry_date}\n"
+            f"<b>Referrer Wallet Bonus:</b> £{NEW_FRIEND_BONUS:.2f}"
+        )
+
+        log_activity(referrer, f"Created referral friend '{friend_username}'")
+
+        return jsonify({
+            'success': True,
+            'generated_user': friend_username,
+            'generated_pass': plain_password
+        })
+    except Exception as e:
+        print("CREATE_REFERRAL_LINE ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# --- LIVE CHANNELS: SEARCH & REPORTING ---
+
+@app.route('/search_channels')
+def search_channels():
+    """
+    Simple live channel search used for the dropdown on dashboard.
+    Expects ?q= query, returns list of {name, stream_id}.
+    """
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            like = f"%{q}%"
+            cursor.execute("""
+                SELECT name, stream_id
+                FROM live_channels
+                WHERE name LIKE ?
+                ORDER BY name ASC
+                LIMIT 50
+            """, (like,))
+            rows = cursor.fetchall()
+        return jsonify([{'name': r['name'], 'stream_id': r['stream_id']} for r in rows])
+    except Exception as e:
+        print("SEARCH_CHANNELS ERROR:", e)
+        return jsonify([]), 500
+
 
 @app.route('/submit_channel_report', methods=['POST'])
 def submit_channel_report():
@@ -1019,6 +1265,90 @@ def submit_channel_report():
         print(f"CHANNEL REPORT ERROR: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+
+# --- VOD: SEARCH (TMDB) & REPORTING ---
+
+@app.route('/search_vod_catalog')
+def search_vod_catalog():
+    """
+    Use TMDB to search movies & TV for VOD reporting dropdown.
+    Query param: ?q=
+    """
+    if not session.get('logged_in'):
+        return jsonify({"results": []}), 401
+
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({"results": []})
+
+    try:
+        url = "https://api.themoviedb.org/3/search/multi"
+        resp = requests.get(url, params={
+            'api_key': TMDB_API_KEY,
+            'language': 'en-US',
+            'query': query,
+            'page': 1,
+            'include_adult': 'false'
+        }, timeout=6)
+        if resp.status_code != 200:
+            print("TMDB VOD SEARCH ERROR:", resp.status_code, resp.text[:200])
+            return jsonify({"results": []})
+        return jsonify(resp.json())
+    except Exception as e:
+        print("TMDB VOD SEARCH EXCEPTION:", e)
+        return jsonify({"results": []})
+
+
+@app.route('/submit_vod_report', methods=['POST'])
+def submit_vod_report():
+    """
+    User: submit VOD fault ticket.
+    Expects JSON:
+      title, media_type ('movie'|'tv'), issue_type, issue_notes (optional)
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    username = session.get('username')
+    title = (data.get('title') or '').strip()
+    media_type = (data.get('media_type') or '').strip()
+    issue_type = (data.get('issue_type') or '').strip()
+    issue_notes = (data.get('issue_notes') or '').strip()
+
+    if not title or not media_type or not issue_type:
+        return jsonify({'success': False, 'message': 'Missing title, type or issue.'}), 400
+
+    final_issue_type = issue_type
+    if issue_type.lower() == 'other' and issue_notes:
+        final_issue_type = f"Other: {issue_notes[:100]}"
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO vod_reports (username, title, media_type, issue_type, issue_notes)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (username, title, media_type, final_issue_type, issue_notes[:255]))
+            conn.commit()
+
+        send_telegram_alert_direct(
+            f"<b>🎬 VOD FAULT TICKET</b>\n"
+            f"<b>User:</b> <code>{username}</code>\n"
+            f"<b>Title:</b> {title}\n"
+            f"<b>Type:</b> {media_type.upper()}\n"
+            f"<b>Issue:</b> {final_issue_type}"
+        )
+
+        log_activity(username, f"VOD fault report: {title} ({media_type}) - {final_issue_type}")
+
+        return jsonify({'success': True, 'message': 'VOD fault ticket logged.'})
+    except Exception as e:
+        print("SUBMIT_VOD_REPORT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# --- ADMIN PANEL & HELPERS ---
 
 @app.route('/admin')
 def admin_panel():
@@ -1106,7 +1436,438 @@ def admin_panel():
     )
 
 
-# (Other admin helpers unchanged: adjust_user_credit, update_status, delete_request, VOD routes, live_channels, announcements etc.)
+@app.route('/admin/set_announcement', methods=['POST'])
+def set_announcement():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    msg = (data.get('message') or '').strip()
+    if not msg:
+        return jsonify({'success': False, 'message': 'Message is required.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE announcements SET active = 0")
+            cursor.execute("INSERT INTO announcements (message, active) VALUES (?, 1)", (msg,))
+            conn.commit()
+        return jsonify({'success': True, 'message': 'Announcement updated.'})
+    except Exception as e:
+        print("SET_ANNOUNCEMENT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/get_pending_users')
+def admin_get_pending_users():
+    if not is_admin():
+        return jsonify([]), 403
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, username, email, created_at FROM pending_users ORDER BY created_at ASC')
+            rows = cursor.fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        print("GET_PENDING_USERS ERROR:", e)
+        return jsonify([]), 500
+
+
+@app.route('/admin/approve_user', methods=['POST'])
+def approve_user():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    pid = data.get('id')
+    if not pid:
+        return jsonify({'success': False, 'message': 'Missing pending user ID.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM pending_users WHERE id = ?', (pid,))
+            pending = cursor.fetchone()
+            if not pending:
+                return jsonify({'success': False, 'message': 'Pending user not found.'}), 404
+
+            uname = pending['username']
+            hashed_pw = pending['password']
+
+            expiry_ts = int(time.time()) + 365 * 86400
+            expiry_date = datetime.fromtimestamp(expiry_ts).strftime('%Y-%m-%d')
+
+            cursor.execute('''
+                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    password = excluded.password,
+                    expiry_date = excluded.expiry_date,
+                    expiry_timestamp = excluded.expiry_timestamp
+            ''', (uname, hashed_pw, expiry_date, expiry_ts))
+
+            cursor.execute('DELETE FROM pending_users WHERE id = ?', (pid,))
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Approved pending user {uname}")
+        send_telegram_alert_direct(
+            f"<b>✅ REGISTRATION APPROVED</b>\n"
+            f"<b>User:</b> <code>{uname}</code>\n"
+            f"<b>Approved by:</b> <code>{admin_user}</code>"
+        )
+
+        return jsonify({'success': True, 'message': f"User '{uname}' approved and portal account created."})
+    except Exception as e:
+        print("APPROVE_USER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/reject_user', methods=['POST'])
+def reject_user():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    pid = data.get('id')
+    if not pid:
+        return jsonify({'success': False, 'message': 'Missing pending user ID.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT username FROM pending_users WHERE id = ?', (pid,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'Pending user not found.'}), 404
+            uname = row[0]
+
+            cursor.execute('DELETE FROM pending_users WHERE id = ?', (pid,))
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Rejected pending user {uname}")
+
+        return jsonify({'success': True, 'message': f"Registration for '{uname}' rejected and removed."})
+    except Exception as e:
+        print("REJECT_USER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/sync_live_panel_expirations', methods=['POST'])
+def sync_live_panel_expirations():
+    """Placeholder for syncing expiry from reseller panel."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    # TODO: Implement actual call to reseller API and update user_metadata.
+    return jsonify({'success': True, 'message': 'Sync placeholder (implement reseller API).'})
+
+
+@app.route('/update_request_status_by_admin/<int:req_id>', methods=['POST'])
+def update_request_status_by_admin(req_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE requests SET status = ? WHERE id = ?', ('Completed', req_id))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Request not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("UPDATE_REQUEST_STATUS ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/delete_request/<int:req_id>', methods=['POST'])
+def admin_delete_request(req_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM requests WHERE id = ?', (req_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Request not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_REQUEST ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/delete_channel_report_by_admin/<int:report_id>', methods=['POST'])
+def delete_channel_report_by_admin(report_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM channel_reports WHERE id = ?', (report_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Report not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_CHANNEL_REPORT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/delete_vod_report_by_admin/<int:report_id>', methods=['POST'])
+def delete_vod_report_by_admin(report_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM vod_reports WHERE id = ?', (report_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Report not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_VOD_REPORT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/adjust_user_credit', methods=['POST'])
+def adjust_user_credit():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('target_username') or '').strip()
+    amount_str = (data.get('amount') or '').strip()
+
+    if not username or not amount_str:
+        return jsonify({'success': False, 'message': 'Username and amount are required.'}), 400
+
+    try:
+        amount_val = float(amount_str)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid amount value.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                VALUES (?, ?, 0.0)
+                ON CONFLICT(username) DO UPDATE SET
+                    earned_balance = earned_balance + ?
+            ''', (username, amount_val, amount_val))
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Manual wallet credit +£{amount_val:.2f} to {username}")
+
+        return jsonify({'success': True, 'message': f"Credited £{amount_val:.2f} to {username}'s wallet."})
+    except Exception as e:
+        print("ADJUST_USER_CREDIT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/create_portal_user', methods=['POST'])
+def create_portal_user():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+    expiry_date_str = (data.get('expiry_date') or '').strip()
+
+    if not username or not password or not expiry_date_str:
+        return jsonify({'success': False, 'message': 'username, password, expiry_date required.'}), 400
+
+    try:
+        expiry_dt = datetime.strptime(expiry_date_str, '%Y-%m-%d')
+        expiry_ts = int(expiry_dt.timestamp())
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Expiry date must be YYYY-MM-DD.'}), 400
+
+    try:
+        hashed = generate_password_hash(password)
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    password = excluded.password,
+                    expiry_date = excluded.expiry_date,
+                    expiry_timestamp = excluded.expiry_timestamp
+            ''', (username, hashed, expiry_date_str, expiry_ts))
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Created/updated portal user {username}")
+
+        return jsonify({'success': True, 'message': f"Portal user '{username}' saved."})
+    except Exception as e:
+        print("CREATE_PORTAL_USER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/delete_portal_user/<username>', methods=['POST'])
+def delete_portal_user(username):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM portal_users WHERE LOWER(username) = LOWER(?)', (username,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'User not found.'}), 404
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Deleted portal user {username}")
+
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_PORTAL_USER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/reset_portal_user_password', methods=['POST'])
+def reset_portal_user_password():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({'success': False, 'message': 'Username required.'}), 400
+
+    new_plain = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+    hashed = generate_password_hash(new_plain)
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'UPDATE portal_users SET password = ? WHERE LOWER(username) = LOWER(?)',
+                (hashed, username.lower())
+            )
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'User not found.'}), 404
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Reset portal password for {username}")
+
+        return jsonify({'success': True, 'new_password': new_plain})
+    except Exception as e:
+        print("RESET_PORTAL_PW ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/amend_user_expiry', methods=['POST'])
+def amend_user_expiry():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    expiry_date_str = (data.get('expiry_date') or '').strip()
+
+    if not username or not expiry_date_str:
+        return jsonify({'success': False, 'message': 'username and expiry_date required.'}), 400
+
+    try:
+        expiry_dt = datetime.strptime(expiry_date_str, '%Y-%m-%d')
+        expiry_ts = int(expiry_dt.timestamp())
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Expiry date must be YYYY-MM-DD.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE portal_users
+                SET expiry_date = ?, expiry_timestamp = ?
+                WHERE LOWER(username) = LOWER(?)
+            ''', (expiry_date_str, expiry_ts, username.lower()))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Portal user not found.'}), 404
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Adjusted expiry for {username} to {expiry_date_str}")
+
+        return jsonify({'success': True, 'message': f"Expiry for '{username}' set to {expiry_date_str}."})
+    except Exception as e:
+        print("AMEND_USER_EXPIRY ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/add_live_channel', methods=['POST'])
+def add_live_channel():
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    stream_id = (data.get('stream_id') or '').strip()
+    if not name or not stream_id:
+        return jsonify({'success': False, 'message': 'Name and stream_id are required.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO live_channels (stream_id, name)
+                VALUES (?, ?)
+                ON CONFLICT(stream_id) DO UPDATE SET
+                    name = excluded.name
+            ''', (stream_id, name))
+            conn.commit()
+        return jsonify({'success': True, 'message': 'Channel saved.'})
+    except Exception as e:
+        print("ADD_LIVE_CHANNEL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/delete_live_channel/<stream_id>', methods=['POST'])
+def delete_live_channel(stream_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM live_channels WHERE stream_id = ?', (stream_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Channel not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_LIVE_CHANNEL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])
+def complete_manual_renewal(payment_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE payments SET status = ? WHERE id = ?', ('Completed', payment_id))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Payment record not found.'}), 404
+            conn.commit()
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Marked manual renewal payment {payment_id} as Completed")
+        return jsonify({'success': True})
+    except Exception as e:
+        print("COMPLETE_MANUAL_RENEWAL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/logout')

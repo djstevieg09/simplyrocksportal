@@ -176,6 +176,18 @@ def init_db():
             )
         ''')
 
+        # activity_log table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Migration for vod_reports.issue_notes
         try:
             cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
@@ -332,6 +344,26 @@ def is_admin():
     return session.get('logged_in') and (session.get('is_admin') or current_user == secure_admin_username)
 
 
+def log_activity(username, action):
+    """Record a simple audit log entry."""
+    try:
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        ua = request.headers.get('User-Agent', '')
+    except RuntimeError:
+        ip = ''
+        ua = ''
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO activity_log (username, action, ip_address, user_agent)
+                VALUES (?, ?, ?, ?)
+            ''', (username, action, ip, ua))
+            conn.commit()
+    except Exception as e:
+        print(f"ACTIVITY LOG ERROR: {e}")
+
+
 def send_telegram_alert_direct(message_text):
     """Send a formatted text message to Telegram using environment tokens."""
     try:
@@ -447,6 +479,7 @@ def login():
             session['is_admin'] = True
             session['expiry_date'] = "Reseller Control"
             print("ADMIN LOGIN DETECTED.")
+            log_activity(username, "Admin login")
             return redirect('/admin')
 
     # Client login
@@ -457,6 +490,8 @@ def login():
         session['username'] = username
         session['password'] = password
         session['is_admin'] = False
+
+        log_activity(username, "User login")
 
         raw_exp = user_info.get('exp_date')
         exp_ts = 0
@@ -606,6 +641,8 @@ def admin_reset_portal_user_password():
             f"<b>New Password:</b> <code>{new_plain}</code>"
         )
 
+        log_activity(session.get('username', 'admin'), f"Reset password for {target_user}")
+
         return jsonify({
             'success': True,
             'message': f"Password reset for '{target_user}'.",
@@ -627,6 +664,7 @@ def admin_delete_portal_user(username):
             cursor.execute("DELETE FROM portal_users WHERE LOWER(username) = LOWER(?)", (username.lower(),))
             cursor.execute("DELETE FROM user_metadata WHERE LOWER(username) = LOWER(?)", (username.lower(),))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Deleted portal user {username}")
         return jsonify({'success': True, 'message': f"Account '{username}' deleted."})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -694,6 +732,8 @@ def sync_live_panel_expirations():
                 print(f"SYNC LOOP FAULT for {uname}: {loop_err}")
                 continue
 
+        log_activity(session.get('username', 'admin'), f"Synced expirations: {sync_count} users, {captured_count} expiring <=31d")
+
         return jsonify({
             'success': True,
             'message': f'Sync complete. Checked {sync_count} users; {captured_count} expire in 31 days or less.'
@@ -732,9 +772,35 @@ def dashboard():
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM requests WHERE username = ? ORDER BY timestamp DESC", (session['username'],))
         user_requests = cursor.fetchall()
+
+        # Latest active announcement
         cursor.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1")
         row = cursor.fetchone()
         active_announcement = row['message'] if row else None
+
+        # User's recent payments (IPTV + Spotify)
+        cursor.execute("""
+            SELECT order_id, amount, status, timestamp
+            FROM payments
+            WHERE username = ?
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """, (session['username'],))
+        user_payments = cursor.fetchall()
+
+        # Wallet summary
+        cursor.execute("""
+            SELECT earned_balance, spent_balance 
+            FROM referral_wallets 
+            WHERE LOWER(username) = LOWER(?)
+        """, (session['username'].lower(),))
+        row_wallet = cursor.fetchone()
+        if row_wallet:
+            total_earned = row_wallet['earned_balance'] or 0.0
+            total_spent = row_wallet['spent_balance'] or 0.0
+        else:
+            total_earned = 0.0
+            total_spent = 0.0
 
     return render_template(
         'dashboard.html',
@@ -743,7 +809,10 @@ def dashboard():
         expiry_date=session.get('expiry_date', 'Active Line'),
         show_warning=show_expiry_warning,
         days_left=days_remaining,
-        announcement=active_announcement
+        announcement=active_announcement,
+        payments=user_payments,
+        total_earned=total_earned,
+        total_spent=total_spent
     )
 
 
@@ -842,6 +911,8 @@ def create_referral_line():
             f"<b>Pass:</b> <code>{plain_pass}</code>\n"
             f"<b>Expiry:</b> {readable_expiry}"
         )
+
+        log_activity(referrer, f"Created referral line for {generated_username}")
 
         return jsonify({
             'success': True,
@@ -986,6 +1057,8 @@ def renew_friend_line():
             f"<b>Referrer Bonus:</b> +£{FRIEND_RENEWAL_BONUS:.2f}"
         )
 
+        log_activity(referrer, f"Renewed friend {friend_username} line (amount £{amount_paid:.2f}, discount £{discount_redeemed:.2f})")
+
         return jsonify({'success': True, 'message': f"Friend '{friend_username}' renewed until {new_readable_date}."})
     except Exception as e:
         print(f"RENEW_FRIEND_LINE ERROR: {e}")
@@ -1027,6 +1100,8 @@ def submit_request():
         f"<b>Type:</b> {media_type}\n"
         f"<b>User:</b> <code>{session['username']}</code>"
     )
+
+    log_activity(session.get('username'), f"Media request: {title} ({year}) [{media_type}]")
 
     return jsonify({'success': True, 'message': 'Request submitted successfully!'})
 
@@ -1095,6 +1170,8 @@ def log_payment():
             f"<b>New Expiry:</b> {new_readable_date}"
         )
 
+        log_activity(username, f"IPTV renewal ({connections} conn, amount £{amount_paid:.2f}, discount £{discount_redeemed:.2f})")
+
         return jsonify({'success': True, 'message': 'Subscription extended by 365 days!'})
     except Exception as e:
         print(f"PAYMENT ERROR: {e}")
@@ -1153,6 +1230,8 @@ def buy_spotify():
             f"<b>Final Charged:</b> £{final_amount:.2f}"
         )
 
+        log_activity(portal_username, f"Spotify order for {spotify_user} (amount £{final_amount:.2f}, discount £{discount_redeemed:.2f})")
+
         return jsonify({'success': True, 'message': 'Spotify order received. Upgrade will be processed shortly.'})
     except Exception as e:
         print(f"SPOTIFY ORDER ERROR: {e}")
@@ -1204,6 +1283,8 @@ def submit_channel_report():
             f"<b>Stream ID:</b> <code>{ch_id}</code>\n"
             f"<b>Issue:</b> {issue}"
         )
+
+        log_activity(username, f"Channel fault report: {ch_name} (ID {ch_id}) - {issue}")
 
         return jsonify({'success': True, 'message': 'Stream fault ticket logged.'})
     except Exception as e:
@@ -1278,6 +1359,9 @@ def admin_panel():
         row = cursor.fetchone()
         latest_announcement = row['message'] if row else ''
 
+        cursor.execute("SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 50")
+        activity_rows = cursor.fetchall()
+
     return render_template(
         'admin.html',
         requests=all_requests,
@@ -1289,7 +1373,8 @@ def admin_panel():
         live_channels=all_live_channels,
         client_expiration_list=client_expiration_list,
         spotify_orders=spotify_orders,
-        latest_announcement=latest_announcement
+        latest_announcement=latest_announcement,
+        activity_rows=activity_rows
     )
 
 
@@ -1327,6 +1412,8 @@ def admin_manual_inject_credit_final():
         f"<b>Amount:</b> +£{amount_float:.2f}"
     )
 
+    log_activity(session.get('username', 'admin'), f"Manual credit +£{amount_float:.2f} to {matched_username}")
+
     return jsonify({'success': True, 'message': f'Credited £{amount_float} to user {matched_username}.'})
 
 
@@ -1343,6 +1430,8 @@ def update_status(req_id):
         cursor.execute("UPDATE requests SET status = ? WHERE id = ?", (status, req_id))
         conn.commit()
 
+    log_activity(session.get('username', 'admin'), f"Updated request {req_id} to {status}")
+
     return jsonify({'success': True, 'message': f'Status updated to {status}'})
 
 
@@ -1355,6 +1444,8 @@ def delete_request(req_id):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM requests WHERE id = ?", (req_id,))
         conn.commit()
+
+    log_activity(session.get('username', 'admin'), f"Deleted request {req_id}")
 
     return jsonify({'success': True, 'message': 'Request cleared successfully'})
 
@@ -1389,7 +1480,10 @@ def search_channels():
 
 @app.route('/logout')
 def logout():
+    username = session.get('username')
     session.clear()
+    if username:
+        log_activity(username, "Logout")
     return redirect('/')
 
 
@@ -1406,6 +1500,7 @@ def complete_manual_renewal(payment_id):
                 username = row[0]
                 cursor.execute("UPDATE payments SET status = 'Completed' WHERE id = ?", (payment_id,))
                 conn.commit()
+                log_activity(session.get('username', 'admin'), f"Marked payment {payment_id} for {username} as Completed")
                 return jsonify({'success': True, 'message': f'Line {username} marked as completed!'})
             return jsonify({'success': False, 'message': 'Payment ticket not found'}), 404
     except Exception as e:
@@ -1422,6 +1517,7 @@ def admin_update_media_status(request_id):
             cursor = conn.cursor()
             cursor.execute("UPDATE requests SET status = 'Completed' WHERE id = ?", (request_id,))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Marked request {request_id} as Completed")
         return jsonify({'success': True, 'message': 'Request marked as completed!'})
     except Exception as e:
         print(f"ADMIN REQUEST UPDATE ERROR: {e}")
@@ -1437,6 +1533,7 @@ def admin_clear_channel_report(report_id):
             cursor = conn.cursor()
             cursor.execute("DELETE FROM channel_reports WHERE id = ?", (report_id,))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Cleared channel report {report_id}")
         return jsonify({'success': True, 'message': 'Ticket cleared!'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1479,6 +1576,8 @@ def submit_vod_report():
             f"<b>Issue:</b> {final_issue_string}"
         )
 
+        log_activity(username, f"VOD fault report: {vod_title} [{media_type}] - {final_issue_string}")
+
         return jsonify({'success': True, 'message': 'VOD fault ticket logged!'})
     except Exception as e:
         print(f"VOD SUBMISSION ERROR: {e}")
@@ -1506,6 +1605,7 @@ def admin_add_live_channel():
                 ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
             ''', (stream_id, ch_name))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Added/updated live channel {ch_name} (ID {stream_id})")
         return jsonify({'success': True, 'message': f"Channel '{ch_name}' added."})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1520,6 +1620,7 @@ def admin_delete_live_channel(stream_id):
             cursor = conn.cursor()
             cursor.execute("DELETE FROM live_channels WHERE stream_id = ?", (stream_id.strip(),))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Deleted live channel ID {stream_id}")
         return jsonify({'success': True, 'message': 'Channel removed!'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1546,6 +1647,7 @@ def submit_crowdsourced_channel():
                 ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
             ''', (stream_id, ch_name))
             conn.commit()
+        log_activity(session.get('username'), f"User added crowdsourced channel {ch_name} (ID {stream_id})")
         return jsonify({'success': True, 'message': 'Channel registered.'})
     except Exception as e:
         print(f"CROWD-SOURCE ERROR: {e}")
@@ -1586,6 +1688,8 @@ def admin_amend_user_expiry():
 
             conn.commit()
 
+        log_activity(session.get('username', 'admin'), f"Amended expiry for {target_user} to {readable_date}")
+
         return jsonify({'success': True, 'message': f"{target_user}'s expiry updated to {readable_date}."})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1624,6 +1728,7 @@ def admin_clear_vod_report(report_id):
             cursor = conn.cursor()
             cursor.execute("DELETE FROM vod_reports WHERE id = ?", (report_id,))
             conn.commit()
+        log_activity(session.get('username', 'admin'), f"Cleared VOD report {report_id}")
         return jsonify({'success': True, 'message': 'VOD ticket cleared.'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1644,6 +1749,7 @@ def admin_set_announcement():
             cursor.execute("UPDATE announcements SET active = 0")
             cursor.execute("INSERT INTO announcements (message, active) VALUES (?, 1)", (message,))
             conn.commit()
+        log_activity(session.get('username', 'admin'), "Updated global announcement")
         return jsonify({'success': True, 'message': 'Announcement updated.'})
     except Exception as e:
         print(f"ANNOUNCEMENT ERROR: {e}")

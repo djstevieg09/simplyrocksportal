@@ -575,7 +575,6 @@ def dashboard():
         total_spent=total_spent
     )
 
-
 @app.route('/search_media')
 def search_media():
     if not session.get('logged_in'):

@@ -434,6 +434,57 @@
                     <p style="margin-top:8px;">Use wallet credit for IPTV renewals and Spotify subscriptions.</p>
                 </div>
 
+                <!-- Rewards & Purchase history -->
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Rewards & Purchase History</h2>
+                    <p style="font-size:12px; color:#94a3b8;">
+                        Track your referral rewards and latest purchases.
+                    </p>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:12px; margin-bottom:10px;">
+                        <div style="flex:1; min-width:120px;">
+                            <div class="section-title">Total Earned</div>
+                            <div style="font-size:18px; font-weight:800; color:#4ade80;">
+                                £{{ "%.2f"|format(total_earned or 0.0) }}
+                            </div>
+                        </div>
+                        <div style="flex:1; min-width:120px;">
+                            <div class="section-title">Total Spent (Wallet)</div>
+                            <div style="font-size:18px; font-weight:800; color:#f97316;">
+                                £{{ "%.2f"|format(total_spent or 0.0) }}
+                            </div>
+                        </div>
+                    </div>
+                    <h3 style="font-size:13px; margin-top:6px;">Recent Purchases</h3>
+                    <div style="max-height:180px; overflow-y:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if payments %}
+                                    {% for p in payments %}
+                                    <tr>
+                                        <td style="font-family:monospace; font-size:11px;">{{ p.order_id }}</td>
+                                        <td>{{ p.amount }}</td>
+                                        <td>{{ p.status }}</td>
+                                        <td style="font-size:11px; color:#9ca3af;">{{ p.timestamp }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" style="text-align:center; color:#64748b; padding:8px;">No purchases recorded yet.</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- IPTV Renewal -->
                 <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
                     <h2 style="color:#facc15;">Renew IPTV Subscription</h2>

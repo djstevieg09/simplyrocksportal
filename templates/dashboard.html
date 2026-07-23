@@ -6,16 +6,15 @@
     <title>Dashboard - IPTV Portal</title>
     <meta name="referrer" content="no-referrer">
     
-    <!-- External UI Framework Support Scripts -->
+    <!-- External UI Framework Support Scripts (placeholder) -->
     <link rel="stylesheet" href="https://cloudflare.com">
     
-    <!-- SECURE PAYPAL SMART BUTTONS SDK ENGINE -->
+    <!-- SECURE PAYPAL SMART BUTTONS SDK ENGINE (placeholder, real SDK loaded later) -->
     <script src="https://paypal.com"></script>
     
     <style>
         body { background-color: #0f172a; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 0; }
         
-        /* FIXED TYPO HERE: Changed items: center to align-items: center */
         nav { background-color: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         nav h1 { color: #60a5fa; margin: 0; font-size: 20px; }
         
@@ -23,7 +22,6 @@
         .logout-btn { background-color: #dc2626; color: white; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-size: 14px; transition: 0.2s; }
         .logout-btn:hover { background-color: #b91c1c; }
         
-        /* This establishes your main 7:5 side-by-side workspace ratios layout columns structure */
         main { max-width: 1200px; margin: 30px auto; padding: 0 20px; display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
         @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
         
@@ -66,9 +64,8 @@
     <!-- AUTOMATED EXPIRY ALERT COUNTDOWN BANNER -->
     {% if show_warning %}
     <div style="background: linear-gradient(90deg, #b45309, #d97706); color: #ffffff; padding: 12px 30px; text-align: center; font-size: 14px; font-weight: bold; border-bottom: 2px solid #f59e0b; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; gap: 15px; animation: pulseGlow 2s infinite alternate;">
-        <i class="fa-solid fa-triangle-exclamation" style="color: #fef08a; font-size: 16px;"></i>
         <span>Attention: Your premium IPTV subscription expires in <strong style="background-color: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; color: #fef08a;">{{ days_left }} days</strong>. Please renew below to prevent service disruption.</span>
-        <button onclick="document.getElementById('connections-checkout-tier').scrollIntoView({behavior: 'smooth'})" style="background-color: #ffffff; color: #b45309; border: none; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Renew Now</button>
+        <button onclick="document.getElementById('connection-tier-select').scrollIntoView({behavior: 'smooth'})" style="background-color: #ffffff; color: #b45309; border: none; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Renew Now</button>
     </div>
     
     <style>
@@ -79,21 +76,23 @@
     </style>
     {% endif %}
 
-    <nav style="background-color: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-        <h1 style="margin: 0; font-size: 20px;">SimplyRocks Portal</h1>
-        <div class="nav-right" style="display: flex; align-items: center; gap: 20px;">
+    <nav>
+        <h1>SimplyRocks Portal</h1>
+        <div class="nav-right">
             <!-- SUBSCRIPTION CALENDAR BANNER -->
             <div style="background-color: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); padding: 6px 14px; border-radius: 6px; font-size: 13px; color: #93c5fd;">
-                📅 Line Expiry: <strong style="color: #ffffff;">{{ session.get('expiry_date', 'Checking...') }}</strong>
+                📅 Line Expiry: 
+                <strong style="color: #ffffff;">
+                    {{ expiry_date if expiry_date else 'Checking...' }}
+                </strong>
             </div>
             <span>User: <strong>{{ username }}</strong></span>
             <a href="/logout" class="logout-btn" style="color: #f87171; text-decoration: none; font-weight: bold; border: 1px solid rgba(239, 68, 68, 0.2); padding: 6px 12px; border-radius: 6px; background-color: rgba(239, 68, 68, 0.05); font-size: 13px;">Logout</a>
         </div>
     </nav>
 
-    <!-- FIXED RESPONSIVE GRID WRAPPER CONTAINER: Spreads layout elements side-by-side -->
     <main style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 30px; margin-top: 25px; align-items: start; box-sizing: border-box; width: 100%; max-width: 1280px; padding: 0 20px; margin-left: auto; margin-right: auto;">
-        <!-- LEFT COLUMN: Requests Queue & Search -->
+        <!-- LEFT COLUMN -->
         <div>
             <div class="card">
                 <h2>Request a Movie or TV Show</h2>
@@ -103,7 +102,6 @@
                 </div>
                 <div id="results" class="results-grid"></div>
             </div>
-
 
             <div class="card">
                 <h2>Your Previous Requests</h2>
@@ -119,7 +117,6 @@
                         {% for req in requests %}
                         <tr id="row-{{ req.id }}">
                             <td style="display: flex; align-items: center; gap: 12px;">
-                                <!-- ENSURE THE IMAGE LINK SAYS req.poster EXACTLY LIKE THIS -->
                                 <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;" onerror="this.onerror=null; this.src='https://placehold.co';">
                                 <span>{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
                             </td>
@@ -135,19 +132,16 @@
                 </table>
             </div>
             
-                  <!-- Channel Fault Help Desk Station Added Right Here inside Left Column Stack -->
+            <!-- Channel Fault Help Desk -->
             <div class="card">
                 <h2>Report a Channel Issue</h2>
                 <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Search your live channel lineup below to file a broken stream report ticket straight to admin.</p>
                 <div style="position: relative; margin-bottom: 15px;">
-                    <!-- INPUT MATCH ID -->
-                    <input type="text" id="channel-search-input" oninput="searchChannelsLive()" placeholder="Type channel name here (e.g. Sky Sports)..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; border-color: #475569;">
+                    <input type="text" id="channel-search-input" oninput="searchChannelsLive()" placeholder="Type channel name here (e.g. Sky Sports)..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
                     
-                    <!-- DYNAMIC FLOATING DROPDOWN CONTAINER BOX -->
                     <div id="channel-dropdown-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: #1e293b; border: 1px solid #475569; border-radius: 6px; max-height: 200px; overflow-y: auto; z-index: 999; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);"></div>
                 </div>
 
-                <!-- HIDDEN DATA ATTRIBUTES BUFFER ROW METRICS -->
                 <div id="channel-reporting-options" style="display: none; margin-top: 15px; border-top: 1px solid #334155; padding-top: 15px;">
                     <span style="display: block; font-size: 13px; margin-bottom: 8px; color: #cbd5e1;">Selected Stream: <b id="selected-channel-display" style="color: #fff;">None</b></span>
                     <input type="hidden" id="selected-channel-id">
@@ -161,18 +155,17 @@
                     </select>
                     <button onclick="submitChannelReport()" style="width: 100%; background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit Stream Report Ticket</button>
                 </div>
-                        </div> <!-- Closes your Channel Issue Card element container -->
+            </div>
 
-            <!-- COMPLETE UNIFIED VOD FAULT TICKETS CARD (NESTED ENTIRELY ON THE LEFT SIDE) -->
+            <!-- VOD Fault Ticket -->
             <div class="card" style="background-color: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.3); margin-top: 25px;">
-                <h2 style="color: #f59e0b; margin-top:0;"><i class="fa-solid fa-film" style="margin-right: 8px;"></i> Report a VOD Issue</h2>
-                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Search for your broken movie or show file below to submit an internal fault alert ticket directly to admin.</p>
+                <h2 style="color: #f59e0b; margin-top:0;">Report a VOD Issue</h2>
+                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Search for your broken movie or show file below to submit a fault alert ticket directly to admin.</p>
                 
                 <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Search Movie or Show Title:</label>
                 <div style="position: relative; margin-bottom: 15px;">
                     <input type="text" id="vod-search-box" oninput="searchVodCatalogDropdown(this.value)" placeholder="Type title here (e.g. Gladiator)..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
                     
-                    <!-- VOD AUTOCOMPLETE POPUP PANEL DROPDOWN -->
                     <div id="vod-results-popup" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: #1e293b; border: 1px solid #475569; border-radius: 6px; max-height: 180px; overflow-y: auto; z-index: 999; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);"></div>
                 </div>
 
@@ -182,7 +175,6 @@
                     <input type="hidden" id="selected-vod-type">
                     
                     <label style="display: block; font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Select Fault Category:</label>
-                    <!-- FIXED DROPDOWN: Fires a visual display switcher when changing values -->
                     <select id="vod-issue-type" onchange="toggleVodOtherTextInput(this.value)" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; margin-bottom: 15px; cursor: pointer;">
                         <option value="Video Buffering / Constantly Freezing">⚠️ Video Buffering / Freezing</option>
                         <option value="Missing Subtitles / Wrong Language">🔊 Missing Subtitles / Audio Layout</option>
@@ -191,25 +183,20 @@
                         <option value="Other">📝 Other (Type Custom Fault Reason)</option>
                     </select>
 
-                    <!-- NEW DYNAMIC INPUT CELL: Hidden by default, slides down on "Other" selection -->
                     <div id="vod-custom-notes-wrapper" style="display: none; margin-bottom: 15px;">
                         <label style="display: block; font-size: 11px; color: #facc15; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Custom Fault Details (Max 100 Characters):</label>
                         <input type="text" id="vod-custom-issue-text" maxlength="100" placeholder="e.g. Pixelated at 45 mins / Subtitles are out of sync..." style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #1e293b; border: 1px solid #eab308; border-radius: 6px; color: white; font-size: 13px; outline: none;">
                     </div>
 					
-                    <!-- FIXED TRIGGER: Restored to point perfectly straight to your active text-capturing script function! -->
                     <button onclick="submitVodFaultTicket(this)" style="width: 100%; background: linear-gradient(90deg, #d97706, #f59e0b); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit VOD Report Ticket</button>
+                </div>
+            </div>
+        </div>
 
-        </div> <!-- SAFELY CLOSES YOUR ENTIRE LEFT STACK ROW COLUMN! -->
-
-        <!-- OPENS UP YOUR CLEAN DEDICATED RIGHT SIDE BAR COLUMN LAYER -->
+        <!-- RIGHT COLUMN -->
         <div>
- 
-
-            <!-- RIGHT COLUMN: Unified Payments & Reward Center -->
-        <div>
-            <!-- MODULE 1: Referral Tracking Wallet Display Header -->
-            <div class="card" style="background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <!-- Referral Wallet -->
+            <div class="card" style="background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <span style="font-size: 11px; color: #4ade80; display: block; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Your Referral Reward Wallet</span>
                     <strong style="color: #ffffff; font-size: 20px; display: block; margin-top: 2px;">£<span id="wallet-balance-display">0.00</span></strong>
@@ -217,7 +204,7 @@
                 <button onclick="applyReferralDiscount()" id="redeem-btn" style="background-color: #16a34a; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; display: none; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Redeem £25 Off Renewal</button>
             </div>
 
-            <!-- MODULE 2: Multi-Connection PayPal Renewal Gateway -->
+            <!-- Renewal -->
             <div class="card border-alert" style="border: 1px solid rgba(234,179,8,0.3); background-color: #1e293b; padding: 25px; border-radius: 12px; margin-bottom: 25px;">
                 <h2 class="text-yellow" style="color: #facc15; margin-top:0;">Renew Subscription</h2>
                 <p style="font-size: 14px; color: #94a3b8; margin-bottom: 20px;">Extend your active premium IPTV line instantly. Choose your device connections below.</p>
@@ -232,17 +219,17 @@
                     </select>
                 </div>
 
-                <div class="plan-box" style="background-color: #020617; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #334155; margin-bottom: 20px;">
-                    <span id="plan-title-display" class="plan-title" style="font-size: 12px; text-transform: uppercase; color: #94a3b8; display: block; margin-bottom: 5px;">Premium 1-Year (1 Connection)</span>
-                    <span id="plan-price-display" class="plan-price" style="font-size: 28px; font-weight: 900; color: #ffffff;">£75.00</span>
-                    <span id="discount-note" style="display: block; font-size: 11px; color: #ef4444; margin-top: 8px; font-weight: bold; display: none;">💰 Referral Discount Applied!</span>
+                <div class="plan-box">
+                    <span id="plan-title-display" class="plan-title">Premium 1-Year (1 Connection)</span>
+                    <span id="plan-price-display" class="plan-price">£75.00</span>
+                    <span id="discount-note" style="display: none; font-size: 11px; color: #ef4444; margin-top: 8px; font-weight: bold;">💰 Referral Discount Applied!</span>
                 </div>
                 
                 <div id="paypal-button-container"></div>
             </div>
 
-                        <!-- MODULE 3: Refer-a-Friend Secure Automation Panel -->
-            <div class="card" style="background-color: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px;">
+            <!-- Refer a Friend -->
+            <div class="card" style="background-color: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px;">
                 <h2 style="color: #4ade80; margin-top:0;">Refer a Friend (1-Year Line)</h2>
                 <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Purchase a premium 12-Month line for a friend. Input their names below and complete checkout to auto-generate their account logins instantly.</p>
                 
@@ -282,14 +269,10 @@
                     <span style="display: block; font-size: 11px; color: #94a3b8; margin-top: 8px;">Copy these premium logins and give them to your friend!</span>
                 </div>
             </div>
-
-            
+        </div>
     </main>
 
-     
-
-           
-        	    <!-- Load standard PayPal Smart Buttons Platform with Live Production Keys -->
+    <!-- Load PayPal Smart Buttons SDK with Live Production Keys -->
     <script src="https://www.paypal.com/sdk/js?client-id=ATdPR1St1opgGEMuPFAy_fB40wlVWHQROIw6QcFUzNETlUOORBD-dYxoQVr6I4xHfIqALFi28mBxfTJx&currency=GBP"></script>
     
     <script>
@@ -298,7 +281,7 @@
         let currentPrice = "75.00";
         let currentConnections = "1";
         let discountDeduction = 0.00;
-        let maxAvailableWalletBalance = 0.00; // Track their true full balance limit
+        let maxAvailableWalletBalance = 0.00;
 
         async function fetchWalletBalance() {
             try {
@@ -307,10 +290,8 @@
                 
                 maxAvailableWalletBalance = parseFloat(data.balance) || 0.00;
                 
-                // Live sync the numeric wallet balance indicator text
                 document.getElementById('wallet-balance-display').innerText = maxAvailableWalletBalance.toFixed(2);
                 
-                // Show the redeem button if they have ANY credit balance greater than zero
                 if (maxAvailableWalletBalance > 0) {
                     const redeemBtn = document.getElementById('redeem-btn');
                     redeemBtn.innerText = `Redeem £${maxAvailableWalletBalance.toFixed(2)} Off Balance`;
@@ -330,12 +311,9 @@
             
             calculateFinalPrice();
         }
-                // --- FIXED REFERRAL WALLET ARITHMETIC ENGINE ---
+
         function applyReferralDiscount() {
-            // Converts current selection price context to numbers safely
             const renewalCost = parseFloat(basePrice);
-            
-            // CAP VALVE: Only subtract what is needed! Keeps the remaining balance safe.
             if (maxAvailableWalletBalance >= renewalCost) {
                 discountDeduction = renewalCost; 
             } else {
@@ -372,7 +350,6 @@
             document.getElementById('plan-title-display').innerText = `Premium 1-Year (${currentConnections} Connections)`;
             document.getElementById('plan-price-display').innerText = `£${currentPrice}`;
         }
-
 
         // --- MULTI-CONNECTION SUBSCRIPTION RENEWAL CHECKOUT ENGINE ---
         let paypalButtonInstance = null;
@@ -423,7 +400,6 @@
             paypalButtonInstance.render('#paypal-button-container');
         }
 
-                // --- NEW DIRECT ENDPOINT CONSOLE HANDLER FOR FREE CHECKOUTS ---
         async function processFreeWalletRenewal() {
             if (!confirm("Are you sure you want to redeem your wallet balance to claim this 100% free subscription extension?")) return;
             
@@ -451,23 +427,21 @@
                 alert("Redemption engine timeout. Please contact admin.");
             }
         }
-        // --- 3. AUTOMATED REFER-A-FRIEND ACCOUNT REGISTRATION GATEWAY ---
+
+        // --- 3. REFER-A-FRIEND PAYPAL BUTTONS ---
         function renderReferralPayPalButtons() {
-            // Clears any duplicate container elements out before mounting fresh instances
             const container = document.getElementById('paypal-referral-container');
             if (!container) return;
             
             paypal.Buttons({
                 createOrder: function(data, actions) {
-                    // Extract the values straight from the inputs on click
                     const firstName = document.getElementById('ref-first-name').value.trim();
                     const lastName = document.getElementById('ref-last-name').value.trim();
                     const phoneNumber = document.getElementById('ref-phone-number').value.trim();
                     
-                    // MANDATORY FIELDS GATEWAY: Blocks the user instantly if ANY field is empty!
                     if (!firstName || !lastName || !phoneNumber) {
-                        alert('⚠️ CRITICAL ENTRY ERROR: You must provide your friend\'s First Name, Last Name, AND Mobile Phone Number before you can proceed to payment!');
-                        return false; // Tells the PayPal SDK to completely halt execution window launch loops
+                        alert('⚠️ You must provide your friend\'s First Name, Last Name, AND Mobile Phone Number before you can proceed to payment!');
+                        return false;
                     }
                     
                     return actions.order.create({
@@ -485,7 +459,6 @@
                         const phoneNumber = document.getElementById('ref-phone-number').value.trim();
                         const receipt = document.getElementById('referral-success-receipt');
 
-                        // Secure transmission tunnel down to your appy.py endpoint route
                         const response = await fetch('/create_referral_line', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -502,7 +475,6 @@
                             document.getElementById('rec-pass').innerText = resData.generated_pass;
                             receipt.style.display = 'block';
                             
-                            // Wipe all input cards clean now that the operation was fully processed
                             document.getElementById('ref-first-name').value = '';
                             document.getElementById('ref-last-name').value = '';
                             document.getElementById('ref-phone-number').value = '';
@@ -515,32 +487,35 @@
             }).render('#paypal-referral-container');
         }
 
-                // --- 4. SECURE FIELD INPUT VALIDATION MASK MAPPING ENGINE ---
+        // --- 4. FORM VALIDATION FOR REFERRAL ---
         function validateReferralFormInputs() {
             const firstName = document.getElementById('ref-first-name').value.trim();
             const lastName = document.getElementById('ref-last-name').value.trim();
             const phoneNumber = document.getElementById('ref-phone-number').value.trim();
             
             const errorBanner = document.getElementById('referral-form-error');
-            const lockoutMask = document.getElementById('paypal-referral-lockout-mask');
+            const buttonMask = document.getElementById('paypal-referral-lockout-mask');
             
             let missingFields = [];
-            if (!firstName) missingFields.push("Friend's First Name");
-            if (!lastName) missingFields.push("Friend's Last Name");
-            if (!phoneNumber) missingFields.push("Friend's Mobile / Phone Number");
+            if (!firstName) missingFields.push("First Name");
+            if (!lastName) missingFields.push("Last Name");
+            if (!phoneNumber) missingFields.push("Mobile / Phone Number");
             
             if (missingFields.length > 0) {
-                errorBanner.innerHTML = `🔒 <b>PAYMENT SYSTEM LOCKED:</b> Please input the following field parameters to unlock checkout:<br>• ${missingFields.join('<br>• ')}`;
-                errorBanner.style.display = 'block';
-                lockoutMask.style.pointerEvents = 'none';
-                lockoutMask.style.opacity = '0.3';
-            } else {
-                errorBanner.style.display = 'none';
-                errorBanner.innerHTML = '';
-                lockoutMask.style.pointerEvents = 'auto';
-                lockoutMask.style.opacity = '1.0';
+                errorBanner.innerHTML = `❌ ENTRY ERROR: You must enter your friend's <b>${missingFields.join(', ')}</b> to unlock checkout.`;
+                errorBanner.style.color = '#f87171';
+                buttonMask.style.pointerEvents = 'none';
+                buttonMask.style.opacity = '0.25';
+                return false;
             }
+            
+            errorBanner.innerHTML = "✅ All fields completed perfectly! PayPal buttons unlocked.";
+            errorBanner.style.color = '#4ade80';
+            buttonMask.style.pointerEvents = 'auto';
+            buttonMask.style.opacity = '1.0';
+            return true;
         }
+
         async function searchMedia() {
             const query = document.getElementById('search-input').value;
             const resultsDiv = document.getElementById('results');
@@ -623,8 +598,8 @@
                 alert('Payload error parsing.');
             }
         }
-		
-              // --- 6. CROWD-SOURCED LIVE TV SEARCH AND AUTO-BUILD SYSTEM ---
+
+        // --- Channel search & reporting ---
         let channelSearchTimeout;
         async function searchChannelsLive() {
             clearTimeout(channelSearchTimeout);
@@ -644,7 +619,6 @@
                     
                     dropdown.innerHTML = '';
                     
-                    // IF CHANNEL NOT FOUND: Dynamic crowd-sourcing injector pops open!
                     if (channels.length === 0) {
                         dropdown.innerHTML = `
                             <div style="padding: 12px; background-color: #0f172a; text-align: center; border-bottom: 1px solid #334155;">
@@ -656,11 +630,12 @@
                         return;
                     }
 
-                    
-                    // If channels are found, render the choices normally
                     channels.forEach(item => {
                         const div = document.createElement('div');
-                        div.style.padding = '10px 15px'; div.style.cursor = 'pointer'; div.style.borderBottom = '1px solid #334155'; div.style.fontSize = '13px';
+                        div.style.padding = '10px 15px'; 
+                        div.style.cursor = 'pointer'; 
+                        div.style.borderBottom = '1px solid #334155'; 
+                        div.style.fontSize = '13px';
                         div.innerHTML = `📺 <strong>${item.name}</strong> <span style="font-size:11px; color:#64748b;">(ID: ${item.id})</span>`;
                         
                         div.onmouseover = () => div.style.backgroundColor = '#334155';
@@ -680,12 +655,10 @@
             }, 300);
         }
 
-                // --- NEW COMPONENT ADDED: HANDLES THE DYNAMIC USER INJECTION REQUESTS ---
         async function injectNewCrowdSourcedChannel(typedName) {
             const randomStreamId = "LOCAL-" + Math.floor(10000 + Math.random() * 90000);
             
             try {
-                // UNLOCKED PUBLIC GATEWAY: Replaces the duplicate block to route safely past 403 locks
                 const response = await fetch('/submit_crowdsourced_channel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -706,9 +679,36 @@
             } catch (err) { alert("Database injection timeout."); }
         }
 
+        async function submitChannelReport() {
+            const chName = document.getElementById('selected-channel-display').innerText;
+            const chId = document.getElementById('selected-channel-id').value;
+            const issue = document.getElementById('channel-issue-select').value;
+            
+            try {
+                const response = await fetch('/submit_channel_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel_name: chName,
+                        channel_id: chId,
+                        issue_type: issue
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    alert('Thank you! The line report has been successfully logged. Admin has been notified.');
+                    document.getElementById('channel-search-input').value = '';
+                    document.getElementById('channel-reporting-options').style.display = 'none';
+                } else {
+                    alert('Report channel failed to submit. Please refresh page.');
+                }
+            } catch (err) {
+                alert('Connection failure recording ticket error code block.');
+            }
+        }
 
-		
-		        // --- VOD SEARCH AUTOMATION DROPDOWN FOR USER TICKETS ---
+        // --- VOD dropdown & ticket ---
         async function searchVodCatalogDropdown(queryText) {
             const popup = document.getElementById('vod-results-popup');
             if (queryText.trim().length < 2) { popup.style.display = 'none'; return; }
@@ -727,7 +727,10 @@
                     const year = (item.release_date || item.first_air_date || 'VOD').split('-')[0];
                     
                     const div = document.createElement('div');
-                    div.style.padding = '10px 15px'; div.style.cursor = 'pointer'; div.style.borderBottom = '1px solid #334155'; div.style.fontSize = '13px';
+                    div.style.padding = '10px 15px'; 
+                    div.style.cursor = 'pointer'; 
+                    div.style.borderBottom = '1px solid #334155'; 
+                    div.style.fontSize = '13px';
                     div.innerHTML = `🎬 <strong>${title}</strong> <span style="font-size:11px; color:#64748b;">(${year}) [${type.toUpperCase()}]</span>`;
                     
                     div.onmouseover = () => div.style.backgroundColor = '#334155';
@@ -739,7 +742,6 @@
                         document.getElementById('selected-vod-title').value = title;
                         document.getElementById('selected-vod-type').value = type;
                         
-                        // FIXED VISIBILITY TRIGGER: Cleared syntax typo to display options on click!
                         const optionsRow = document.getElementById('vod-reporting-options');
                         optionsRow.style.display = 'block';
                         
@@ -751,46 +753,6 @@
             } catch (e) { console.error("VOD dropdown lookup crash:", e); }
         }
 
-        // Close dropdown panels automatically if user clicks away on the screen layout
-        document.addEventListener('click', function(e) {
-            const vodBox = document.getElementById('vod-search-box');
-            const vodPopup = document.getElementById('vod-results-popup');
-            if (vodBox && vodPopup && !vodBox.contains(e.target) && !vodPopup.contains(e.target)) {
-                vodPopup.style.display = 'none';
-            }
-        });
-
-			
-			async function submitChannelReport() {
-				const chName = document.getElementById('selected-channel-display').innerText;
-				const chId = document.getElementById('selected-channel-id').value;
-				const issue = document.getElementById('channel-issue-select').value;
-				
-				try {
-					const response = await fetch('/submit_channel_report', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							channel_name: chName,
-							channel_id: chId,
-							issue_type: issue
-						})
-					});
-					
-					const data = await response.json();
-					if (data.success) {
-						alert('Thank you! The line report has been successfully logged. Admin has been notified.');
-						document.getElementById('channel-search-input').value = '';
-						document.getElementById('channel-reporting-options').style.display = 'none';
-					} else {
-						alert('Report channel failed to submit. Please refresh page.');
-					}
-				} catch (err) {
-					alert('Connection failure recording ticket error code block.');
-				}
-			}
-
-		        // --- NEW COMPONENT ADDED: HANDLES OTHER CHOICE TOGGLES ---
         function toggleVodOtherTextInput(chosenValue) {
             const wrapper = document.getElementById('vod-custom-notes-wrapper');
             const inputField = document.getElementById('vod-custom-issue-text');
@@ -799,17 +761,14 @@
                 inputField.focus();
             } else {
                 wrapper.style.display = 'none';
-                inputField.value = ''; // Clears text if they switch back to a standard option
+                inputField.value = '';
             }
         }
 
-          // --- 7. UNIFIED PRODUCTION VOD TICKETING CONTROLLER ---
         async function submitVodFaultTicket(btn) {
             const title = document.getElementById('selected-vod-title').value;
             const type = document.getElementById('selected-vod-type').value || 'movie';
             const issue = document.getElementById('vod-issue-type').value;
-            
-            // FIXED EXTRACTION LAYER: Securely pulls whatever text is typed inside your free-text input box
             const notesField = document.getElementById('vod-custom-issue-text');
             const customNotes = notesField ? notesField.value.trim() : "";
             
@@ -828,65 +787,43 @@
                         title: title, 
                         media_type: type, 
                         issue_type: issue,
-                        issue_notes: customNotes // FIXED: Reliably binds your typed notes to your data streams!
+                        issue_notes: customNotes
                     })
                 });
                 const data = await response.json();
                 if (data.success) {
                     alert('🎉 Success! VOD catalog fault ticket successfully logged.');
-                    window.location.reload(); // Instantly flushes your browser view to render updates cleanly
-                } else { alert('Error: ' + data.message); }
-            } catch (err) { alert('Connection timeout. Try again.'); }
+                    window.location.reload();
+                } else { 
+                    alert('Error: ' + data.message); 
+                }
+            } catch (err) { 
+                alert('Connection timeout. Try again.'); 
+            }
             btn.disabled = false; 
             btn.innerHTML = originalText;
         }
 
+        // Close dropdown panels if user clicks away
+        document.addEventListener('click', function(e) {
+            const chBox = document.getElementById('channel-search-input');
+            const chPopup = document.getElementById('channel-dropdown-results');
+            if (chBox && chPopup && !chBox.contains(e.target) && !chPopup.contains(e.target)) {
+                chPopup.style.display = 'none';
+            }
 
-			// --- LIVE MULTI-FIELD ENTRY ENFORCEMENT ENGINE ---
-			function validateReferralFormInputs() {
-				const firstName = document.getElementById('ref-first-name').value.trim();
-				const lastName = document.getElementById('ref-last-name').value.trim();
-				const phoneNumber = document.getElementById('ref-phone-number').value.trim();
-				
-				const errorBanner = document.getElementById('referral-form-error');
-				const buttonMask = document.getElementById('paypal-referral-lockout-mask');
-				
-				let missingFields = [];
-				if (!firstName) missingFields.push("First Name");
-				if (!lastName) missingFields.push("Last Name");
-				if (!phoneNumber) missingFields.push("Mobile / Phone Number");
-				
-				// If any form field elements are blank, trigger hardware lockout mask
-				if (missingFields.length > 0) {
-					errorBanner.innerHTML = `❌ ENTRY ERROR: You must enter your friend's <b>${missingFields.join(', ')}</b> to unlock checkout.`;
-					errorBanner.style.color = '#f87171';
-					buttonMask.style.pointerEvents = 'none'; // Unclickable state
-					buttonMask.style.opacity = '0.25'; // Grayed out style
-					return false;
-				}
-				
-				// All entries verified! Wipe banner and clear mask channel
-				errorBanner.innerHTML = "✅ All fields completed perfectly! PayPal buttons unlocked.";
-				errorBanner.style.color = '#4ade80';
-				buttonMask.style.pointerEvents = 'auto'; // Active state
-				buttonMask.style.opacity = '1.0'; // Sharp style
-				return true;
-			}
+            const vodBox = document.getElementById('vod-search-box');
+            const vodPopup = document.getElementById('vod-results-popup');
+            if (vodBox && vodPopup && !vodBox.contains(e.target) && !vodPopup.contains(e.target)) {
+                vodPopup.style.display = 'none';
+            }
+        });
 
-			// Close dropdown panels automatically if user clicks away on the screen layout
-			document.addEventListener('click', function(e) {
-				const chBox = document.getElementById('channel-search-input');
-				const chPopup = document.getElementById('channel-dropdown-results');
-				if (chBox && chPopup && !chBox.contains(e.target) && !chPopup.contains(e.target)) {
-					chPopup.style.display = 'none';
-				}
-			});
-
-			// Initialize form monitoring hooks quietly behind the scenes on load
-			fetchWalletBalance();
-			renderPayPalButtons();
-			renderReferralPayPalButtons();
-			setTimeout(validateReferralFormInputs, 600);
-		</script>
-	</body>
-	</html>
+        // Initialize on load
+        fetchWalletBalance();
+        renderPayPalButtons();
+        renderReferralPayPalButtons();
+        setTimeout(validateReferralFormInputs, 600);
+    </script>
+</body>
+</html>

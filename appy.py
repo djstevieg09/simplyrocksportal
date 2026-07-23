@@ -1137,6 +1137,95 @@ def get_referral_friends():
     return jsonify(results)
 
 
+@app.route('/renew_friend_line', methods=['POST'])
+def renew_friend_line():
+    """
+    User-initiated: renew a referred friend's IPTV line.
+    Called after successful PayPal payment from the dashboard.
+
+    Expects JSON:
+      {
+        "friend_username": "friendUser",
+        "orderID": "PAYPAL-ID",
+        "amount": "75.00",
+        "discount_redeemed": "10.00"
+      }
+
+    Behaviour:
+    - Logs payment under the referrer's username (session user).
+    - Extends friend's expiry_timestamp by 1 year from now in referral_friends.
+    - Credits FRIEND_RENEWAL_BONUS to referrer's wallet.
+    - Sends Telegram notification to admin with all details.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    referrer = session.get('username')
+    friend_username = (data.get('friend_username') or '').strip()
+    order_id = (data.get('orderID') or '').strip()
+    amount_str = (data.get('amount') or '0').strip()
+    discount_str = (data.get('discount_redeemed') or '0').strip()
+
+    if not friend_username or not order_id:
+        return jsonify({'success': False, 'message': 'Missing friend_username or orderID'}), 400
+
+    try:
+        amount_val = float(amount_str)
+    except ValueError:
+        amount_val = 0.0
+    try:
+        discount_val = float(discount_str)
+    except ValueError:
+        discount_val = 0.0
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # 1) Log payment row under referrer
+            cursor.execute('''
+                INSERT INTO payments (username, order_id, amount, status)
+                VALUES (?, ?, ?, 'Completed')
+            ''', (referrer, order_id, f"{amount_val:.2f}", 'Completed'))
+
+            # 2) Extend friend's expiry by 1 year (from now)
+            one_year_ts = int(time.time()) + (365 * 86400)
+            cursor.execute("""
+                UPDATE referral_friends
+                SET expiry_timestamp = ?
+                WHERE LOWER(friend_username) = LOWER(?)
+            """, (one_year_ts, friend_username.lower()))
+
+            # 3) Credit renewal bonus into referrer's referral_wallet
+            cursor.execute("""
+                INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                VALUES (?, ?, 0.0)
+                ON CONFLICT(username) DO UPDATE SET
+                    earned_balance = earned_balance + ?
+            """, (referrer, FRIEND_RENEWAL_BONUS, FRIEND_RENEWAL_BONUS))
+
+            conn.commit()
+
+        readable_expiry = datetime.fromtimestamp(one_year_ts).strftime('%B %d, %Y')
+        send_telegram_alert_direct(
+            f"<b>🔁 FRIEND LINE RENEWAL</b>\n"
+            f"<b>Referrer:</b> <code>{referrer}</code>\n"
+            f"<b>Friend Line:</b> <code>{friend_username}</code>\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>\n"
+            f"<b>Paid:</b> £{amount_val:.2f}\n"
+            f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
+            f"<b>New Local Expiry (Portal):</b> {readable_expiry}"
+        )
+
+        log_activity(referrer, f"Renewed friend line {friend_username} (order {order_id})")
+
+        return jsonify({'success': True, 'message': f"Friend line '{friend_username}' renewed. Admin will extend it on the IPTV panel."})
+    except Exception as e:
+        print(f"RENEW_FRIEND_LINE ERROR: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/admin/reassign_referral_friend', methods=['POST'])
 def admin_reassign_referral_friend():
     """
@@ -1192,14 +1281,20 @@ def admin_reassign_referral_friend():
 
             # Ensure friend exists as a portal user
             cursor.execute(
-                "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                "SELECT username, password FROM portal_users WHERE LOWER(username) = LOWER(?)",
                 (friend_username.lower(),)
             )
-            if not cursor.fetchone():
+            friend_row = cursor.fetchone()
+            if not friend_row:
                 return jsonify({
                     'success': False,
                     'message': f"Friend user '{friend_username}' does not exist in portal_users."
                 }), 400
+
+            # Try to derive a display password for friend
+            # NOTE: We only have hashed password in portal_users; we cannot recover the original.
+            # For manually linked accounts, we'll keep 'N/A' unless you store plain text separately.
+            display_friend_password = 'N/A'
 
             # Check for existing referral_friends rows for this friend
             cursor.execute("""
@@ -1215,7 +1310,7 @@ def admin_reassign_referral_friend():
                     INSERT INTO referral_friends
                         (referrer_username, friend_username, friend_password, expiry_timestamp)
                     VALUES (?, ?, ?, 0)
-                """, (new_referrer, friend_username, 'N/A'))
+                """, (new_referrer, friend_username, display_friend_password))
                 conn.commit()
 
                 log_activity(
@@ -1254,527 +1349,5 @@ def admin_reassign_referral_friend():
                     if old_referrer else
                     "No matching friend record found to reassign."
                 )
-                return jsonify({'success': False, 'message': msg}), 404
+           
 
-            conn.commit()
-
-        log_activity(
-            session.get('username', 'admin'),
-            f"Reassigned referral friend '{friend_username}' to referrer '{new_referrer}'"
-            + (f" (from '{old_referrer}')" if old_referrer else "")
-        )
-
-        return jsonify({
-            'success': True,
-            'message': f"Friend '{friend_username}' is now managed by '{new_referrer}'."
-        })
-    except Exception as e:
-        print(f"ADMIN REASSIGN REFERRAL ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/submit_channel_report', methods=['POST'])
-def submit_channel_report():
-    if not session.get('logged_in'):
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-
-    data = request.json or {}
-    ch_name = data.get('channel_name', '').strip()
-    ch_id = data.get('channel_id', '').strip()
-    issue = data.get('issue_type', '').strip()
-    username = session.get('username')
-
-    if not ch_name or not ch_id or not issue:
-        return jsonify({'success': False, 'message': 'Missing mandatory ticket data parameters.'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO channel_reports (username, channel_name, channel_id, issue_type)
-                VALUES (?, ?, ?, ?)
-            ''', (username, ch_name, ch_id, issue))
-            conn.commit()
-
-        send_telegram_alert_direct(
-            f"<b>📺 LIVE TV STREAM FAULT TICKET</b>\n"
-            f"<b>User:</b> <code>{username}</code>\n"
-            f"<b>Channel:</b> <b>{ch_name}</b>\n"
-            f"<b>Stream ID:</b> <code>{ch_id}</code>\n"
-            f"<b>Issue:</b> {issue}"
-        )
-
-        log_activity(username, f"Channel fault report: {ch_name} (ID {ch_id}) - {issue}")
-
-        return jsonify({'success': True, 'message': 'Stream fault ticket logged.'})
-    except Exception as e:
-        print(f"CHANNEL REPORT ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin')
-def admin_panel():
-    if not is_admin():
-        return "<h3>Access Denied</h3>", 403
-
-    client_expiration_list = []
-    current_timestamp = int(time.time())
-
-    with sqlite3.connect(DB_FILE) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT username, expiry_date, expiry_timestamp FROM user_metadata")
-        cached_users = cursor.fetchall()
-        secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09").lower()
-
-        for user in cached_users:
-            uname = user['username']
-            exp_timestamp = user['expiry_timestamp']
-            readable_date = user['expiry_date']
-
-            if not uname or uname.lower() == secure_admin_username:
-                continue
-
-            if exp_timestamp > 0:
-                try:
-                    days_left = int((exp_timestamp - current_timestamp) / 86400)
-                    if days_left <= 31:
-                        client_expiration_list.append({
-                            'username': uname,
-                            'expiry_date': readable_date,
-                            'days_remaining': days_left,
-                            'status': 'Active'
-                        })
-                except Exception:
-                    pass
-
-        client_expiration_list.sort(key=lambda x: x['days_remaining'])
-
-        cursor.execute("SELECT * FROM requests ORDER BY timestamp DESC")
-        all_requests = cursor.fetchall()
-
-        cursor.execute("SELECT * FROM payments ORDER BY timestamp DESC")
-        all_payments = cursor.fetchall()
-
-        cursor.execute("SELECT * FROM channel_reports ORDER BY timestamp DESC")
-        all_reports = cursor.fetchall()
-
-        cursor.execute("SELECT id, username, title, media_type, issue_type FROM vod_reports ORDER BY timestamp DESC")
-        all_vod_reports = cursor.fetchall()
-
-        cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")
-        all_wallets = cursor.fetchall()
-
-        cursor.execute("SELECT * FROM portal_users ORDER BY created_at DESC")
-        all_portal_users = cursor.fetchall()
-
-        cursor.execute("SELECT * FROM live_channels ORDER BY name ASC")
-        all_live_channels = cursor.fetchall()
-
-        cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
-        spotify_orders = cursor.fetchall()
-
-        cursor.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1")
-        row = cursor.fetchone()
-        latest_announcement = row['message'] if row else ''
-
-        cursor.execute("SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 50")
-        activity_rows = cursor.fetchall()
-
-    return render_template(
-        'admin.html',
-        requests=all_requests,
-        payment_logs=all_payments,
-        channel_reports=all_reports,
-        vod_reports=all_vod_reports,
-        wallets=all_wallets,
-        portal_users=all_portal_users,
-        live_channels=all_live_channels,
-        client_expiration_list=client_expiration_list,
-        spotify_orders=spotify_orders,
-        latest_announcement=latest_announcement,
-        activity_rows=activity_rows
-    )
-
-
-@app.route('/admin/adjust_user_credit', methods=['POST'])
-def admin_manual_inject_credit_final():
-    if not is_admin():
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    data = request.json or {}
-    target_user = data.get('target_username') or data.get('username') or data.get('target_user')
-    if target_user:
-        target_user = str(target_user).strip()
-
-    try:
-        amount_float = float(data.get('amount', 0.0))
-    except (ValueError, TypeError):
-        return jsonify({'success': False, 'message': 'Invalid amount'}), 400
-
-    if not target_user:
-        return jsonify({'success': False, 'message': 'Target username is mandatory'}), 400
-
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT username FROM referral_wallets WHERE LOWER(username) = LOWER(?)", (target_user.lower(),))
-        existing_row = cursor.fetchone()
-        matched_username = existing_row[0] if existing_row else target_user
-        if not existing_row:
-            cursor.execute("INSERT INTO referral_wallets (username, earned_balance, spent_balance) VALUES (?, 0.0, 0.0)", (matched_username,))
-        cursor.execute("UPDATE referral_wallets SET earned_balance = earned_balance + ? WHERE LOWER(username) = LOWER(?)", (amount_float, matched_username.lower()))
-        conn.commit()
-
-    send_telegram_alert_direct(
-        f"<b>⚙️ MANUAL CREDIT</b>\n"
-        f"<b>User:</b> <code>{matched_username}</code>\n"
-        f"<b>Amount:</b> +£{amount_float:.2f}"
-    )
-
-    log_activity(session.get('username', 'admin'), f"Manual credit +£{amount_float:.2f} to {matched_username}")
-
-    return jsonify({'success': True, 'message': f'Credited £{amount_float} to user {matched_username}.'})
-
-
-@app.route('/admin/update_status/<int:req_id>', methods=['POST'])
-def update_status(req_id):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    data = request.json or {}
-    status = data.get('status', 'Completed')
-
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE requests SET status = ? WHERE id = ?", (status, req_id))
-        conn.commit()
-
-    log_activity(session.get('username', 'admin'), f"Updated request {req_id} to {status}")
-
-    return jsonify({'success': True, 'message': f'Status updated to {status}'})
-
-
-@app.route('/admin/delete_request/<int:req_id>', methods=['POST'])
-def delete_request(req_id):
-    if not is_admin():
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM requests WHERE id = ?", (req_id,))
-        conn.commit()
-
-    log_activity(session.get('username', 'admin'), f"Deleted request {req_id}")
-
-    return jsonify({'success': True, 'message': 'Request cleared successfully'})
-
-
-@app.route('/search_channels')
-def search_channels():
-    if not session.get('logged_in'):
-        return jsonify([]), 401
-
-    query = request.args.get('q', '').strip().lower()
-    if not query:
-        return jsonify([])
-
-    matches = []
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT stream_id, name FROM live_channels WHERE LOWER(name) LIKE ? ORDER BY name ASC LIMIT 50",
-                           (f"%{query}%",))
-            rows = cursor.fetchall()
-            for row in rows:
-                matches.append({
-                    'id': str(row['stream_id']),
-                    'name': str(row['name'])
-                })
-    except Exception as e:
-        print(f"LOCAL CHANNEL SEARCH EXCEPTION: {e}")
-
-    return jsonify(matches)
-
-
-@app.route('/logout')
-def logout():
-    username = session.get('username')
-    session.clear()
-    if username:
-        log_activity(username, "Logout")
-    return redirect('/')
-
-
-@app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])
-def complete_manual_renewal(payment_id):
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT username, amount FROM payments WHERE id = ?", (payment_id,))
-            row = cursor.fetchone()
-            if row:
-                username = row[0]
-                cursor.execute("UPDATE payments SET status = 'Completed' WHERE id = ?", (payment_id,))
-                conn.commit()
-                log_activity(session.get('username', 'admin'), f"Marked payment {payment_id} for {username} as Completed")
-                return jsonify({'success': True, 'message': f'Line {username} marked as completed!'})
-            return jsonify({'success': False, 'message': 'Payment ticket not found'}), 404
-    except Exception as e:
-        print(f"MANUAL RENEWAL ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/update_request_status_by_admin/<int:request_id>', methods=['POST'])
-def admin_update_media_status(request_id):
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE requests SET status = 'Completed' WHERE id = ?", (request_id,))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), f"Marked request {request_id} as Completed")
-        return jsonify({'success': True, 'message': 'Request marked as completed!'})
-    except Exception as e:
-        print(f"ADMIN REQUEST UPDATE ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/delete_channel_report_by_admin/<int:report_id>', methods=['POST'])
-def admin_clear_channel_report(report_id):
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM channel_reports WHERE id = ?", (report_id,))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), f"Cleared channel report {report_id}")
-        return jsonify({'success': True, 'message': 'Ticket cleared!'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/submit_vod_report', methods=['POST'])
-def submit_vod_report():
-    if not session.get('logged_in'):
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-
-    data = request.json or {}
-    vod_title = data.get('title', '').strip()
-    media_type = data.get('media_type', '').strip()
-    issue = data.get('issue_type', '').strip()
-    notes = data.get('issue_notes', '').strip()[:100]
-    username = session.get('username')
-
-    if not vod_title or not issue:
-        return jsonify({'success': False, 'message': 'Missing mandatory data parameters.'}), 400
-
-    if issue == "Other" and notes:
-        final_issue_string = f"Other: {notes}"
-    else:
-        final_issue_string = issue
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO vod_reports (username, title, media_type, issue_type)
-                VALUES (?, ?, ?, ?)
-            ''', (username, vod_title, media_type if media_type else 'movie', final_issue_string))
-            conn.commit()
-
-        send_telegram_alert_direct(
-            f"<b>🎬 VOD FAULT</b>\n"
-            f"<b>User:</b> <code>{username}</code>\n"
-            f"<b>Title:</b> {vod_title}\n"
-            f"<b>Type:</b> {str(media_type).upper()}\n"
-            f"<b>Issue:</b> {final_issue_string}"
-        )
-
-        log_activity(username, f"VOD fault report: {vod_title} [{media_type}] - {final_issue_string}")
-
-        return jsonify({'success': True, 'message': 'VOD fault ticket logged!'})
-    except Exception as e:
-        print(f"VOD SUBMISSION ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/add_live_channel', methods=['POST'])
-def admin_add_live_channel():
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
-    data = request.json or {}
-    ch_name = data.get('name', '').strip()
-    stream_id = data.get('stream_id', '').strip()
-
-    if not ch_name or not stream_id:
-        return jsonify({'success': False, 'message': 'Both name and stream ID are mandatory!'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO live_channels (stream_id, name)
-                VALUES (?, ?)
-                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
-            ''', (stream_id, ch_name))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), f"Added/updated live channel {ch_name} (ID {stream_id})")
-        return jsonify({'success': True, 'message': f"Channel '{ch_name}' added."})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/delete_live_channel/<string:stream_id>', methods=['POST'])
-def admin_delete_live_channel(stream_id):
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM live_channels WHERE stream_id = ?", (stream_id.strip(),))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), f"Deleted live channel ID {stream_id}")
-        return jsonify({'success': True, 'message': 'Channel removed!'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/submit_crowdsourced_channel', methods=['POST'])
-def submit_crowdsourced_channel():
-    if not session.get('logged_in'):
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-
-    data = request.json or {}
-    ch_name = data.get('name', '').strip()
-    stream_id = data.get('stream_id', '').strip()
-
-    if not ch_name or not stream_id:
-        return jsonify({'success': False, 'message': 'Missing data parameters'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO live_channels (stream_id, name)
-                VALUES (?, ?)
-                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
-            ''', (stream_id, ch_name))
-            conn.commit()
-        log_activity(session.get('username'), f"User added crowdsourced channel {ch_name} (ID {stream_id})")
-        return jsonify({'success': True, 'message': 'Channel registered.'})
-    except Exception as e:
-        print(f"CROWD-SOURCE ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/amend_user_expiry', methods=['POST'])
-def admin_amend_user_expiry():
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
-    data = request.json or {}
-    target_user = data.get('username', '').strip()
-    new_date_str = data.get('expiry_date', '').strip()
-
-    if not target_user or not new_date_str:
-        return jsonify({'success': False, 'message': 'Missing user or date fields'}), 400
-
-    try:
-        dt_obj = datetime.strptime(new_date_str, '%Y-%m-%d')
-        new_ts = int(time.mktime(dt_obj.timetuple()))
-        readable_date = dt_obj.strftime('%B %d, %Y')
-
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)", (target_user.lower(),))
-            user_exists = cursor.fetchone()
-
-            if user_exists:
-                cursor.execute("UPDATE portal_users SET expiry_date=?, expiry_timestamp=? WHERE LOWER(username)=LOWER(?)",
-                               (readable_date, new_ts, target_user.lower()))
-
-            cursor.execute("""
-                INSERT INTO user_metadata (username, expiry_date, expiry_timestamp, alert_sent)
-                VALUES (?, ?, ?, 0)
-                ON CONFLICT(username) DO UPDATE SET expiry_date=excluded.expiry_date, expiry_timestamp=excluded.expiry_timestamp, alert_sent=0
-            """, (target_user, readable_date, new_ts))
-
-            conn.commit()
-
-        log_activity(session.get('username', 'admin'), f"Amended expiry for {target_user} to {readable_date}")
-
-        return jsonify({'success': True, 'message': f"{target_user}'s expiry updated to {readable_date}."})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/force_db_patch_override')
-def admin_force_db_patch_override():
-    secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or "djstevieg09").lower()
-    if not session.get('logged_in') or str(session.get('username', '')).lower() != secure_admin_username:
-        return "Unauthorized", 403
-
-    log_messages = []
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(vod_reports)")
-            columns = [row[1] for row in cursor.fetchall()]
-            log_messages.append(f"Columns: {columns}")
-            if 'issue_notes' not in columns:
-                cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
-                conn.commit()
-                log_messages.append("Added issue_notes column.")
-            else:
-                log_messages.append("issue_notes already exists.")
-        return f"<h3>DB Patch:</h3><p>{'<br>'.join(log_messages)}</p>"
-    except Exception as e:
-        return f"<h3>Error:</h3><p>{str(e)}</p>", 500
-
-
-@app.route('/delete_vod_report_by_admin/<int:report_id>', methods=['POST'])
-def admin_clear_vod_report(report_id):
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM vod_reports WHERE id = ?", (report_id,))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), f"Cleared VOD report {report_id}")
-        return jsonify({'success': True, 'message': 'VOD ticket cleared.'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/set_announcement', methods=['POST'])
-def admin_set_announcement():
-    """Admin: set a new active announcement."""
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-    data = request.json or {}
-    message = data.get('message', '').strip()
-    if not message:
-        return jsonify({'success': False, 'message': 'Announcement message is required.'}), 400
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE announcements SET active = 0")
-            cursor.execute("INSERT INTO announcements (message, active) VALUES (?, 1)", (message,))
-            conn.commit()
-        log_activity(session.get('username', 'admin'), "Updated global announcement")
-        return jsonify({'success': True, 'message': 'Announcement updated.'})
-    except Exception as e:
-        print(f"ANNOUNCEMENT ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)

@@ -32,7 +32,7 @@ DB_FILE = "/data/database.db"
 NOTIFICATION_QUEUE = Queue()
 
 # --- MASTER RESELLER CONFIG ---
-RESELLER_PANEL_URL = "https://theservice.rocks:80"
+RESELLER_PANEL_URL = "http://simplyapple.xyz"
 RESELLER_USERNAME = os.environ.get('RESELLER_USER')
 RESELLER_PASSWORD = os.environ.get('RESELLER_PASS')
 

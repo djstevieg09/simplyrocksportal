@@ -178,22 +178,6 @@
             font-size: 11px;
             font-weight: bold;
         }
-        .pill-small {
-            font-size: 11px;
-            padding: 3px 7px;
-            border-radius: 999px;
-            display: inline-block;
-        }
-        .pill-green {
-            background-color: rgba(22,163,74,0.18);
-            color: #4ade80;
-            border: 1px solid rgba(22,163,74,0.5);
-        }
-        .pill-yellow {
-            background-color: rgba(234,179,8,0.18);
-            color: #facc15;
-            border: 1px solid rgba(234,179,8,0.5);
-        }
         .form-field {
             width: 100%;
             box-sizing: border-box;
@@ -234,15 +218,44 @@
             margin-bottom: 4px;
             font-weight: bold;
         }
-        .announcement-banner {
-            background: linear-gradient(90deg, #4b5563, #111827);
-            border: 1px solid rgba(148,163,184,0.5);
-            color: #e5e7eb;
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 13px;
-            margin: 10px auto 0;
+        /* Announcement marquee */
+        .announcement-wrapper {
             max-width: 1280px;
+            margin: 10px auto 0;
+            padding: 0 12px;
+        }
+        .announcement-banner {
+            position: relative;
+            overflow: hidden;
+            border-radius: 999px;
+            border: 1px solid rgba(251,191,36,0.8);
+            background: linear-gradient(90deg, #b45309, #d97706, #b45309);
+            padding: 6px 14px;
+            box-shadow: 0 0 12px rgba(248,250,252,0.2);
+        }
+        .announcement-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #fef3c7;
+            margin-right: 10px;
+            white-space: nowrap;
+        }
+        .announcement-track {
+            display: inline-block;
+            white-space: nowrap;
+            animation: scroll-announcement 18s linear infinite;
+            color: #fff7ed;
+            font-size: 13px;
+        }
+        @keyframes scroll-announcement {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .announcement-track {
+                animation: none;
+            }
         }
         @media (max-width: 600px) {
             nav h1 { font-size: 16px; }
@@ -264,10 +277,15 @@
     </div>
     {% endif %}
 
-    <!-- Announcement banner -->
+    <!-- Announcement marquee banner -->
     {% if announcement %}
-    <div class="announcement-banner">
-        <span style="font-weight:bold; color:#fbbf24; margin-right:6px;">Announcement:</span>{{ announcement }}
+    <div class="announcement-wrapper">
+        <div class="announcement-banner">
+            <span class="announcement-label">Announcement</span>
+            <span class="announcement-track">
+                {{ announcement }} &nbsp; • &nbsp; {{ announcement }} &nbsp; • &nbsp; {{ announcement }}
+            </span>
+        </div>
     </div>
     {% endif %}
 
@@ -287,7 +305,7 @@
 
     <div class="main-wrapper">
         <div class="grid">
-            <!-- LEFT COLUMN: Requests, friends, channel & VOD reports -->
+            <!-- LEFT COLUMN -->
             <div>
                 <!-- Media search & requests -->
                 <div class="card">
@@ -330,7 +348,7 @@
                     </table>
                 </div>
 
-                <!-- Friends list and renewals (MOVED TO LEFT) -->
+                <!-- Friends referred -->
                 <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
                     <h2>Friends You Referred</h2>
                     <p>Renew your friends’ lines and earn £10 credit per renewal.</p>
@@ -399,7 +417,7 @@
                 </div>
             </div>
 
-            <!-- RIGHT COLUMN: Wallet, IPTV, Spotify, refer-a-friend -->
+            <!-- RIGHT COLUMN -->
             <div>
                 <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
@@ -499,6 +517,8 @@
         let maxAvailableWalletBalance = 0.00;
         let paypalButtonInstance = null;
 
+        let spotifyDiscount = 0.0; // shared discount for Spotify
+
         async function fetchWalletBalance() {
             try {
                 const response = await fetch('/get_referral_balance');
@@ -512,6 +532,8 @@
                 } else {
                     redeemBtn.style.display = 'none';
                 }
+                // Recalculate both IPTV and Spotify displays
+                calculateFinalPrice();
                 updateSpotifyPriceDisplay();
             } catch(e) { console.log("Wallet fetch:", e); }
         }
@@ -524,14 +546,25 @@
             calculateFinalPrice();
         }
 
+        // APPLY DISCOUNT TO IPTV + SPOTIFY AT ONCE
         function applyReferralDiscount() {
+            // IPTV: limit by IPTV renewal cost
             const renewalCost = parseFloat(basePrice);
             discountDeduction = Math.min(maxAvailableWalletBalance, renewalCost);
+
+            // Spotify: limit by Spotify price
+            const spotifyBase = 45.00;
+            spotifyDiscount = Math.min(maxAvailableWalletBalance, spotifyBase);
+
+            // IPTV UI
             const noteSpan = document.getElementById('discount-note');
             noteSpan.innerText = `Wallet Discount: -£${discountDeduction.toFixed(2)}`;
             noteSpan.style.display = 'block';
             document.getElementById('redeem-btn').style.display = 'none';
             calculateFinalPrice();
+
+            // Spotify UI
+            updateSpotifyPriceDisplay();
         }
 
         function calculateFinalPrice() {
@@ -587,6 +620,7 @@
                         const resData = await response.json();
                         if (resData.success) {
                             alert('Your IPTV renewal was processed successfully.');
+                            await fetchWalletBalance();
                             window.location.reload();
                         } else {
                             alert('Payment cleared but database sync failed.');
@@ -616,6 +650,7 @@
                 const resData = await response.json();
                 if (resData.success) {
                     alert('Your free IPTV renewal has been applied!');
+                    await fetchWalletBalance();
                     window.location.reload();
                 } else {
                     alert('Error applying free subscription: ' + resData.message);
@@ -906,7 +941,7 @@
                             document.getElementById('ref-first-name').value = '';
                             document.getElementById('ref-last-name').value = '';
                             document.getElementById('ref-phone-number').value = '';
-                            fetchWalletBalance();
+                            await fetchWalletBalance();
                             fetchReferralFriends();
                             alert('Friend line created. Share the logins below.');
                         } else {
@@ -941,7 +976,6 @@
         }
 
         // --- Spotify PayPal ---
-        let spotifyDiscount = 0.0;
         function updateSpotifyPriceDisplay() {
             const base = 45.00;
             const priceSpan = document.getElementById('spotify-price-display');
@@ -955,12 +989,6 @@
             } else {
                 noteSpan.style.display = 'none';
             }
-        }
-
-        function applySpotifyDiscountUsingWallet(amount) {
-            const base = 45.00;
-            spotifyDiscount = Math.min(maxAvailableWalletBalance, base);
-            updateSpotifyPriceDisplay();
         }
 
         function renderSpotifyPayPalButtons() {
@@ -1006,7 +1034,7 @@
                             document.getElementById('spotify-username').value = '';
                             document.getElementById('spotify-password').value = '';
                             spotifyDiscount = 0.0;
-                            fetchWalletBalance();
+                            await fetchWalletBalance();
                         } else {
                             alert('Order error: ' + dataRes.message);
                         }
@@ -1028,12 +1056,10 @@
                     return;
                 }
                 container.innerHTML = '';
-                const now = Date.now() / 1000;
                 list.forEach(friend => {
                     const wrapper = document.createElement('div');
                     wrapper.style.borderBottom = '1px solid #334155';
                     wrapper.style.padding = '6px 0';
-                    const badgeClass = friend.days_left !== null && friend.days_left <= 7 ? 'pill-yellow' : 'pill-green';
                     wrapper.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                             <div>
@@ -1083,7 +1109,7 @@
                         const dataRes = await response.json();
                         if (dataRes.success) {
                             alert(dataRes.message);
-                            fetchWalletBalance();
+                            await fetchWalletBalance();
                             fetchReferralFriends();
                         } else {
                             alert('Error renewing friend: ' + dataRes.message);

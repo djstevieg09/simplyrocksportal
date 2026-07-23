@@ -1111,14 +1111,34 @@
                     const wrapper = document.createElement('div');
                     wrapper.style.borderBottom = '1px solid #334155';
                     wrapper.style.padding = '6px 0';
+
+                    const daysText = friend.days_left !== null ? `(${friend.days_left} days)` : '';
+                    const expiryLine = friend.expiry_date !== "Unknown"
+                        ? `Expiry: ${friend.expiry_date} ${daysText}`
+                        : 'Expiry: Unknown';
+
+                    const friendIdSafe = friend.friend_username.replace(/[^a-zA-Z0-9_-]/g, '_');
+
                     wrapper.innerHTML = `
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                             <div>
                                 <div><strong>${friend.friend_username}</strong></div>
-                                <div style="font-size:11px; color:#9ca3af;">Expiry: ${friend.expiry_date} ${friend.days_left !== null ? `(${friend.days_left} days)` : ''}</div>
+                                <div style="font-size:11px; color:#9ca3af;">${expiryLine}</div>
+                                <div style="font-size:11px; color:#9ca3af; margin-top:2px;">
+                                    Password:
+                                    <span id="pw-mask-${friendIdSafe}" style="font-family:monospace;">********</span>
+                                    <span id="pw-real-${friendIdSafe}" style="display:none; font-family:monospace;">
+                                        ${friend.friend_password}
+                                    </span>
+                                    <button type="button"
+                                            onclick="toggleFriendPassword('${friendIdSafe}')"
+                                            style="background:none; border:none; color:#60a5fa; font-size:10px; cursor:pointer; padding:0 0 0 4px;">
+                                        Show
+                                    </button>
+                                </div>
                             </div>
                             <button onclick="renewFriendLine('${friend.friend_username}')" 
-                                    style="background:transparent; color:#22c55e; border:1px solid rgba(34,197,94,0.6); padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">
+                                    style="background:transparent; color:#22c55e; border:1px solid rgba(34,197,94,0.6); padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; white-space:nowrap;">
                                 Renew
                             </button>
                         </div>
@@ -1127,6 +1147,20 @@
                 });
             } catch (e) {
                 container.innerHTML = '<p style="color:#f87171;">Error loading friends list.</p>';
+            }
+        }
+
+        function toggleFriendPassword(idSafe) {
+            const maskSpan = document.getElementById('pw-mask-' + idSafe);
+            const realSpan = document.getElementById('pw-real-' + idSafe);
+            if (!maskSpan || !realSpan) return;
+            const isHidden = realSpan.style.display === 'none' || realSpan.style.display === '';
+            if (isHidden) {
+                realSpan.style.display = 'inline';
+                maskSpan.style.display = 'none';
+            } else {
+                realSpan.style.display = 'none';
+                maskSpan.style.display = 'inline';
             }
         }
 

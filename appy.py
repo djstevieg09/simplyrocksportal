@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
 app = Flask(__name__)
-app.secret_key = "simplyrocks_secure_master_portal_key_string_09"
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'simplyrocks_secure_master_portal_key_string_09')
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
@@ -199,12 +199,33 @@ def init_db():
             )
         ''')
 
+        # referral_transactions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS referral_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,         -- the referrer
+                friend_username TEXT,          -- the friend (if applicable)
+                type TEXT NOT NULL,            -- 'NEW_FRIEND' or 'FRIEND_RENEWAL'
+                amount REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Migration for vod_reports.issue_notes
         try:
             cursor.execute("ALTER TABLE vod_reports ADD COLUMN issue_notes TEXT DEFAULT ''")
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
+
+        # Unique index on referral_friends to prevent duplicates
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_referral_unique
+                ON referral_friends (LOWER(referrer_username), LOWER(friend_username))
+            ''')
+        except sqlite3.OperationalError as e:
+            print(f"REFERRAL INDEX NOTICE: {e}")
 
         conn.commit()
 
@@ -512,28 +533,44 @@ def dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
 
+    username = session.get('username')
     days_remaining = None
     show_expiry_warning = False
+    expiry_display = 'Active Line'
 
-    if session.get('password') and session.get('username'):
-        success, user_info = verify_xtream_credentials(DEFAULT_DNS, session['username'], session['password'])
-        if success and user_info:
-            raw_exp = user_info.get('exp_date')
-            if raw_exp and str(raw_exp).strip().lower() not in ['null', '', '0', 'none', 'false']:
-                try:
-                    exp_timestamp = int(raw_exp)
-                    current_timestamp = int(time.time())
-                    seconds_left = exp_timestamp - current_timestamp
-                    days_remaining = int(seconds_left / 86400)
-                    if days_remaining <= 7:
-                        show_expiry_warning = True
-                except Exception:
-                    pass
+    # Fresh expiry from portal_users
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT expiry_date, expiry_timestamp
+                FROM portal_users
+                WHERE LOWER(username) = LOWER(?)
+            """, (username.lower(),))
+            row_exp = cursor.fetchone()
+
+        if row_exp:
+            exp_ts = row_exp['expiry_timestamp'] or 0
+            if exp_ts > 0:
+                expiry_display = datetime.fromtimestamp(exp_ts).strftime('%B %d, %Y')
+                now_ts = int(time.time())
+                days_remaining = int((exp_ts - now_ts) / 86400)
+                if days_remaining <= 7:
+                    show_expiry_warning = True
+            else:
+                expiry_display = 'Unlimited Account'
+        else:
+            expiry_display = session.get('expiry_date', 'Active Line')
+    except Exception as e:
+        print("DASHBOARD EXPIRY LOOKUP ERROR:", e)
+        expiry_display = session.get('expiry_date', 'Active Line')
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM requests WHERE username = ? ORDER BY timestamp DESC", (session['username'],))
+
+        cursor.execute("SELECT * FROM requests WHERE username = ? ORDER BY timestamp DESC", (username,))
         user_requests = cursor.fetchall()
 
         cursor.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1")
@@ -546,14 +583,14 @@ def dashboard():
             WHERE username = ?
             ORDER BY timestamp DESC
             LIMIT 10
-        """, (session['username'],))
+        """, (username,))
         user_payments = cursor.fetchall()
 
         cursor.execute("""
             SELECT earned_balance, spent_balance 
             FROM referral_wallets 
             WHERE LOWER(username) = LOWER(?)
-        """, (session['username'].lower(),))
+        """, (username.lower(),))
         row_wallet = cursor.fetchone()
         if row_wallet:
             total_earned = row_wallet['earned_balance'] or 0.0
@@ -562,18 +599,33 @@ def dashboard():
             total_earned = 0.0
             total_spent = 0.0
 
+        cursor.execute("""
+            SELECT friend_username, type, amount, timestamp
+            FROM referral_transactions
+            WHERE LOWER(username) = LOWER(?)
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """, (username.lower(),))
+        referral_history = cursor.fetchall()
+
+    session['expiry_date'] = expiry_display
+
     return render_template(
         'dashboard.html',
-        username=session['username'],
+        username=username,
         requests=user_requests,
-        expiry_date=session.get('expiry_date', 'Active Line'),
+        expiry_date=expiry_display,
         show_warning=show_expiry_warning,
         days_left=days_remaining,
         announcement=active_announcement,
         payments=user_payments,
         total_earned=total_earned,
-        total_spent=total_spent
+        total_spent=total_spent,
+        new_friend_bonus=NEW_FRIEND_BONUS,
+        friend_renewal_bonus=FRIEND_RENEWAL_BONUS,
+        referral_history=referral_history
     )
+
 
 @app.route('/search_media')
 def search_media():
@@ -794,7 +846,11 @@ def renew_friend_line():
                     earned_balance = earned_balance + ?
             """, (referrer, FRIEND_RENEWAL_BONUS, FRIEND_RENEWAL_BONUS))
 
-            # Deduct wallet if used
+            cursor.execute('''
+                INSERT INTO referral_transactions (username, friend_username, type, amount)
+                VALUES (?, ?, ?, ?)
+            ''', (referrer, friend_username, 'FRIEND_RENEWAL', FRIEND_RENEWAL_BONUS))
+
             if discount_val > 0:
                 cursor.execute("""
                     INSERT INTO referral_wallets (username, earned_balance, spent_balance)
@@ -1168,6 +1224,11 @@ def create_referral_line():
                 ON CONFLICT(username) DO UPDATE SET
                     earned_balance = earned_balance + ?
             ''', (referrer, NEW_FRIEND_BONUS, NEW_FRIEND_BONUS))
+
+            cursor.execute('''
+                INSERT INTO referral_transactions (username, friend_username, type, amount)
+                VALUES (?, ?, ?, ?)
+            ''', (referrer, friend_username, 'NEW_FRIEND', NEW_FRIEND_BONUS))
 
             conn.commit()
 
@@ -1879,4 +1940,4 @@ def logout():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)

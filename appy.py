@@ -1362,6 +1362,42 @@ def admin_reassign_referral_friend():
         print(f"ADMIN REASSIGN REFERRAL ERROR: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/remove_managed_friend', methods=['POST'])
+def remove_managed_friend():
+    """
+    Referrer: remove a managed friend from their referral_friends list.
+    Does NOT delete the friend from portal_users or anywhere else.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    friend_username = (data.get('friend_username') or '').strip()
+    if not friend_username:
+        return jsonify({'success': False, 'message': 'Missing friend_username'}), 400
+
+    referrer = session.get('username')
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM referral_friends
+                WHERE LOWER(referrer_username)=LOWER(?)
+                  AND LOWER(friend_username)=LOWER(?)
+            """, (referrer.lower(), friend_username.lower()))
+            deleted = cursor.rowcount
+            conn.commit()
+
+        if deleted == 0:
+            return jsonify({'success': False, 'message': 'No matching managed friend found.'}), 404
+
+        log_activity(referrer, f"Removed managed friend '{friend_username}'")
+        return jsonify({'success': True, 'message': f"'{friend_username}' removed from your managed list."})
+    except Exception as e:
+        print("REMOVE_MANAGED_FRIEND ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 @app.route('/submit_channel_report', methods=['POST'])
 def submit_channel_report():

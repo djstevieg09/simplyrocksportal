@@ -334,7 +334,14 @@
                                 <td style="display:flex; align-items:center; gap:8px;">
                                     <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;"
                                          onerror="this.onerror=null; this.src='https://placehold.co';">
-                                    <span style="font-size: 13px;">{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
+                                    <div>
+                                        <span style="font-size: 13px;">{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
+                                        {% if req.season_number and req.episode_number %}
+                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }}, Episode {{ req.episode_number }}</div>
+                                        {% elif req.season_number %}
+                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }} (entire season)</div>
+                                        {% endif %}
+                                    </div>
                                 </td>
                                 <td style="text-transform: capitalize;">{{ req.media_type }}</td>
                                 <td><span class="status-badge">{{ req.status }}</span></td>
@@ -1077,11 +1084,16 @@
 
         // --- TMDB media search for requests ---
 
+        // Holds full details for each search result so we can look them up
+        // again when the person picks a season/episode and hits Request.
+        let mediaResultsCache = {};
+
         async function searchMedia() {
             const query = document.getElementById('search-input').value;
             const resultsDiv = document.getElementById('results');
             if(!query) return;
             resultsDiv.innerHTML = '<p style="color:#94a3b8; grid-column:1/-1;">Searching...</p>';
+            mediaResultsCache = {};
             try {
                 const response = await fetch(`/search_media?q=${encodeURIComponent(query)}`);
                 const data = await response.json();
@@ -1098,18 +1110,58 @@
                     let year = 'VOD';
                     if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
                     const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
-                    const payload = { title, year, type: item.media_type, imdbID: "TMDB-" + item.id, poster: posterImg };
-                    const b64Data = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+
+                    const cacheKey = `${item.media_type}-${item.id}`;
+                    mediaResultsCache[cacheKey] = {
+                        title, year, type: item.media_type,
+                        imdbID: "TMDB-" + item.id,
+                        poster: posterImg
+                    };
+
                     const card = document.createElement('div');
                     card.className = "media-card";
-                    card.innerHTML = `
-                        <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
-                        <div class="media-info">
-                            <h4>${title}</h4>
-                            <p>${year} • ${item.media_type.toUpperCase()}</p>
-                            <button onclick="unpackAndSubmit('${b64Data}')" class="req-btn">Request This</button>
-                        </div>
-                    `;
+                    card.dataset.cacheKey = cacheKey;
+
+                    if (item.media_type === 'movie') {
+                        card.innerHTML = `
+                            <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
+                            <div class="media-info">
+                                <h4>${title}</h4>
+                                <p>${year} • MOVIE</p>
+                                <button onclick="submitMovieRequest('${cacheKey}', this)" class="req-btn">Request This</button>
+                            </div>
+                        `;
+                    } else {
+                        // TV shows can be requested as the whole series, a
+                        // specific season, or a specific episode - and the
+                        // season/episode pickers only ever show what has
+                        // actually aired, filtered server-side via TMDB.
+                        card.innerHTML = `
+                            <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
+                            <div class="media-info" style="flex:1;">
+                                <h4>${title}</h4>
+                                <p>${year} • TV</p>
+                                <select class="form-field tv-scope-select" style="margin-bottom:6px; padding:5px; font-size:11px;"
+                                        onchange="handleTvScopeChange('${cacheKey}', this)">
+                                    <option value="series">Entire Series</option>
+                                    <option value="season">Specific Season</option>
+                                    <option value="episode">Specific Episode</option>
+                                </select>
+                                <div class="tv-season-picker" style="display:none; margin-bottom:6px;">
+                                    <select class="form-field tv-season-select" style="padding:5px; font-size:11px;"
+                                            onchange="handleTvSeasonChange('${cacheKey}', this)">
+                                        <option value="">Loading seasons...</option>
+                                    </select>
+                                </div>
+                                <div class="tv-episode-picker" style="display:none; margin-bottom:6px;">
+                                    <select class="form-field tv-episode-select" style="padding:5px; font-size:11px;">
+                                        <option value="">Loading episodes...</option>
+                                    </select>
+                                </div>
+                                <button onclick="submitTvRequest('${cacheKey}', this)" class="req-btn">Request This</button>
+                            </div>
+                        `;
+                    }
                     resultsDiv.appendChild(card);
                 });
             } catch (err) {
@@ -1117,23 +1169,138 @@
             }
         }
 
-        async function unpackAndSubmit(b64Data) {
+        async function handleTvScopeChange(cacheKey, selectEl) {
+            const card = selectEl.closest('.media-card');
+            const seasonPicker = card.querySelector('.tv-season-picker');
+            const episodePicker = card.querySelector('.tv-episode-picker');
+            const scope = selectEl.value;
+
+            if (scope === 'series') {
+                seasonPicker.style.display = 'none';
+                episodePicker.style.display = 'none';
+                return;
+            }
+
+            seasonPicker.style.display = 'block';
+            episodePicker.style.display = (scope === 'episode') ? 'block' : 'none';
+
+            const item = mediaResultsCache[cacheKey];
+            const seasonSelect = card.querySelector('.tv-season-select');
+            seasonSelect.innerHTML = '<option value="">Loading seasons...</option>';
+
             try {
-                const payload = JSON.parse(decodeURIComponent(escape(atob(b64Data))));
+                const resp = await fetch(`/get_tv_seasons?tmdb_id=${encodeURIComponent(item.imdbID)}`);
+                const data = await resp.json();
+                const seasons = data.seasons || [];
+                if (!seasons.length) {
+                    seasonSelect.innerHTML = '<option value="">No released seasons found</option>';
+                    return;
+                }
+                seasonSelect.innerHTML = seasons.map(s =>
+                    `<option value="${s.season_number}">${s.name} (${s.episode_count} episodes)</option>`
+                ).join('');
+
+                if (scope === 'episode') {
+                    await handleTvSeasonChange(cacheKey, seasonSelect);
+                }
+            } catch (e) {
+                seasonSelect.innerHTML = '<option value="">Error loading seasons</option>';
+            }
+        }
+
+        async function handleTvSeasonChange(cacheKey, seasonSelectEl) {
+            const card = seasonSelectEl.closest('.media-card');
+            const scopeSelect = card.querySelector('.tv-scope-select');
+            if (scopeSelect.value !== 'episode') return;
+
+            const episodeSelect = card.querySelector('.tv-episode-select');
+            const seasonNumber = seasonSelectEl.value;
+            if (!seasonNumber) {
+                episodeSelect.innerHTML = '<option value="">Select a season first</option>';
+                return;
+            }
+
+            episodeSelect.innerHTML = '<option value="">Loading episodes...</option>';
+            const item = mediaResultsCache[cacheKey];
+
+            try {
+                const resp = await fetch(`/get_tv_season_episodes?tmdb_id=${encodeURIComponent(item.imdbID)}&season_number=${encodeURIComponent(seasonNumber)}`);
+                const data = await resp.json();
+                const episodes = data.episodes || [];
+                if (!episodes.length) {
+                    episodeSelect.innerHTML = '<option value="">No released episodes found</option>';
+                    return;
+                }
+                episodeSelect.innerHTML = episodes.map(e =>
+                    `<option value="${e.episode_number}">Episode ${e.episode_number}: ${e.name}</option>`
+                ).join('');
+            } catch (e) {
+                episodeSelect.innerHTML = '<option value="">Error loading episodes</option>';
+            }
+        }
+
+        async function submitMovieRequest(cacheKey, btn) {
+            const item = mediaResultsCache[cacheKey];
+            if (!item) { alert('Item data expired, please search again.'); return; }
+            await sendMediaRequest({
+                title: item.title, year: item.year, type: item.type,
+                imdbID: item.imdbID, poster: item.poster
+            }, btn);
+        }
+
+        async function submitTvRequest(cacheKey, btn) {
+            const item = mediaResultsCache[cacheKey];
+            if (!item) { alert('Item data expired, please search again.'); return; }
+
+            const card = btn.closest('.media-card');
+            const scope = card.querySelector('.tv-scope-select').value;
+
+            const payload = {
+                title: item.title, year: item.year, type: item.type,
+                imdbID: item.imdbID, poster: item.poster
+            };
+
+            if (scope === 'season' || scope === 'episode') {
+                const seasonNumber = card.querySelector('.tv-season-select').value;
+                if (!seasonNumber) {
+                    alert('Please select a season.');
+                    return;
+                }
+                payload.season_number = seasonNumber;
+            }
+
+            if (scope === 'episode') {
+                const episodeNumber = card.querySelector('.tv-episode-select').value;
+                if (!episodeNumber) {
+                    alert('Please select an episode.');
+                    return;
+                }
+                payload.episode_number = episodeNumber;
+            }
+
+            await sendMediaRequest(payload, btn);
+        }
+
+        async function sendMediaRequest(payload, btn) {
+            const origText = btn ? btn.innerText : '';
+            if (btn) { btn.disabled = true; btn.innerText = 'Sending...'; }
+            try {
                 const response = await fetch('/submit_request', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 const resData = await response.json();
-                if(resData.success) {
+                if (resData.success) {
                     alert(resData.message);
                     window.location.reload();
                 } else {
                     alert('Request failed to save.');
+                    if (btn) { btn.disabled = false; btn.innerText = origText; }
                 }
             } catch (e) {
                 alert('Payload error.');
+                if (btn) { btn.disabled = false; btn.innerText = origText; }
             }
         }
 

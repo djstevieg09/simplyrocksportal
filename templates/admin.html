@@ -6,43 +6,217 @@
     <title>Admin Panel - SimplyRocks</title>
     <link rel="stylesheet" href="https://cloudflare.com">
     <style>
-        body { background-color: #0f172a; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 0; }
-        nav { background-color: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        nav h1 { color: #facc15; margin: 0; font-size: 20px; }
-        main { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
-        .card { background-color: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 25px; }
-        .card h2 { margin-top: 0; font-size: 20px; margin-bottom: 20px; color: #cbd5e1; }
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-        th { background-color: #334155; padding: 12px; color: #cbd5e1; font-size: 12px; text-transform: uppercase; }
-        td { padding: 12px; border-bottom: 1px solid #334155; vertical-align: middle; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        :root { color-scheme: dark; }
+        body {
+            background-color: #0f172a;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        nav {
+            background-color: #1e293b;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+            position: sticky;
+            top: 0;
+            z-index: 40;
+        }
+        nav h1 {
+            color: #facc15;
+            margin: 0;
+            font-size: 18px;
+        }
+        nav a {
+            color: #cbd5e1;
+            text-decoration: none;
+            font-size: 13px;
+        }
+        .wrapper {
+            max-width: 1280px;
+            margin: 16px auto 40px;
+            padding: 0 10px;
+            box-sizing: border-box;
+        }
+        .card {
+            background-color: #1e293b;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 3px 8px -2px rgba(0,0,0,0.4);
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #cbd5e1;
+        }
+        .section-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .section-header-row h2 {
+            margin-bottom: 0;
+        }
+        .pill-info {
+            background-color: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.4);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 11px;
+            color: #93c5fd;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th {
+            background-color: #334155;
+            padding: 8px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #cbd5e1;
+        }
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #334155;
+            vertical-align: top;
+        }
+        .badge {
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            display: inline-block;
+        }
         .badge-pending { background-color: rgba(234,179,8,0.2); color: #facc15; }
-        .badge-done { background-color: rgba(22,163,74,0.2); color: #4ade80; }
-        .btn { border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; color: white; }
+        .badge-done { background-color: rgba(22,163,74,0.18); color: #4ade80; }
+        .btn {
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            color: white;
+        }
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+        .btn-danger {
+            background: linear-gradient(90deg, #dc2626, #ef4444);
+        }
+        .btn-success {
+            background: linear-gradient(90deg, #16a34a, #22c55e);
+        }
+        .btn-blue {
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+        }
+        .btn-amber {
+            background-color: #eab308;
+            color: #111827;
+        }
+        .badge-chip {
+            font-size: 11px;
+            border-radius: 999px;
+            padding: 2px 8px;
+            display: inline-block;
+        }
+        .badge-chip-yellow {
+            background-color: rgba(234,179,8,0.18);
+            color: #facc15;
+            border: 1px solid rgba(234,179,8,0.4);
+        }
+        .badge-chip-green {
+            background-color: rgba(22,163,74,0.18);
+            color: #4ade80;
+            border: 1px solid rgba(22,163,74,0.4);
+        }
+        .badge-chip-gray {
+            background-color: rgba(148,163,184,0.18);
+            color: #e5e7eb;
+            border: 1px solid rgba(148,163,184,0.4);
+        }
+        .form-field {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 9px;
+            background-color: #334155;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 12px;
+            margin-bottom: 8px;
+            outline: none;
+        }
+        .form-field:focus {
+            border-color: #3b82f6;
+        }
+        .section-title {
+            font-size: 11px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        @media (max-width: 700px) {
+            th, td { font-size: 11px; }
+            .section-header-row { flex-direction: column; align-items: flex-start; }
+        }
     </style>
 </head>
 <body>
     <nav>
-        <h1>SimplyRocks Request Manager Console</h1>
-        <a href="/dashboard" style="color: #cbd5e1; text-decoration: none; font-size: 14px;">← Back to Dashboard</a>
+        <h1>SimplyRocks Admin Console</h1>
+        <a href="/dashboard">← Back to Dashboard</a>
     </nav>
 
-    <main>
-        <!-- Client Expirations -->
+    <div class="wrapper">
+
+        <!-- Announcements -->
+        <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+            <div class="section-header-row">
+                <h2>Global Announcement</h2>
+                <span class="pill-info">Shown on all user dashboards</span>
+            </div>
+            <p style="font-size:12px; color:#94a3b8;">
+                Current message:
+                <span style="color:#e5e7eb; font-weight:bold;">
+                    {% if latest_announcement %}
+                        "{{ latest_announcement }}"
+                    {% else %}
+                        (none set)
+                    {% endif %}
+                </span>
+            </p>
+            <label class="section-title">New Announcement:</label>
+            <textarea id="announcement-text" class="form-field" rows="3" placeholder="Type new announcement message..."></textarea>
+            <button class="btn btn-blue" style="width:100%;" onclick="saveAnnouncement(this)">Save Announcement</button>
+        </div>
+
+        <!-- Expiration matrix -->
         <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Client Account Expirations Countdown Matrix</h2>
-                <button onclick="triggerLivePanelSync(this)" style="background: linear-gradient(90deg, #3b82f6, #2563eb); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: all 0.2s;">
-                    🔄 Sync Live Panel Data
-                </button>
+            <div class="section-header-row" style="margin-bottom:8px; border-bottom:1px solid rgba(148,163,184,0.25); padding-bottom:6px;">
+                <h2>Client Expiration Matrix</h2>
+                <button class="btn btn-blue btn-small" onclick="triggerLivePanelSync(this)">🔄 Sync Live Panel Data</button>
             </div>
             <table>
                 <thead>
                     <tr>
-                        <th>Subscriber Username</th>
-                        <th>Calendar Expiry Date</th>
-                        <th>Current Line Status</th>
-                        <th>Days Left Window</th>
+                        <th>Username</th>
+                        <th>Expiry Date</th>
+                        <th>Status</th>
+                        <th>Days Left</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -50,16 +224,16 @@
                         {% for client in client_expiration_list %}
                         <tr>
                             <td><strong>👤 {{ client.username }}</strong></td>
-                            <td><strong>{{ client.expiry_date }}</strong></td>
+                            <td>{{ client.expiry_date }}</td>
                             <td><span class="badge badge-done">{{ client.status }}</span></td>
                             <td>
                                 {% if client.days_remaining <= 7 %}
-                                    <span class="badge" style="background-color: rgba(220, 38, 38, 0.2); color: #f87171; border: 1px solid rgba(220, 38, 38, 0.4);">
-                                        ⚠️ CRITICAL: {{ client.days_remaining }} Days Left
+                                    <span class="badge-chip badge-chip-yellow" style="border-color:rgba(220,38,38,0.5); color:#fecaca;">
+                                        ⚠️ {{ client.days_remaining }} days
                                     </span>
                                 {% else %}
-                                    <span class="badge" style="background-color: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3);">
-                                        ⏳ {{ client.days_remaining }} Days Left
+                                    <span class="badge-chip badge-chip-yellow">
+                                        ⏳ {{ client.days_remaining }} days
                                     </span>
                                 {% endif %}
                             </td>
@@ -67,8 +241,8 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="4" style="text-align: center; color: #94a3b8; padding: 40px; font-size: 14px; background-color: #020617; border-radius: 8px; border: 1px solid #1e293b;">
-                            ✅ All lines are completely secure! No active client profiles expiring in the next 31 days found.
+                        <td colspan="4" style="text-align:center; color:#64748b; padding:20px;">
+                            No clients expiring within the next 31 days.
                         </td>
                     </tr>
                     {% endif %}
@@ -76,30 +250,31 @@
             </table>
         </div>
 
-        <!-- User Requests -->
+        <!-- Requests queue -->
         <div class="card">
-            <h2>Master User Submissions Queue</h2>
+            <h2>Media Requests Queue</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Media Details</th>
+                        <th>Media</th>
                         <th>Type</th>
-                        <th>Requested By</th>
+                        <th>User</th>
                         <th>Status</th>
-                        <th>Control Actions</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for req in requests %}
                     <tr id="row-{{ req.id }}">
-                        <td style="display: flex; align-items: center; gap: 12px;">
-                            <img src="{{ req.poster }}" style="width: 35px; height: 50px; border-radius: 4px; object-fit: cover;" onerror="this.onerror=null; this.src='https://placehold.co';">
+                        <td style="display:flex; align-items:center; gap:8px;">
+                            <img src="{{ req.poster }}" style="width:30px; height:44px; border-radius:4px; object-fit:cover;"
+                                 onerror="this.onerror=null; this.src='https://placehold.co';">
                             <div>
-                                <strong>{{ req.title }}</strong>
-                                <span style="color: #94a3b8; font-size: 11px; display:block;">({{ req.year or 'VOD' }})</span>
+                                <strong style="font-size:13px;">{{ req.title }}</strong>
+                                <div style="font-size:11px; color:#9ca3af;">({{ req.year or 'VOD' }})</div>
                             </div>
                         </td>
-                        <td style="text-transform: capitalize;">{{ req.media_type }}</td>
+                        <td style="text-transform:capitalize;">{{ req.media_type }}</td>
                         <td><strong>{{ req.username }}</strong></td>
                         <td id="request-badge-cell-{{ req.id }}">
                             <span class="badge {% if req.status == 'Pending' %}badge-pending{% else %}badge-done{% endif %}">
@@ -107,38 +282,36 @@
                             </span>
                         </td>
                         <td id="request-actions-cell-{{ req.id }}">
-                            <div style="display: flex; gap: 8px;">
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
                                 {% if req.status == 'Pending' %}
-                                <button onclick="if(confirm('Mark as Added?')){ markRequestCompleted({{ req.id }}) }" style="background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
-                                    Mark Added
-                                </button>
+                                <button class="btn btn-success btn-small" onclick="markRequestCompleted({{ req.id }})">Mark Added</button>
                                 {% endif %}
-                                <button onclick="if(confirm('Remove this request?')){ deleteRequest({{ req.id }}) }" style="background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
-                                    Remove
-                                </button>
+                                <button class="btn btn-danger btn-small" onclick="deleteRequest({{ req.id }})">Remove</button>
                             </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 40px; font-size: 16px;">The master request queue is currently empty.</td>
+                        <td colspan="5" style="text-align:center; color:#64748b; padding:20px;">
+                            No media requests in queue.
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
-        <!-- Channel Fault Tickets -->
-        <div class="card" style="border: 1px solid rgba(239, 68, 68, 0.3);">
-            <h2 style="color: #ef4444;">Live Stream Fault Tickets Log</h2>
+        <!-- Channel fault tickets -->
+        <div class="card" style="border:1px solid rgba(239,68,68,0.3);">
+            <h2 style="color:#fca5a5;">Live Stream Fault Tickets</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Channel Description</th>
+                        <th>Channel</th>
                         <th>Stream ID</th>
-                        <th>Reported By</th>
-                        <th>Issue Category</th>
-                        <th>Ticket Management Action</th>
+                        <th>User</th>
+                        <th>Issue</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -146,41 +319,39 @@
                         {% for report in channel_reports %}
                         <tr id="report-row-{{ report.id }}">
                             <td><strong>🚨 {{ report.channel_name }}</strong></td>
-                            <td style="font-family: monospace; color: #94a3b8;">{{ report.channel_id }}</td>
+                            <td style="font-family:monospace; color:#9ca3af;">{{ report.channel_id }}</td>
                             <td><strong>{{ report.username }}</strong></td>
                             <td>
-                                <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3);">
-                                    {{ report.issue_type }}
-                                </span>
+                                <span class="badge-chip badge-chip-yellow">{{ report.issue_type }}</span>
                             </td>
                             <td>
-                                <button onclick="clearChannelReport({{ report.id }})" style="background: linear-gradient(90deg, #3b82f6, #60a5fa); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
-                                    Fixed / Clear ✓
-                                </button>
+                                <button class="btn btn-blue btn-small" onclick="clearChannelReport({{ report.id }})">Fixed / Clear ✓</button>
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 30px; font-size: 14px;">No active stream channel error tickets. All streams are healthy!</td>
+                        <td colspan="5" style="text-align:center; color:#64748b; padding:18px;">
+                            No live TV fault tickets.
+                        </td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
 
-        <!-- VOD Fault Tickets -->
-        <div class="card" style="border: 1px solid rgba(245, 158, 11, 0.3);">
-            <h2 style="color: #f59e0b;">VOD (Movies & Series) Fault Tickets Log</h2>
+        <!-- VOD fault tickets -->
+        <div class="card" style="border:1px solid rgba(245,158,11,0.3);">
+            <h2 style="color:#facc15;">VOD Fault Tickets</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Content Title</th>
+                        <th>Title</th>
                         <th>Type</th>
-                        <th>Reported By</th>
-                        <th>Issue Category</th>
-                        <th>Custom Fault Details</th>
-                        <th>Ticket Management Action</th>
+                        <th>User</th>
+                        <th>Issue</th>
+                        <th>Details</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -188,69 +359,57 @@
                         {% for report in vod_reports %}
                         <tr id="vod-report-row-{{ report[0] }}">
                             <td><strong>🎬 {{ report[2] }}</strong></td>
-                            <td style="text-transform: capitalize;">{{ report[3] }}</td>
-                            <td><strong>👤 {{ report[1] }}</strong></td>
+                            <td style="text-transform:capitalize;">{{ report[3] }}</td>
+                            <td><strong>{{ report[1] }}</strong></td>
                             <td>
                                 {% if report[4].startswith('Other:') %}
-                                    <span class="badge" style="background-color: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">
-                                        📝 Custom Issue
-                                    </span>
+                                    <span class="badge-chip badge-chip-yellow" style="border-color:rgba(239,68,68,0.6); color:#fecaca;">Custom</span>
                                 {% else %}
-                                    <span class="badge" style="background-color: rgba(245, 158, 11, 0.15); color: #facc15; border: 1px solid rgba(245, 158, 11, 0.3);">
-                                        ⚠️ {{ report[4] }}
-                                    </span>
+                                    <span class="badge-chip badge-chip-yellow">⚠️ {{ report[4] }}</span>
                                 {% endif %}
                             </td>
                             <td>
                                 {% if report[4].startswith('Other:') %}
-                                    <div style="font-size: 13px; color: #ffffff; background-color: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #eab308; max-width: 300px; word-wrap: break-word; font-style: italic;">
+                                    <div style="font-size:11px; color:#e5e7eb; background-color:rgba(15,23,42,0.7); padding:6px; border-radius:4px; border-left:3px solid #eab308; max-width:220px;">
                                         "{{ report[4][7:] }}"
                                     </div>
                                 {% else %}
-                                    <span style="font-size: 12px; color: #64748b; font-style: italic;">Standard Option Picked</span>
+                                    <span style="font-size:11px; color:#9ca3af; font-style:italic;">Standard option</span>
                                 {% endif %}
                             </td>
                             <td>
-                                <button onclick="clearVodReport({{ report[0] }})" style="background: transparent; color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
-                                    Fixed / Clear ✓
-                                </button>
+                                <button class="btn btn-success btn-small" onclick="clearVodReport({{ report[0] }})">Fixed / Clear ✓</button>
                             </td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="6" style="text-align: center; color: #64748b; padding: 20px;">No custom VOD fault tickets registered yet.</td>
+                        <td colspan="6" style="text-align:center; color:#64748b; padding:18px;">
+                            No VOD fault tickets.
+                        </td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
 
-        <!-- Manual Credit Manager -->
-        <div class="card" style="border: 1px solid rgba(22, 163, 74, 0.3);">
-            <h2 style="color: #4ade80;">Manual User Credit Manager</h2>
-            <p style="font-size: 13px; color: #94a3b8;">Lookup a username below to manually inject or adjust their referral reward wallet balances.</p>
-            
-            <div style="margin-bottom: 15px;">
-                <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Target Username:</label>
-                <input type="text" id="admin-target-user" placeholder="Enter user ID..." style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px;">
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Credit Amount to Add (£):</label>
-                <input type="number" id="admin-credit-amount" placeholder="e.g. 25.00" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px;">
-            </div>
-            
-            <button onclick="submitManualAdminCredit(this)" style="background-color: #16a34a; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; font-size: 13px; width: 100%; cursor: pointer;">
-                ⚡ Save Credit to User Wallet
-            </button>
-
-            <h3 style="font-size: 14px; color: #cbd5e1; margin-top: 25px; border-top: 1px solid #334155; padding-top: 15px;">Active Wallets Overview Ledger</h3>
-            <table style="font-size: 12px;">
+        <!-- Wallet manager -->
+        <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
+            <h2 style="color:#4ade80;">Manual Wallet Credit Manager</h2>
+            <p style="font-size:12px; color:#94a3b8;">
+                Adjust referral wallet balances for any user.
+            </p>
+            <label class="section-title">Target Username:</label>
+            <input type="text" id="admin-target-user" class="form-field" placeholder="e.g. DC-Firestick">
+            <label class="section-title">Credit Amount (£):</label>
+            <input type="number" id="admin-credit-amount" class="form-field" placeholder="e.g. 25.00">
+            <button class="btn btn-success" style="width:100%;" onclick="submitManualAdminCredit(this)">Save Credit</button>
+            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Active Wallets</h3>
+            <table>
                 <thead>
                     <tr>
                         <th>Username</th>
-                        <th>Available Balance</th>
+                        <th>Balance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -258,108 +417,112 @@
                         {% for wallet in wallets %}
                         <tr>
                             <td><strong>👤 {{ wallet.username }}</strong></td>
-                            <td><strong style="color: #4ade80;">£{{ "%.2f"|format(wallet.active_credit) }}</strong></td>
+                            <td><strong style="color:#4ade80;">£{{ "%.2f"|format(wallet.active_credit) }}</strong></td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="2" style="text-align: center; color: #64748b; padding: 15px;">No active credit entries.</td>
+                        <td colspan="2" style="text-align:center; color:#64748b; padding:10px;">No active wallet balances.</td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
 
-        <!-- Portal User Accounts -->
-        <div class="card" style="border: 1px solid rgba(59, 130, 246, 0.3);">
-            <h2 style="color: #60a5fa;">Create & Manage Portal Access Accounts</h2>
-            <p style="font-size: 13px; color: #94a3b8;">Register new standalone customer accounts directly into your portal.</p>
-            
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+        <!-- Portal user management -->
+        <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+            <h2 style="color:#60a5fa;">Portal Access Accounts</h2>
+            <p style="font-size:12px; color:#94a3b8;">
+                Create, update, reset passwords, and delete local portal users.
+            </p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
-                    <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">New Username:</label>
-                    <input type="text" id="new-user-name" placeholder="e.g. Matt-Butler" style="width: 100%; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white;">
+                    <label class="section-title">New Username</label>
+                    <input type="text" id="new-user-name" class="form-field" placeholder="e.g. Matt-Butler">
                 </div>
                 <div>
-                    <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Account Password:</label>
-                    <input type="text" id="new-user-pass" placeholder="Create secure password..." style="width: 100%; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white;">
+                    <label class="section-title">Password</label>
+                    <input type="text" id="new-user-pass" class="form-field" placeholder="Create password">
                 </div>
                 <div>
-                    <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Account Expiration Date:</label>
-                    <input type="date" id="new-user-expiry" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; color-scheme: dark;">
-                </div>
-            </div>
-
-            <button onclick="submitNewPortalAccountCreation(this)" style="width: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer;">
-                👤 Create New Portal User Account
-            </button>
-
-            <h3 style="font-size: 14px; color: #cbd5e1; margin-top: 25px; border-top: 1px solid #334155; padding-top: 15px;">Active Registered Portal Users</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Username</th>
-                        <th>Password Profile (hashed)</th>
-                        <th>Current Calendar Expiry</th>
-                        <th>Amend / Correct Date</th>
-                        <th>Account Management Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if portal_users %}
-                        {% for user in portal_users %}
-                        <tr id="portal-user-row-{{ user.username }}">
-                            <td><strong>👤 {{ user.username }}</strong></td>
-                            <td style="font-family: monospace; color: #94a3b8;"><code>{{ user.password }}</code></td>
-                            <td><span id="current-expiry-display-{{ user.username }}" class="badge" style="background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);">{{ user.expiry_date }}</span></td>
-                            <td>
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <input type="date" id="amend-date-{{ user.username }}" style="padding: 6px; font-size: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 4px; color: white; width: 130px; color-scheme: dark;">
-                                    <button onclick="executeAdminExpiryAmendment('{{ user.username }}')" style="background-color: #eab308; color: #1e293b; border: none; padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">Update</button>
-                                </div>
-                            </td>
-                            <td>
-                                <button onclick="deletePortalUser('{{ user.username }}')" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">Wipe User</button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    {% else %}
-                    <tr>
-                        <td colspan="5" style="text-align: center; color: #64748b; padding: 20px;">No custom portal user account files registered yet.</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Live Channels Management -->
-        <div class="card" style="border: 1px solid rgba(239, 68, 68, 0.3);">
-            <h2 style="color: #f87171;">Populate Master Live TV Channels Database</h2>
-            <p style="font-size: 13px; color: #94a3b8;">Manually register active stream channels into your portal database.</p>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                <div>
-                    <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Channel Name:</label>
-                    <input type="text" id="add-chan-name" placeholder="e.g. Sky Sports Main Event Ultra HD" style="width: 100%; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white;">
-                </div>
-                <div>
-                    <label style="font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Stream ID Key:</label>
-                    <input type="text" id="add-chan-stream-id" placeholder="e.g. 54020" style="width: 100%; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white;">
+                    <label class="section-title">Expiry (YYYY-MM-DD)</label>
+                    <input type="date" id="new-user-expiry" class="form-field">
                 </div>
             </div>
+            <button class="btn btn-blue" style="width:100%;" onclick="submitNewPortalAccountCreation(this)">Create / Update Portal User</button>
 
-            <button onclick="submitNewLiveChannelEntry(this)" style="width: 100%; background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; margin-bottom: 25px;">
-                📺 Register New Live Stream Channel
-            </button>
-
-            <h3 style="font-size: 14px; color: #cbd5e1; margin-bottom: 10px; border-top: 1px solid #334155; padding-top: 15px;">Currently Registered TV Channels</h3>
-            <div style="max-height: 250px; overflow-y: auto;">
+            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Registered Portal Users</h3>
+            <div style="max-height:260px; overflow-y:auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Channel Name</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                            <th>Expiry</th>
+                            <th>Amend</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if portal_users %}
+                            {% for user in portal_users %}
+                            <tr id="portal-user-row-{{ user.username }}">
+                                <td><strong>👤 {{ user.username }}</strong></td>
+                                <td style="font-family:monospace; color:#94a3b8;"><code>****</code></td>
+                                <td>
+                                    <span id="current-expiry-display-{{ user.username }}" class="badge-chip badge-chip-yellow">
+                                        {{ user.expiry_date }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="display:flex; gap:6px; align-items:center;">
+                                        <input type="date" id="amend-date-{{ user.username }}" class="form-field" style="margin-bottom:0; padding:5px; font-size:11px;">
+                                        <button class="btn btn-amber btn-small" onclick="executeAdminExpiryAmendment('{{ user.username }}')">Update</button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                                        <button class="btn btn-blue btn-small" onclick="resetPortalUserPassword('{{ user.username }}')">Reset PW</button>
+                                        <button class="btn btn-danger btn-small" onclick="deletePortalUser('{{ user.username }}')">Wipe</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="5" style="text-align:center; color:#64748b; padding:10px;">No portal users yet.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Live channels management -->
+        <div class="card" style="border:1px solid rgba(239,68,68,0.4);">
+            <h2 style="color:#f87171;">Live Channels Registry</h2>
+            <p style="font-size:12px; color:#94a3b8;">
+                Manage channels available for users to search and report issues against.
+            </p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                <div>
+                    <label class="section-title">Channel Name</label>
+                    <input type="text" id="add-chan-name" class="form-field" placeholder="e.g. Sky Sports Main Event HD">
+                </div>
+                <div>
+                    <label class="section-title">Stream ID</label>
+                    <input type="text" id="add-chan-stream-id" class="form-field" placeholder="e.g. 54020">
+                </div>
+            </div>
+            <button class="btn btn-danger" style="width:100%;" onclick="submitNewLiveChannelEntry(this)">Register Channel</button>
+            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Registered Channels</h3>
+            <div style="max-height:200px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Channel</th>
                             <th>Stream ID</th>
-                            <th>Catalog Actions</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -367,17 +530,57 @@
                             {% for ch in live_channels %}
                             <tr id="chan-row-{{ ch.stream_id }}">
                                 <td><strong>📺 {{ ch.name }}</strong></td>
-                                <td style="font-family: monospace; color: #94a3b8;"><code>{{ ch.stream_id }}</code></td>
+                                <td style="font-family:monospace; color:#9ca3af;"><code>{{ ch.stream_id }}</code></td>
                                 <td>
-                                    <button onclick="deleteChannel('{{ ch.stream_id }}')" style="background: transparent; color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
-                                        Remove
-                                    </button>
+                                    <button class="btn btn-danger btn-small" onclick="deleteChannel('{{ ch.stream_id }}')">Remove</button>
                                 </td>
                             </tr>
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="3" style="text-align: center; color: #64748b; padding: 15px;">No custom live channels saved yet.</td>
+                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px;">No live channels saved.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Spotify orders -->
+        <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+            <h2 style="color:#60a5fa;">Spotify Orders</h2>
+            <p style="font-size:12px; color:#94a3b8;">
+                Review Spotify subscription orders submitted via the portal.
+            </p>
+            <div style="max-height:220px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Portal User</th>
+                            <th>Spotify User</th>
+                            <th>Spotify Pass</th>
+                            <th>Amount</th>
+                            <th>Wallet Used</th>
+                            <th>Status</th>
+                            <th>When</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if spotify_orders %}
+                            {% for order in spotify_orders %}
+                            <tr>
+                                <td><strong>{{ order.portal_username }}</strong></td>
+                                <td style="font-size:11px;">{{ order.spotify_username }}</td>
+                                <td style="font-family:monospace; font-size:11px;">{{ order.spotify_password }}</td>
+                                <td>£{{ "%.2f"|format(order.amount) }}</td>
+                                <td>£{{ "%.2f"|format(order.discount_used) }}</td>
+                                <td>{{ order.status }}</td>
+                                <td style="font-size:11px; color:#9ca3af;">{{ order.timestamp }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="7" style="text-align:center; color:#64748b; padding:10px;">No Spotify orders yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -387,63 +590,121 @@
 
         <!-- Payments -->
         <div class="card">
-            <h2>Master Payment & Purchase History Logs</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Subscriber Line</th>
-                        <th>Reference Order ID</th>
-                        <th>Price & Connection Profile</th>
-                        <th>Fulfilment Status / Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if payment_logs %}
-                        {% for log in payment_logs %}
-                        <tr id="payment-row-{{ log.id }}">
-                            <td><strong>👤 {{ log.username }}</strong></td>
-                            <td style="font-family: monospace; color: #94a3b8;">{{ log.order_id }}</td>
-                            <td style="color: #cbd5e1; font-weight: bold;">{{ log.amount }}</td>
-                            <td id="status-cell-{{ log.id }}">
-                                {% if 'pending' in log.status.lower() %}
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span class="badge" style="background-color: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3);">
-                                        ⏳ PENDING MANUAL EXTENSION
-                                    </span>
-                                    <button onclick="markLineAsCompleted({{ log.id }})" style="background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
-                                        Mark Done ✓
-                                    </button>
-                                </div>
-                                {% elif log.status == 'Completed' %}
-                                    <span class="badge badge-done">✅ COMPLETED</span>
-                                {% else %}
-                                    <span class="badge" style="background-color: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3);">{{ log.status }}</span>
-                                {% endif %}
+            <h2>Payment & Purchase Logs</h2>
+            <div style="max-height:260px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Order ID</th>
+                            <th>Amount</th>
+                            <th>Status / Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if payment_logs %}
+                            {% for log in payment_logs %}
+                            <tr id="payment-row-{{ log.id }}">
+                                <td><strong>👤 {{ log.username }}</strong></td>
+                                <td style="font-family:monospace; color:#9ca3af;">{{ log.order_id }}</td>
+                                <td style="font-weight:bold;">{{ log.amount }}</td>
+                                <td id="status-cell-{{ log.id }}">
+                                    {% if 'pending' in log.status.lower() %}
+                                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                        <span class="badge-chip badge-chip-yellow">⏳ Pending Manual</span>
+                                        <button class="btn btn-success btn-small" onclick="markLineAsCompleted({{ log.id }})">Mark Done ✓</button>
+                                    </div>
+                                    {% elif log.status == 'Completed' %}
+                                        <span class="badge badge-done">✅ COMPLETED</span>
+                                    {% else %}
+                                        <span class="badge-chip badge-chip-gray">{{ log.status }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:18px;">
+                                No payment records logged yet.
                             </td>
                         </tr>
-                        {% endfor %}
-                    {% else %}
-                    <tr>
-                        <td colspan="4" style="text-align: center; color: #64748b; padding: 30px;">No transaction records logged yet.</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </main>
+
+    </div>
 
     <script>
+        // Announcement
+        function saveAnnouncement(btn) {
+            const text = document.getElementById('announcement-text').value.trim();
+            if (!text) {
+                alert("Please type an announcement message.");
+                return;
+            }
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Saving...";
+            fetch('/admin/set_announcement', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Announcement updated.");
+                    window.location.reload();
+                } else {
+                    alert("Error: " + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Server timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        // Expiration sync
+        function triggerLivePanelSync(btnElement) {
+            const orig = btnElement.innerText;
+            btnElement.disabled = true;
+            btnElement.innerText = 'Syncing...';
+            fetch('/sync_live_panel_expirations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+             .then(data => {
+                 if (data.success) {
+                     alert(data.message);
+                     window.location.reload();
+                 } else {
+                     alert('Sync failed: ' + data.message);
+                     btnElement.disabled = false;
+                     btnElement.innerText = orig;
+                 }
+             }).catch(() => {
+                 alert("Connection timeout.");
+                 btnElement.disabled = false;
+                 btnElement.innerText = orig;
+             });
+        }
+
         // Requests
         function markRequestCompleted(id) {
             fetch('/update_request_status_by_admin/' + id, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-            })
-            .then(r => r.json())
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('request-badge-cell-' + id).innerHTML = '<span class="badge badge-done">Completed</span>';
-                    document.getElementById('request-actions-cell-' + id).innerHTML = '<span style="color:#64748b;font-size:12px;">Processed</span>';
+                    document.getElementById('request-badge-cell-' + id).innerHTML =
+                        '<span class="badge badge-done">Completed</span>';
+                    document.getElementById('request-actions-cell-' + id).innerHTML =
+                        '<span style="color:#64748b;font-size:11px;">Processed</span>';
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -451,64 +712,82 @@
         }
 
         function deleteRequest(id) {
-            fetch('/admin/delete_request/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-            .then(r => r.json())
+            if (!confirm("Remove this request permanently?")) return;
+            fetch('/admin/delete_request/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
             .then(data => {
-                if (data.success) document.getElementById('row-' + id).remove();
-                else alert('Error: ' + data.message);
+                if (data.success) {
+                    document.getElementById('row-' + id).remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
             }).catch(() => window.location.reload());
         }
 
         // Channel tickets
         function clearChannelReport(id) {
-            if (!confirm('Confirm Action: Have you resolved this channel fault?')) return;
-            fetch('/delete_channel_report_by_admin/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-            .then(r => r.json())
+            if (!confirm("Mark this channel ticket as fixed?")) return;
+            fetch('/delete_channel_report_by_admin/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
                     document.getElementById('report-row-' + id).remove();
-                    alert('Ticket cleared successfully.');
-                } else alert('Error: ' + data.message);
+                } else {
+                    alert('Error: ' + data.message);
+                }
             }).catch(() => window.location.reload());
         }
 
         // VOD tickets
         function clearVodReport(id) {
-            if (!confirm('Clear Ticket: Mark this VOD report as fixed?')) return;
-            fetch('/delete_vod_report_by_admin/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-            .then(r => r.json())
+            if (!confirm("Mark this VOD ticket as fixed?")) return;
+            fetch('/delete_vod_report_by_admin/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
             .then(data => {
-                if (data.success) document.getElementById('vod-report-row-' + id).remove();
-                else alert('Error: ' + data.message);
+                if (data.success) {
+                    document.getElementById('vod-report-row-' + id).remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
             }).catch(() => window.location.reload());
         }
 
-        // Manual credit
+        // Manual wallet credit
         function submitManualAdminCredit(btn) {
             const targetUser = document.getElementById('admin-target-user').value.trim();
             const injectAmount = document.getElementById('admin-credit-amount').value.trim();
             if (!targetUser || !injectAmount) {
-                alert("You must enter BOTH a Target Username AND a numeric Credit Amount!");
+                alert("Target username and credit amount are required.");
                 return;
             }
-            const orig = btn.innerHTML;
+            const orig = btn.innerText;
             btn.disabled = true;
-            btn.innerHTML = "⏳ Saving Credit Ledger...";
+            btn.innerText = "Saving...";
             fetch('/admin/adjust_user_credit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_username: targetUser, amount: injectAmount })
-            })
-            .then(r => r.json())
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    alert('Success! ' + data.message);
+                    alert(data.message);
                     window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
-                    btn.disabled = false; btn.innerHTML = orig;
+                    btn.disabled = false;
+                    btn.innerText = orig;
                 }
-            }).catch(() => { alert("Connection timeout."); btn.disabled = false; btn.innerHTML = orig; });
+            }).catch(() => {
+                alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
         }
 
         // Portal users
@@ -517,58 +796,84 @@
             const passwordVal = document.getElementById('new-user-pass').value.trim();
             const expiryVal = document.getElementById('new-user-expiry').value.trim();
             if (!usernameVal || !passwordVal || !expiryVal) {
-                alert("All three fields (Username, Password, Expiry) are required.");
+                alert("Username, Password, and Expiry are all required.");
                 return;
             }
-            const orig = btn.innerHTML;
+            const orig = btn.innerText;
             btn.disabled = true;
-            btn.innerHTML = "⏳ Saving New Account Line...";
+            btn.innerText = "Saving...";
             fetch('/admin/create_portal_user', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: usernameVal, password: passwordVal, expiry_date: expiryVal })
-            })
-            .then(r => r.json())
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
                     alert(data.message);
                     window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
-                    btn.disabled = false; btn.innerHTML = orig;
+                    btn.disabled = false;
+                    btn.innerText = orig;
                 }
-            }).catch(() => { alert("Connection timeout."); btn.disabled = false; btn.innerHTML = orig; });
+            }).catch(() => {
+                alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
         }
 
         function deletePortalUser(username) {
-            if (!confirm('Delete account for user: ' + username + '?')) return;
-            fetch('/admin/delete_portal_user/' + encodeURIComponent(username), { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-            .then(r => r.json())
+            if (!confirm("Delete portal user '" + username + "'?")) return;
+            fetch('/admin/delete_portal_user/' + encodeURIComponent(username), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
             .then(data => {
-                if (data.success) document.getElementById('portal-user-row-' + username).remove();
-                else alert('Error: ' + data.message);
+                if (data.success) {
+                    document.getElementById('portal-user-row-' + username).remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
             }).catch(() => window.location.reload());
         }
 
-        function executeAdminExpiryAmendment(targetUname) {
-            const chosenDate = document.getElementById('amend-date-' + targetUname).value;
+        function resetPortalUserPassword(username) {
+            if (!confirm("Reset password for '" + username + "'?")) return;
+            fetch('/admin/reset_portal_user_password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert("New password for " + username + ":\n\n" + data.new_password + "\n\nShare this securely with the user.");
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout."));
+        }
+
+        function executeAdminExpiryAmendment(username) {
+            const chosenDate = document.getElementById('amend-date-' + username).value;
             if (!chosenDate) {
-                alert("Please select a valid date first.");
+                alert("Please choose a new expiry date.");
                 return;
             }
-            if (!confirm(`Overwrite expiration for user '${targetUname}'?`)) return;
+            if (!confirm("Overwrite expiry for " + username + " to " + chosenDate + "?")) return;
             fetch('/admin/amend_user_expiry', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: targetUname, expiry_date: chosenDate })
-            })
-            .then(r => r.json())
+                body: JSON.stringify({ username: username, expiry_date: chosenDate })
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    alert('Success! Expiration updated.');
+                    alert(data.message);
                     window.location.reload();
-                } else alert('Failed: ' + data.message);
-            }).catch(() => alert('Server timeout.'));
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout."));
         }
 
         // Channels
@@ -576,82 +881,67 @@
             const chanNameVal = document.getElementById('add-chan-name').value.trim();
             const streamIdVal = document.getElementById('add-chan-stream-id').value.trim();
             if (!chanNameVal || !streamIdVal) {
-                alert("You must enter BOTH a Channel Name AND a unique Stream ID.");
+                alert("Channel name and Stream ID are required.");
                 return;
             }
-            const orig = btn.innerHTML;
+            const orig = btn.innerText;
             btn.disabled = true;
-            btn.innerHTML = "⏳ Saving Channel Stream...";
+            btn.innerText = "Saving...";
             fetch('/admin/add_live_channel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: chanNameVal, stream_id: streamIdVal })
-            })
-            .then(r => r.json())
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
                     alert(data.message);
                     window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
-                    btn.disabled = false; btn.innerHTML = orig;
+                    btn.disabled = false;
+                    btn.innerText = orig;
                 }
-            }).catch(() => { alert("Connection timeout."); btn.disabled = false; btn.innerHTML = orig; });
+            }).catch(() => {
+                alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
         }
 
         function deleteChannel(streamId) {
-            if (!confirm('Remove channel ' + streamId + ' from portal?')) return;
-            fetch('/admin/delete_live_channel/' + encodeURIComponent(streamId), { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-            .then(r => r.json())
+            if (!confirm("Remove channel " + streamId + " from registry?")) return;
+            fetch('/admin/delete_live_channel/' + encodeURIComponent(streamId), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
             .then(data => {
-                if (data.success) document.getElementById('chan-row-' + streamId).remove();
-                else alert('Error: ' + data.message);
+                if (data.success) {
+                    document.getElementById('chan-row-' + streamId).remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
             }).catch(() => window.location.reload());
         }
 
         // Payments
         function markLineAsCompleted(paymentId) {
-            if (!confirm("Confirm: Have you manually extended this line in the reseller panel?")) return;
+            if (!confirm("Have you manually extended this line in your panel?")) return;
             fetch('/complete_manual_renewal/' + paymentId, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-            })
-            .then(r => r.json())
+            }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    const cellElement = document.getElementById('status-cell-' + paymentId);
-                    if (cellElement) {
-                        cellElement.innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
+                    const cell = document.getElementById('status-cell-' + paymentId);
+                    if (cell) {
+                        cell.innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
                     } else {
                         window.location.reload();
                     }
-                } else alert('Error: ' + data.message);
-            }).catch(() => alert("Server timeout."));
-        }
-
-        // Sync live panel
-        function triggerLivePanelSync(btnElement) {
-            const originalText = btnElement.innerHTML;
-            btnElement.disabled = true;
-            btnElement.style.opacity = '0.6';
-            btnElement.innerHTML = '🔄 Syncing Database...';
-            fetch('/sync_live_panel_expirations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    window.location.reload();
                 } else {
-                    alert('Sync failed: ' + data.message);
-                    btnElement.disabled = false; btnElement.style.opacity = '1.0'; btnElement.innerHTML = originalText;
+                    alert('Error: ' + data.message);
                 }
-            }).catch(() => {
-                alert("Connection timeout.");
-                btnElement.disabled = false; btnElement.style.opacity = '1.0'; btnElement.innerHTML = originalText;
-            });
+            }).catch(() => alert("Server timeout."));
         }
     </script>
 </body>

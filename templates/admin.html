@@ -169,6 +169,10 @@
             margin-bottom: 4px;
             font-weight: bold;
         }
+        .muted {
+            font-size: 11px;
+            color: #9ca3af;
+        }
         @media (max-width: 700px) {
             th, td { font-size: 11px; }
             .section-header-row { flex-direction: column; align-items: flex-start; }
@@ -202,6 +206,36 @@
             <label class="section-title">New Announcement:</label>
             <textarea id="announcement-text" class="form-field" rows="3" placeholder="Type new announcement message..."></textarea>
             <button class="btn btn-blue" style="width:100%;" onclick="saveAnnouncement(this)">Save Announcement</button>
+        </div>
+
+        <!-- Pending Registrations -->
+        <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+            <div class="section-header-row">
+                <h2>Pending Registrations</h2>
+                <span class="pill-info">New sign-ups awaiting your approval</span>
+            </div>
+            <p class="muted">
+                Users who registered via the login page appear here. Approve to create a portal account with a 1-year expiry, or reject to remove.
+            </p>
+            <div id="pending-users-container" style="max-height:220px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Requested</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pending-users-body">
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:12px; font-size:12px;">
+                                Loading pending registrations...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Expiration matrix -->
@@ -433,7 +467,7 @@
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Portal Access Accounts</h2>
             <p style="font-size:12px; color:#94a3b8;">
-                Create, update, reset passwords, and delete local portal users.
+                Create, update, reset passwords, and delete local portal users (including approved registrations).
             </p>
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
@@ -673,7 +707,7 @@
     </div>
 
     <script>
-        // Announcement
+        // --- Announcements ---
         function saveAnnouncement(btn) {
             const text = document.getElementById('announcement-text').value.trim();
             if (!text) {
@@ -704,7 +738,86 @@
             });
         }
 
-        // Expiration sync
+        // --- Pending Registrations ---
+        async function loadPendingUsers() {
+            const tbody = document.getElementById('pending-users-body');
+            if (!tbody) return;
+            try {
+                const resp = await fetch('/admin/get_pending_users');
+                if (!resp.ok) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f87171;padding:10px;">Error loading pending registrations.</td></tr>';
+                    return;
+                }
+                const pending = await resp.json();
+                if (!pending.length) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;padding:10px;font-size:12px;">No pending registrations.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = '';
+                pending.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.id = 'pending-row-' + p.id;
+                    tr.innerHTML = `
+                        <td><strong>${p.username}</strong></td>
+                        <td style="font-size:11px;color:#9ca3af;">${p.email || ''}</td>
+                        <td style="font-size:11px;color:#9ca3af;">${p.created_at}</td>
+                        <td>
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                                <button class="btn btn-success btn-small" onclick="approvePendingUser(${p.id}, '${p.username}')">Approve</button>
+                                <button class="btn btn-danger btn-small" onclick="rejectPendingUser(${p.id}, '${p.username}')">Reject</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f87171;padding:10px;">Error loading pending registrations.</td></tr>';
+            }
+        }
+
+        async function approvePendingUser(id, username) {
+            if (!confirm("Approve registration for '" + username + "' and create a 1-year portal account?")) return;
+            try {
+                const resp = await fetch('/admin/approve_user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    alert(data.message);
+                    const row = document.getElementById('pending-row-' + id);
+                    if (row) row.remove();
+                } else {
+                    alert("Error approving user: " + data.message);
+                }
+            } catch (e) {
+                alert("Server timeout while approving user.");
+            }
+        }
+
+        async function rejectPendingUser(id, username) {
+            if (!confirm("Reject and remove registration for '" + username + "'?")) return;
+            try {
+                const resp = await fetch('/admin/reject_user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    alert(data.message);
+                    const row = document.getElementById('pending-row-' + id);
+                    if (row) row.remove();
+                } else {
+                    alert("Error rejecting user: " + data.message);
+                }
+            } catch (e) {
+                alert("Server timeout while rejecting user.");
+            }
+        }
+
+        // --- Expiration sync ---
         function triggerLivePanelSync(btnElement) {
             const orig = btnElement.innerText;
             btnElement.disabled = true;
@@ -729,7 +842,7 @@
              });
         }
 
-        // Requests
+        // --- Requests ---
         function markRequestCompleted(id) {
             fetch('/update_request_status_by_admin/' + id, {
                 method: 'POST',
@@ -762,7 +875,7 @@
             }).catch(() => window.location.reload());
         }
 
-        // Channel tickets
+        // --- Channel tickets ---
         function clearChannelReport(id) {
             if (!confirm("Mark this channel ticket as fixed?")) return;
             fetch('/delete_channel_report_by_admin/' + id, {
@@ -778,7 +891,7 @@
             }).catch(() => window.location.reload());
         }
 
-        // VOD tickets
+        // --- VOD tickets ---
         function clearVodReport(id) {
             if (!confirm("Mark this VOD ticket as fixed?")) return;
             fetch('/delete_vod_report_by_admin/' + id, {
@@ -794,7 +907,7 @@
             }).catch(() => window.location.reload());
         }
 
-        // Manual wallet credit
+        // --- Manual wallet credit ---
         function submitManualAdminCredit(btn) {
             const targetUser = document.getElementById('admin-target-user').value.trim();
             const injectAmount = document.getElementById('admin-credit-amount').value.trim();
@@ -826,7 +939,7 @@
             });
         }
 
-        // Portal users
+        // --- Portal users ---
         function submitNewPortalAccountCreation(btn) {
             const usernameVal = document.getElementById('new-user-name').value.trim();
             const passwordVal = document.getElementById('new-user-pass').value.trim();
@@ -912,7 +1025,7 @@
             }).catch(() => alert("Server timeout."));
         }
 
-        // Channels
+        // --- Channels ---
         function submitNewLiveChannelEntry(btn) {
             const chanNameVal = document.getElementById('add-chan-name').value.trim();
             const streamIdVal = document.getElementById('add-chan-stream-id').value.trim();
@@ -959,7 +1072,7 @@
             }).catch(() => window.location.reload());
         }
 
-        // Payments
+        // --- Payments ---
         function markLineAsCompleted(paymentId) {
             if (!confirm("Have you manually extended this line in your panel?")) return;
             fetch('/complete_manual_renewal/' + paymentId, {
@@ -979,6 +1092,9 @@
                 }
             }).catch(() => alert("Server timeout."));
         }
+
+        // On page load: fetch pending registrations
+        loadPendingUsers();
     </script>
 </body>
 </html>

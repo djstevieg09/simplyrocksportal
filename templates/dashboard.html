@@ -3,325 +3,536 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - IPTV Portal</title>
+    <title>Dashboard - SimplyRocks Portal</title>
     <meta name="referrer" content="no-referrer">
-    
-    <!-- External UI Framework Support Scripts (placeholder) -->
-    <link rel="stylesheet" href="https://cloudflare.com">
-    
-    <!-- SECURE PAYPAL SMART BUTTONS SDK ENGINE (placeholder, real SDK loaded later) -->
-    <script src="https://paypal.com"></script>
-    
     <style>
-        body { background-color: #0f172a; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 0; }
-        
-        nav { background-color: #1e293b; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        nav h1 { color: #60a5fa; margin: 0; font-size: 20px; }
-        
-        .nav-right { display: flex; align-items: center; gap: 15px; }
-        .logout-btn { background-color: #dc2626; color: white; text-decoration: none; padding: 8px 16px; border-radius: 4px; font-size: 14px; transition: 0.2s; }
-        .logout-btn:hover { background-color: #b91c1c; }
-        
-        main { max-width: 1200px; margin: 30px auto; padding: 0 20px; display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
-        @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
-        
-        .card { background-color: #1e293b; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 25px; }
-        .card h2 { margin-top: 0; font-size: 20px; margin-bottom: 20px; }
-        
-        .search-box { display: flex; gap: 10px; }
-        .search-box input { flex: 1; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 15px; outline: none; }
-        .search-box input:focus { border-color: #3b82f6; }
-        .search-box button { background-color: #2563eb; color: white; border: none; padding: 0 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; }
-        .search-box button:hover { background-color: #1d4ed8; }
-        
-        .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 25px; }
-        @media (max-width: 500px) { .results-grid { grid-template-columns: 1fr; } }
-        
-        .media-card { background-color: #334155; padding: 12px; border-radius: 8px; display: flex; gap: 15px; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .media-poster { width: 64px; height: 96px; object-fit: cover; border-radius: 6px; background-color: #0f172a; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        .media-info { flex: 1; min-width: 0; }
-        .media-info h4 { margin: 0 0 5px 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .media-info p { margin: 0 0 10px 0; color: #94a3b8; font-size: 13px; }
-        
-        .req-btn { background-color: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .req-btn:hover { background-color: #15803d; }
-        
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-        th { background-color: #334155; padding: 12px; color: #cbd5e1; font-size: 12px; text-transform: uppercase; }
-        td { padding: 12px; border-bottom: 1px solid #334155; }
-        
-        .status-badge { background-color: rgba(234,179,8,0.2); color: #facc15; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .plan-box { background-color: #020617; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #334155; margin-bottom: 20px; }
-        .plan-title { font-size: 12px; text-transform: uppercase; color: #94a3b8; display: block; margin-bottom: 5px; }
-        .plan-price { font-size: 28px; font-weight: 900; }
-        
-        .border-alert { border: 1px solid rgba(234,179,8,0.3); }
-        .text-yellow { color: #facc15; }
+        :root {
+            color-scheme: dark;
+        }
+        body {
+            background-color: #0f172a;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        nav {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        nav h1 {
+            color: #60a5fa;
+            margin: 0;
+            font-size: 18px;
+        }
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .logout-btn {
+            color: #f87171;
+            text-decoration: none;
+            font-weight: bold;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 6px 10px;
+            border-radius: 6px;
+            background-color: rgba(239, 68, 68, 0.05);
+            font-size: 12px;
+        }
+        .expiry-pill {
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            color: #93c5fd;
+        }
+        .main-wrapper {
+            max-width: 1280px;
+            margin: 15px auto 40px;
+            padding: 0 12px;
+            box-sizing: border-box;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 2fr 1.1fr;
+            gap: 18px;
+        }
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .card {
+            background-color: #1e293b;
+            padding: 18px;
+            border-radius: 12px;
+            box-shadow: 0 3px 8px -2px rgba(0,0,0,0.4);
+            margin-bottom: 12px;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+        .card p {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .search-box {
+            display: flex;
+            gap: 8px;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 10px;
+            background-color: #334155;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+        }
+        .search-box button {
+            background-color: #2563eb;
+            border: none;
+            color: #ffffff;
+            padding: 0 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .media-card {
+            background-color: #334155;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .media-poster {
+            width: 60px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 6px;
+            background-color: #0f172a;
+        }
+        .media-info h4 {
+            margin: 0 0 4px 0;
+            font-size: 14px;
+        }
+        .media-info p {
+            margin: 0 0 6px 0;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .req-btn {
+            background-color: #16a34a;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            background-color: #334155;
+            padding: 8px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #cbd5e1;
+        }
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #334155;
+            vertical-align: middle;
+        }
+        .status-badge {
+            background-color: rgba(234,179,8,0.2);
+            color: #facc15;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .pill-small {
+            font-size: 11px;
+            padding: 3px 7px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+        .pill-green {
+            background-color: rgba(22,163,74,0.18);
+            color: #4ade80;
+            border: 1px solid rgba(22,163,74,0.5);
+        }
+        .pill-yellow {
+            background-color: rgba(234,179,8,0.18);
+            color: #facc15;
+            border: 1px solid rgba(234,179,8,0.5);
+        }
+        .form-field {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            background-color: #334155;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .btn-secondary {
+            width: 100%;
+            background: linear-gradient(90deg, #16a34a, #22c55e);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .section-title {
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        .announcement-banner {
+            background: linear-gradient(90deg, #4b5563, #111827);
+            border: 1px solid rgba(148,163,184,0.5);
+            color: #e5e7eb;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin: 10px auto 0;
+            max-width: 1280px;
+        }
+        @media (max-width: 600px) {
+            nav h1 { font-size: 16px; }
+            .nav-right { flex-wrap: wrap; justify-content: flex-end; }
+            .main-wrapper { padding: 0 8px; }
+        }
     </style>
 </head>
 <body>
 
-    <!-- AUTOMATED EXPIRY ALERT COUNTDOWN BANNER -->
-    {% if show_warning %}
-    <div style="background: linear-gradient(90deg, #b45309, #d97706); color: #ffffff; padding: 12px 30px; text-align: center; font-size: 14px; font-weight: bold; border-bottom: 2px solid #f59e0b; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; gap: 15px; animation: pulseGlow 2s infinite alternate;">
-        <span>Attention: Your premium IPTV subscription expires in <strong style="background-color: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; color: #fef08a;">{{ days_left }} days</strong>. Please renew below to prevent service disruption.</span>
-        <button onclick="document.getElementById('connection-tier-select').scrollIntoView({behavior: 'smooth'})" style="background-color: #ffffff; color: #b45309; border: none; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Renew Now</button>
+    <!-- Expiry warning banner -->
+    {% if show_warning and days_left is not none %}
+    <div style="background: linear-gradient(90deg, #b45309, #d97706); color: #ffffff; padding: 10px 14px; text-align: center; font-size: 13px; font-weight: bold;">
+        Your IPTV subscription expires in <span style="background-color: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">{{ days_left }} days</span>.
+        <button onclick="document.getElementById('connection-tier-select').scrollIntoView({behavior: 'smooth', block:'center'})"
+                style="margin-left: 10px; background-color: #ffffff; color: #b45309; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 800; cursor: pointer;">
+            Renew Now
+        </button>
     </div>
-    
-    <style>
-        @keyframes pulseGlow {
-            0% { box-shadow: 0 4px 6px rgba(217, 119, 6, 0.2); }
-            100% { box-shadow: 0 4px 20px rgba(217, 119, 6, 0.5); }
-        }
-    </style>
+    {% endif %}
+
+    <!-- Announcement banner -->
+    {% if announcement %}
+    <div class="announcement-banner">
+        <span style="font-weight:bold; color:#fbbf24; margin-right:6px;">Announcement:</span>{{ announcement }}
+    </div>
     {% endif %}
 
     <nav>
         <h1>SimplyRocks Portal</h1>
         <div class="nav-right">
-            <!-- SUBSCRIPTION CALENDAR BANNER -->
-            <div style="background-color: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); padding: 6px 14px; border-radius: 6px; font-size: 13px; color: #93c5fd;">
-                📅 Line Expiry: 
+            <div class="expiry-pill">
+                📅 Expiry:
                 <strong style="color: #ffffff;">
                     {{ expiry_date if expiry_date else 'Checking...' }}
                 </strong>
             </div>
-            <span>User: <strong>{{ username }}</strong></span>
-            <a href="/logout" class="logout-btn" style="color: #f87171; text-decoration: none; font-weight: bold; border: 1px solid rgba(239, 68, 68, 0.2); padding: 6px 12px; border-radius: 6px; background-color: rgba(239, 68, 68, 0.05); font-size: 13px;">Logout</a>
+            <span style="font-size: 12px;">User: <strong>{{ username }}</strong></span>
+            <a href="/logout" class="logout-btn">Logout</a>
         </div>
     </nav>
 
-    <main style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 30px; margin-top: 25px; align-items: start; box-sizing: border-box; width: 100%; max-width: 1280px; padding: 0 20px; margin-left: auto; margin-right: auto;">
-        <!-- LEFT COLUMN -->
-        <div>
-            <div class="card">
-                <h2>Request a Movie or TV Show</h2>
-                <div class="search-box">
-                    <input type="text" id="search-input" placeholder="Type title here (e.g. Friends)...">
-                    <button onclick="searchMedia()">Search</button>
-                </div>
-                <div id="results" class="results-grid"></div>
-            </div>
-
-            <div class="card">
-                <h2>Your Previous Requests</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 70%;">Title</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for req in requests %}
-                        <tr id="row-{{ req.id }}">
-                            <td style="display: flex; align-items: center; gap: 12px;">
-                                <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;" onerror="this.onerror=null; this.src='https://placehold.co';">
-                                <span>{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
-                            </td>
-                            <td style="text-transform: capitalize;">{{ req.media_type }}</td>
-                            <td><span class="status-badge">{{ req.status }}</span></td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3" style="text-align: center; color: #64748b; padding: 20px;">No requests submitted yet.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Channel Fault Help Desk -->
-            <div class="card">
-                <h2>Report a Channel Issue</h2>
-                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Search your live channel lineup below to file a broken stream report ticket straight to admin.</p>
-                <div style="position: relative; margin-bottom: 15px;">
-                    <input type="text" id="channel-search-input" oninput="searchChannelsLive()" placeholder="Type channel name here (e.g. Sky Sports)..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
-                    
-                    <div id="channel-dropdown-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: #1e293b; border: 1px solid #475569; border-radius: 6px; max-height: 200px; overflow-y: auto; z-index: 999; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);"></div>
-                </div>
-
-                <div id="channel-reporting-options" style="display: none; margin-top: 15px; border-top: 1px solid #334155; padding-top: 15px;">
-                    <span style="display: block; font-size: 13px; margin-bottom: 8px; color: #cbd5e1;">Selected Stream: <b id="selected-channel-display" style="color: #fff;">None</b></span>
-                    <input type="hidden" id="selected-channel-id">
-                    
-                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Select Issue Profile Type:</label>
-                    <select id="channel-issue-select" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; margin-bottom: 15px; cursor: pointer;">
-                        <option value="Channel Buffering / Freezing">⚠️ Channel Buffering / Freezing</option>
-                        <option value="Black Screen / No Feed">❌ Black Screen / No Feed</option>
-                        <option value="Wrong Audio / No Sound">🔊 Wrong Audio / No Sound</option>
-                        <option value="Looping Content Stream">🔁 Looping Content Stream</option>
-                    </select>
-                    <button onclick="submitChannelReport()" style="width: 100%; background: linear-gradient(90deg, #dc2626, #ef4444); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit Stream Report Ticket</button>
-                </div>
-            </div>
-
-            <!-- VOD Fault Ticket -->
-            <div class="card" style="background-color: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.3); margin-top: 25px;">
-                <h2 style="color: #f59e0b; margin-top:0;">Report a VOD Issue</h2>
-                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 15px;">Search for your broken movie or show file below to submit a fault alert ticket directly to admin.</p>
-                
-                <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Search Movie or Show Title:</label>
-                <div style="position: relative; margin-bottom: 15px;">
-                    <input type="text" id="vod-search-box" oninput="searchVodCatalogDropdown(this.value)" placeholder="Type title here (e.g. Gladiator)..." style="width: 100%; box-sizing: border-box; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
-                    
-                    <div id="vod-results-popup" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background-color: #1e293b; border: 1px solid #475569; border-radius: 6px; max-height: 180px; overflow-y: auto; z-index: 999; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);"></div>
-                </div>
-
-                <div id="vod-reporting-options" style="display: none; border-top: 1px solid #334155; padding-top: 15px;">
-                    <span style="display: block; font-size: 13px; margin-bottom: 8px; color: #cbd5e1;">Target Content: <b id="selected-vod-display" style="color: #fff;">None</b></span>
-                    <input type="hidden" id="selected-vod-title">
-                    <input type="hidden" id="selected-vod-type">
-                    
-                    <label style="display: block; font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Select Fault Category:</label>
-                    <select id="vod-issue-type" onchange="toggleVodOtherTextInput(this.value)" style="width: 100%; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; margin-bottom: 15px; cursor: pointer;">
-                        <option value="Video Buffering / Constantly Freezing">⚠️ Video Buffering / Freezing</option>
-                        <option value="Missing Subtitles / Wrong Language">🔊 Missing Subtitles / Audio Layout</option>
-                        <option value="Broken Link / File Will Not Play">❌ Broken Link / File Will Not Play</option>
-                        <option value="Wrong Media Movie File Uploaded">🎬 Wrong Movie Uploaded / Cuts Off</option>
-                        <option value="Other">📝 Other (Type Custom Fault Reason)</option>
-                    </select>
-
-                    <div id="vod-custom-notes-wrapper" style="display: none; margin-bottom: 15px;">
-                        <label style="display: block; font-size: 11px; color: #facc15; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">Custom Fault Details (Max 100 Characters):</label>
-                        <input type="text" id="vod-custom-issue-text" maxlength="100" placeholder="e.g. Pixelated at 45 mins / Subtitles are out of sync..." style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #1e293b; border: 1px solid #eab308; border-radius: 6px; color: white; font-size: 13px; outline: none;">
+    <div class="main-wrapper">
+        <div class="grid">
+            <!-- LEFT COLUMN: Requests, channel reports, VOD reports -->
+            <div>
+                <!-- Media search & requests -->
+                <div class="card">
+                    <h2>Request a Movie or TV Show</h2>
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="Type title here (e.g. Friends)...">
+                        <button onclick="searchMedia()">Search</button>
                     </div>
-					
-                    <button onclick="submitVodFaultTicket(this)" style="width: 100%; background: linear-gradient(90deg, #d97706, #f59e0b); color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.2s;">Submit VOD Report Ticket</button>
+                    <div id="results" class="results-grid"></div>
+                </div>
+
+                <!-- Previous requests -->
+                <div class="card">
+                    <h2>Your Previous Requests</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 60%;">Title</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for req in requests %}
+                            <tr id="row-{{ req.id }}">
+                                <td style="display:flex; align-items:center; gap:8px;">
+                                    <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;"
+                                         onerror="this.onerror=null; this.src='https://placehold.co';">
+                                    <span style="font-size: 13px;">{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
+                                </td>
+                                <td style="text-transform: capitalize;">{{ req.media_type }}</td>
+                                <td><span class="status-badge">{{ req.status }}</span></td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No requests submitted yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Channel fault report -->
+                <div class="card">
+                    <h2>Report a Channel Issue</h2>
+                    <p>Search your live channel lineup below to file a broken stream report ticket.</p>
+                    <div style="position: relative; margin-bottom: 10px;">
+                        <input type="text" id="channel-search-input" oninput="searchChannelsLive()" placeholder="Type channel name (e.g. Sky Sports)..."
+                               class="form-field" style="margin-bottom:0;">
+                        <div id="channel-dropdown-results"
+                             style="display:none; position:absolute; top:100%; left:0; right:0; background-color:#1e293b; border:1px solid #475569; border-radius:6px; max-height:180px; overflow-y:auto; z-index:20;"></div>
+                    </div>
+                    <div id="channel-reporting-options" style="display:none; margin-top:10px; border-top:1px solid #334155; padding-top:10px;">
+                        <span style="font-size: 13px; color:#cbd5e1;">Selected Stream:
+                            <b id="selected-channel-display" style="color:#fff;">None</b>
+                        </span>
+                        <input type="hidden" id="selected-channel-id">
+                        <label class="section-title" style="margin-top:8px;">Issue Type:</label>
+                        <select id="channel-issue-select" class="form-field" style="margin-bottom:10px;">
+                            <option value="Channel Buffering / Freezing">⚠️ Channel Buffering / Freezing</option>
+                            <option value="Black Screen / No Feed">❌ Black Screen / No Feed</option>
+                            <option value="Wrong Audio / No Sound">🔊 Wrong Audio / No Sound</option>
+                            <option value="Looping Content Stream">🔁 Looping Content Stream</option>
+                        </select>
+                        <button onclick="submitChannelReport()" class="btn-secondary">Submit Stream Report Ticket</button>
+                    </div>
+                </div>
+
+                <!-- VOD fault report -->
+                <div class="card" style="border:1px solid rgba(245, 158, 11, 0.3);">
+                    <h2 style="color:#f59e0b;">Report a VOD Issue</h2>
+                    <p>Search for your broken movie or show below to submit a fault alert ticket.</p>
+                    <label class="section-title">Search Movie or Show Title:</label>
+                    <div style="position:relative; margin-bottom:10px;">
+                        <input type="text" id="vod-search-box" oninput="searchVodCatalogDropdown(this.value)"
+                               placeholder="Type title (e.g. Gladiator)..." class="form-field" style="margin-bottom:0;">
+                        <div id="vod-results-popup"
+                             style="display:none; position:absolute; top:100%; left:0; right:0; background-color:#1e293b; border:1px solid #475569; border-radius:6px; max-height:180px; overflow-y:auto; z-index:20;"></div>
+                    </div>
+                    <div id="vod-reporting-options" style="display:none; border-top:1px solid #334155; padding-top:10px;">
+                        <span style="font-size: 13px;">Target Content:
+                            <b id="selected-vod-display" style="color:#fff;">None</b>
+                        </span>
+                        <input type="hidden" id="selected-vod-title">
+                        <input type="hidden" id="selected-vod-type">
+                        <label class="section-title" style="margin-top:8px;">Fault Category:</label>
+                        <select id="vod-issue-type" onchange="toggleVodOtherTextInput(this.value)" class="form-field">
+                            <option value="Video Buffering / Constantly Freezing">⚠️ Video Buffering / Freezing</option>
+                            <option value="Missing Subtitles / Wrong Language">🔊 Missing Subtitles / Audio Layout</option>
+                            <option value="Broken Link / File Will Not Play">❌ Broken Link / File Will Not Play</option>
+                            <option value="Wrong Media Movie File Uploaded">🎬 Wrong Movie Uploaded / Cuts Off</option>
+                            <option value="Other">📝 Other (Custom Fault Reason)</option>
+                        </select>
+                        <div id="vod-custom-notes-wrapper" style="display:none; margin-bottom:10px;">
+                            <label class="section-title" style="color:#facc15;">Custom Details:</label>
+                            <input type="text" id="vod-custom-issue-text" maxlength="100"
+                                   placeholder="e.g. stops at 45 mins / subtitles out of sync..."
+                                   class="form-field" style="border-color:#eab308;">
+                        </div>
+                        <button onclick="submitVodFaultTicket(this)" class="btn-secondary">Submit VOD Report Ticket</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Wallet, IPTV renewals, Spotify, friends -->
+            <div>
+                <!-- Wallet card -->
+                <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                        </div>
+                        <button onclick="applyReferralDiscount()" id="redeem-btn"
+                                style="display:none; background-color:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">
+                            Redeem Credit
+                        </button>
+                    </div>
+                    <p style="margin-top:8px;">Your wallet can be used towards IPTV renewals and Spotify subscriptions.</p>
+                </div>
+
+                <!-- IPTV Renewal -->
+                <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
+                    <h2 style="color:#facc15;">Renew IPTV Subscription</h2>
+                    <p>Extend your premium IPTV line instantly. Choose how many devices you want to connect.</p>
+                    <label class="section-title">Connections:</label>
+                    <select id="connection-tier-select" onchange="updatePricingDisplay()" class="form-field">
+                        <option value="1" data-price="75.00">1 Device — £75.00</option>
+                        <option value="2" data-price="100.00">2 Devices — £100.00</option>
+                        <option value="3" data-price="125.00">3 Devices — £125.00</option>
+                        <option value="4" data-price="150.00">4 Devices — £150.00</option>
+                    </select>
+                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span id="plan-title-display" style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Premium 1-Year (1 Connection)</span><br>
+                        <span id="plan-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£75.00</span>
+                        <span id="discount-note" style="display:block; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold; display:none;">Wallet Discount Applied</span>
+                    </div>
+                    <div id="paypal-button-container"></div>
+                </div>
+
+                <!-- Spotify purchase -->
+                <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+                    <h2 style="color:#60a5fa;">Spotify Subscription (£45)</h2>
+                    <p>Upgrade your Spotify account to our premium package using your portal.</p>
+                    <label class="section-title">Spotify Username:</label>
+                    <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email or username">
+                    <label class="section-title">Spotify Password:</label>
+                    <input type="password" id="spotify-password" class="form-field" placeholder="Spotify password">
+                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Spotify Upgrade</span><br>
+                        <span id="spotify-price-display" style="font-size:22px; font-weight:900;">£45.00</span>
+                        <span id="spotify-discount-note" style="display:block; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold; display:none;"></span>
+                    </div>
+                    <div id="paypal-spotify-container"></div>
+                </div>
+
+                <!-- Refer a friend purchase -->
+                <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
+                    <h2 style="color:#4ade80;">Refer a Friend (1-Year)</h2>
+                    <p>Buy a 12‑month IPTV line for your friend. You earn £25 credit on new signups.</p>
+                    <div id="referral-form-error" style="display:none; background-color:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:8px; border-radius:6px; font-size:12px; margin-bottom:8px;"></div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                        <div>
+                            <label class="section-title">Friend's First Name:</label>
+                            <input type="text" id="ref-first-name" class="form-field" placeholder="e.g. John" oninput="validateReferralFormInputs()">
+                        </div>
+                        <div>
+                            <label class="section-title">Friend's Last Name:</label>
+                            <input type="text" id="ref-last-name" class="form-field" placeholder="e.g. Doe" oninput="validateReferralFormInputs()">
+                        </div>
+                    </div>
+                    <label class="section-title">Friend's Mobile / Phone:</label>
+                    <input type="text" id="ref-phone-number" class="form-field" placeholder="e.g. 07123456789" oninput="validateReferralFormInputs()">
+                    <div style="background-color:#020617; padding:10px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Friend 1-Year Line</span><br>
+                        <span style="font-size:20px; font-weight:900; color:#ffffff;">£75.00</span>
+                    </div>
+                    <div id="paypal-referral-lockout-mask" style="pointer-events:none; opacity:0.3;">
+                        <div id="paypal-referral-container"></div>
+                    </div>
+                    <div id="referral-success-receipt" style="display:none; background-color:#020617; padding:10px; border-radius:8px; border:1px solid #16a34a; margin-top:10px; font-size:12px;">
+                        <p style="margin:0 0 6px 0; color:#4ade80; font-weight:bold;">Friend account created:</p>
+                        <div style="background-color:#1e293b; padding:8px; border-radius:6px; font-family:monospace;">
+                            Username: <span id="rec-user" style="color:#ffffff;"></span><br>
+                            Password: <span id="rec-pass" style="color:#ffffff;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Friends list and renewals -->
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Friends You Referred</h2>
+                    <p>Renew your friends’ lines and earn £10 credit per renewal.</p>
+                    <div id="friends-list" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- RIGHT COLUMN -->
-        <div>
-            <!-- Referral Wallet -->
-            <div class="card" style="background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span style="font-size: 11px; color: #4ade80; display: block; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Your Referral Reward Wallet</span>
-                    <strong style="color: #ffffff; font-size: 20px; display: block; margin-top: 2px;">£<span id="wallet-balance-display">0.00</span></strong>
-                </div>
-                <button onclick="applyReferralDiscount()" id="redeem-btn" style="background-color: #16a34a; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; display: none; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Redeem £25 Off Renewal</button>
-            </div>
-
-            <!-- Renewal -->
-            <div class="card border-alert" style="border: 1px solid rgba(234,179,8,0.3); background-color: #1e293b; padding: 25px; border-radius: 12px; margin-bottom: 25px;">
-                <h2 class="text-yellow" style="color: #facc15; margin-top:0;">Renew Subscription</h2>
-                <p style="font-size: 14px; color: #94a3b8; margin-bottom: 20px;">Extend your active premium IPTV line instantly. Choose your device connections below.</p>
-                
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 8px; font-weight: bold;">Select Plan Connections:</label>
-                    <select id="connection-tier-select" onchange="updatePricingDisplay()" style="width: 100%; padding: 12px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none; cursor: pointer; font-weight: bold;">
-                        <option value="1" data-price="75.00">1 Device Connection — £75.00</option>
-                        <option value="2" data-price="100.00">2 Device Connections — £100.00</option>
-                        <option value="3" data-price="125.00">3 Device Connections — £125.00</option>
-                        <option value="4" data-price="150.00">4 Device Connections — £150.00</option>
-                    </select>
-                </div>
-
-                <div class="plan-box">
-                    <span id="plan-title-display" class="plan-title">Premium 1-Year (1 Connection)</span>
-                    <span id="plan-price-display" class="plan-price">£75.00</span>
-                    <span id="discount-note" style="display: none; font-size: 11px; color: #ef4444; margin-top: 8px; font-weight: bold;">💰 Referral Discount Applied!</span>
-                </div>
-                
-                <div id="paypal-button-container"></div>
-            </div>
-
-            <!-- Refer a Friend -->
-            <div class="card" style="background-color: #1e293b; padding: 25px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin-bottom: 25px;">
-                <h2 style="color: #4ade80; margin-top:0;">Refer a Friend (1-Year Line)</h2>
-                <p style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">Purchase a premium 12-Month line for a friend. Input their names below and complete checkout to auto-generate their account logins instantly.</p>
-                
-                <div id="referral-form-error" style="background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; font-weight: bold; line-height: 1.4;"></div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                    <div>
-                        <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Friend's First Name:</label>
-                        <input type="text" id="ref-first-name" oninput="validateReferralFormInputs()" placeholder="e.g. John" style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
-                    </div>
-                    <div>
-                        <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Friend's Last Name:</label>
-                        <input type="text" id="ref-last-name" oninput="validateReferralFormInputs()" placeholder="e.g. Doe" style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 11px; color: #cbd5e1; text-transform: uppercase; margin-bottom: 6px; font-weight: bold;">Friend's Mobile / Phone Number:</label>
-                    <input type="text" id="ref-phone-number" oninput="validateReferralFormInputs()" placeholder="e.g. 07123456789" style="width: 100%; box-sizing: border-box; padding: 11px; background-color: #334155; border: 1px solid #475569; border-radius: 6px; color: white; font-size: 14px; outline: none;">
-                </div>
-
-                <div style="background-color: #020617; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #334155; margin-bottom: 20px;">
-                    <span style="font-size: 12px; text-transform: uppercase; color: #94a3b8; display: block; margin-bottom: 4px;">Premium 1-Year Friend Line</span>
-                    <span style="font-size: 24px; font-weight: 900; color: #ffffff;">£75.00</span>
-                </div>
-
-                <div id="paypal-referral-lockout-mask" style="pointer-events: none; opacity: 0.3; transition: all 0.3s ease;">
-                    <div id="paypal-referral-container"></div>
-                </div>
-
-                <div id="referral-success-receipt" style="display: none; background-color: #020617; padding: 15px; border-radius: 8px; border: 1px solid #16a34a; margin-top: 20px; text-align: center;">
-                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #4ade80; font-weight: bold;">🎉 Payment Cleared & Line Activated!</p>
-                    <div style="text-align: left; font-size: 13px; background-color: #1e293b; padding: 12px; border-radius: 6px; font-family: monospace; display: inline-block; width: 100%; box-sizing: border-box;">
-                        <span style="color: #cbd5e1; display:block; margin-bottom:4px;">Username: <strong id="rec-user" style="color:#fff;"></strong></span>
-                        <span style="color: #cbd5e1; display:block;">Password: <strong id="rec-pass" style="color:#fff;"></strong></span>
-                    </div>
-                    <span style="display: block; font-size: 11px; color: #94a3b8; margin-top: 8px;">Copy these premium logins and give them to your friend!</span>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Load PayPal Smart Buttons SDK with Live Production Keys -->
+    <!-- PayPal SDK -->
     <script src="https://www.paypal.com/sdk/js?client-id=ATdPR1St1opgGEMuPFAy_fB40wlVWHQROIw6QcFUzNETlUOORBD-dYxoQVr6I4xHfIqALFi28mBxfTJx&currency=GBP"></script>
-    
+
     <script>
-        // --- 1. CORE TRANSACTION WALLET & ACCOUNT BALANCING LOGIC ---
+        // --- GLOBAL WALLET & IPTV RENEWAL LOGIC ---
         let basePrice = 75.00;
         let currentPrice = "75.00";
         let currentConnections = "1";
         let discountDeduction = 0.00;
         let maxAvailableWalletBalance = 0.00;
+        let paypalButtonInstance = null;
 
         async function fetchWalletBalance() {
             try {
                 const response = await fetch('/get_referral_balance');
                 const data = await response.json();
-                
                 maxAvailableWalletBalance = parseFloat(data.balance) || 0.00;
-                
                 document.getElementById('wallet-balance-display').innerText = maxAvailableWalletBalance.toFixed(2);
-                
+                const redeemBtn = document.getElementById('redeem-btn');
                 if (maxAvailableWalletBalance > 0) {
-                    const redeemBtn = document.getElementById('redeem-btn');
-                    redeemBtn.innerText = `Redeem £${maxAvailableWalletBalance.toFixed(2)} Off Balance`;
-                    redeemBtn.style.display = 'block';
+                    redeemBtn.innerText = `Redeem £${maxAvailableWalletBalance.toFixed(2)} Credit`;
+                    redeemBtn.style.display = 'inline-block';
                 } else {
-                    document.getElementById('redeem-btn').style.display = 'none';
+                    redeemBtn.style.display = 'none';
                 }
-            } catch(e) { console.log("Wallet fetch anomaly:", e); }
+                updateSpotifyPriceDisplay();
+            } catch(e) { console.log("Wallet fetch:", e); }
         }
 
         function updatePricingDisplay() {
             const select = document.getElementById('connection-tier-select');
             const selectedOption = select.options[select.selectedIndex];
-            
             currentConnections = selectedOption.value;
             basePrice = parseFloat(selectedOption.getAttribute('data-price'));
-            
             calculateFinalPrice();
         }
 
         function applyReferralDiscount() {
             const renewalCost = parseFloat(basePrice);
             if (maxAvailableWalletBalance >= renewalCost) {
-                discountDeduction = renewalCost; 
+                discountDeduction = renewalCost;
             } else {
                 discountDeduction = maxAvailableWalletBalance;
             }
-            
             const noteSpan = document.getElementById('discount-note');
-            noteSpan.innerText = `💰 Wallet Discount Applied: -£${discountDeduction.toFixed(2)}!`;
+            noteSpan.innerText = `Wallet Discount: -£${discountDeduction.toFixed(2)}`;
             noteSpan.style.display = 'block';
             document.getElementById('redeem-btn').style.display = 'none';
             calculateFinalPrice();
@@ -336,11 +547,11 @@
             if (finalValue <= 0) {
                 finalValue = 0; currentPrice = "0.00";
                 paypalWrapper.innerHTML = ''; paypalButtonInstance = null;
-                
-                freeBtn = document.createElement('button'); 
+                freeBtn = document.createElement('button');
                 freeBtn.id = 'free-checkout-btn';
-                freeBtn.innerText = '🎁 Claim Free Subscription Renewal';
-                freeBtn.style.cssText = "width: 100%; padding: 14px; background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 15px; cursor: pointer; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.15);";
+                freeBtn.innerText = '🎁 Claim Free IPTV Renewal';
+                freeBtn.className = 'btn-secondary';
+                freeBtn.style.marginTop = '8px';
                 freeBtn.onclick = function() { processFreeWalletRenewal(); };
                 paypalWrapper.parentNode.appendChild(freeBtn);
             } else {
@@ -351,22 +562,16 @@
             document.getElementById('plan-price-display').innerText = `£${currentPrice}`;
         }
 
-        // --- MULTI-CONNECTION SUBSCRIPTION RENEWAL CHECKOUT ENGINE ---
-        let paypalButtonInstance = null;
         function renderPayPalButtons() {
             if (paypalButtonInstance) {
                 document.getElementById('paypal-button-container').innerHTML = '';
             }
-
             paypalButtonInstance = paypal.Buttons({
                 createOrder: function(data, actions) {
                     return actions.order.create({
                         purchase_units: [{
-                            amount: {
-                                currency_code: "GBP",
-                                value: currentPrice
-                            },
-                            description: `SimplyRocks Premium Renewal (${currentConnections} Conn) - Discount Applied: £${discountDeduction}`,
+                            amount: { currency_code: "GBP", value: currentPrice },
+                            description: `SimplyRocks IPTV (${currentConnections} Conn) - Discount: £${discountDeduction.toFixed(2)}`,
                             custom_id: "{{ username }}"
                         }]
                     });
@@ -383,10 +588,9 @@
                                 discount_redeemed: discountDeduction.toString()
                             })
                         });
-                        
                         const resData = await response.json();
                         if (resData.success) {
-                            alert('Thank you! Your line extension was processed successfully.');
+                            alert('Your IPTV renewal was processed successfully.');
                             window.location.reload();
                         } else {
                             alert('Payment cleared but database sync failed.');
@@ -394,15 +598,14 @@
                     });
                 },
                 onError: function(err) {
-                    alert('Subscription checkout channel interrupted.');
+                    alert('Subscription checkout interrupted.');
                 }
             });
             paypalButtonInstance.render('#paypal-button-container');
         }
 
         async function processFreeWalletRenewal() {
-            if (!confirm("Are you sure you want to redeem your wallet balance to claim this 100% free subscription extension?")) return;
-            
+            if (!confirm("Redeem your wallet for a free IPTV renewal?")) return;
             try {
                 const response = await fetch('/log_payment', {
                     method: 'POST',
@@ -414,155 +617,46 @@
                         discount_redeemed: discountDeduction.toString()
                     })
                 });
-                
                 const resData = await response.json();
                 if (resData.success) {
-                    alert('🎉 Congratulations! Your 100% free extension has been successfully applied to your line!');
+                    alert('Your free IPTV renewal has been applied!');
                     window.location.reload();
                 } else {
                     alert('Error applying free subscription: ' + resData.message);
                 }
             } catch (e) {
-                console.error("Free redemption fault:", e);
-                alert("Redemption engine timeout. Please contact admin.");
+                alert("Redemption timeout. Please try again.");
             }
         }
 
-        // --- 3. REFER-A-FRIEND PAYPAL BUTTONS ---
-        function renderReferralPayPalButtons() {
-            const container = document.getElementById('paypal-referral-container');
-            if (!container) return;
-            
-            paypal.Buttons({
-                createOrder: function(data, actions) {
-                    const firstName = document.getElementById('ref-first-name').value.trim();
-                    const lastName = document.getElementById('ref-last-name').value.trim();
-                    const phoneNumber = document.getElementById('ref-phone-number').value.trim();
-                    
-                    if (!firstName || !lastName || !phoneNumber) {
-                        alert('⚠️ You must provide your friend\'s First Name, Last Name, AND Mobile Phone Number before you can proceed to payment!');
-                        return false;
-                    }
-                    
-                    return actions.order.create({
-                        purchase_units: [{
-                            amount: { currency_code: "GBP", value: "75.00" },
-                            description: `Referral 1-Year Premium Line Setup Request (${firstName} ${lastName} - Ph: ${phoneNumber}) submitted by user: {{ username }}`,
-                            custom_id: "{{ username }}"
-                        }]
-                    });
-                },
-                onApprove: function(data, actions) {
-                    return actions.order.capture().then(async function(details) {
-                        const firstName = document.getElementById('ref-first-name').value.trim();
-                        const lastName = document.getElementById('ref-last-name').value.trim();
-                        const phoneNumber = document.getElementById('ref-phone-number').value.trim();
-                        const receipt = document.getElementById('referral-success-receipt');
-
-                        const response = await fetch('/create_referral_line', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                first_name: firstName, 
-                                last_name: lastName, 
-                                phone: phoneNumber 
-                            })
-                        });
-                        
-                        const resData = await response.json();
-                        if (resData.success) {
-                            document.getElementById('rec-user').innerText = resData.generated_user;
-                            document.getElementById('rec-pass').innerText = resData.generated_pass;
-                            receipt.style.display = 'block';
-                            
-                            document.getElementById('ref-first-name').value = '';
-                            document.getElementById('ref-last-name').value = '';
-                            document.getElementById('ref-phone-number').value = '';
-                            alert('🎉 Success! Payment captured and line created. Logins are generated below.');
-                        } else {
-                            alert('Payment received but panel registration failed: ' + resData.message);
-                        }
-                    });
-                }
-            }).render('#paypal-referral-container');
-        }
-
-        // --- 4. FORM VALIDATION FOR REFERRAL ---
-        function validateReferralFormInputs() {
-            const firstName = document.getElementById('ref-first-name').value.trim();
-            const lastName = document.getElementById('ref-last-name').value.trim();
-            const phoneNumber = document.getElementById('ref-phone-number').value.trim();
-            
-            const errorBanner = document.getElementById('referral-form-error');
-            const buttonMask = document.getElementById('paypal-referral-lockout-mask');
-            
-            let missingFields = [];
-            if (!firstName) missingFields.push("First Name");
-            if (!lastName) missingFields.push("Last Name");
-            if (!phoneNumber) missingFields.push("Mobile / Phone Number");
-            
-            if (missingFields.length > 0) {
-                errorBanner.innerHTML = `❌ ENTRY ERROR: You must enter your friend's <b>${missingFields.join(', ')}</b> to unlock checkout.`;
-                errorBanner.style.color = '#f87171';
-                buttonMask.style.pointerEvents = 'none';
-                buttonMask.style.opacity = '0.25';
-                return false;
-            }
-            
-            errorBanner.innerHTML = "✅ All fields completed perfectly! PayPal buttons unlocked.";
-            errorBanner.style.color = '#4ade80';
-            buttonMask.style.pointerEvents = 'auto';
-            buttonMask.style.opacity = '1.0';
-            return true;
-        }
-
+        // --- MEDIA SEARCH ---
         async function searchMedia() {
             const query = document.getElementById('search-input').value;
             const resultsDiv = document.getElementById('results');
             if(!query) return;
-
-            resultsDiv.innerHTML = '<p style="color: #94a3b8; grid-column: span 2;">Querying live database...</p>';
-            
+            resultsDiv.innerHTML = '<p style="color:#94a3b8; grid-column:1/-1;">Searching...</p>';
             try {
                 const response = await fetch(`/search_media?q=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 const items = data.results || [];
-                
                 resultsDiv.innerHTML = '';
-
                 if (items.length === 0) {
-                    resultsDiv.innerHTML = '<p style="color: #f87171; grid-column: span 2;">No movie matches found.</p>';
+                    resultsDiv.innerHTML = '<p style="color:#f87171; grid-column:1/-1;">No matches found.</p>';
                     return;
                 }
-
                 items.forEach(item => {
                     if (item.media_type !== 'movie' && item.media_type !== 'tv') return;
-
                     const title = item.media_type === 'movie' ? item.title : item.name;
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
-                    
                     let year = 'VOD';
-                    if (rawDate && rawDate.includes('-')) {
-                        year = rawDate.split('-')[0];
-                    }
-                    
+                    if (rawDate && rawDate.includes('-')) { year = rawDate.split('-')[0]; }
                     const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
-
+                    const payload = { title, year, type: item.media_type, imdbID: "TMDB-" + item.id, poster: posterImg };
+                    const b64Data = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
                     const card = document.createElement('div');
                     card.className = "media-card";
-
-                    const payload = {
-                        title: title,
-                        year: year,
-                        type: item.media_type,
-                        imdbID: "TMDB-" + item.id,
-                        poster: posterImg
-                    };
-
-                    const b64Data = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-
                     card.innerHTML = `
-                        <img src="${posterImg}" class="media-poster" alt="Poster" onerror="this.onerror=null; this.src='https://placehold.co';">
+                        <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
                         <div class="media-info">
                             <h4>${title}</h4>
                             <p>${year} • ${item.media_type.toUpperCase()}</p>
@@ -571,22 +665,19 @@
                     `;
                     resultsDiv.appendChild(card);
                 });
-
             } catch (err) {
-                resultsDiv.innerHTML = '<p style="color: #f87171; grid-column: span 2;">Error reading data stream.</p>';
+                resultsDiv.innerHTML = '<p style="color:#f87171; grid-column:1/-1;">Error reading data.</p>';
             }
         }
 
         async function unpackAndSubmit(b64Data) {
             try {
                 const payload = JSON.parse(decodeURIComponent(escape(atob(b64Data))));
-                
                 const response = await fetch('/submit_request', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
                 const resData = await response.json();
                 if(resData.success) {
                     alert(resData.message);
@@ -595,7 +686,7 @@
                     alert('Request failed to save.');
                 }
             } catch (e) {
-                alert('Payload error parsing.');
+                alert('Payload error.');
             }
         }
 
@@ -606,41 +697,36 @@
             const query = document.getElementById('channel-search-input').value.trim();
             const dropdown = document.getElementById('channel-dropdown-results');
             const reportOptions = document.getElementById('channel-reporting-options');
-            
             if (query.length < 2) {
                 dropdown.style.display = 'none';
                 return;
             }
-
             channelSearchTimeout = setTimeout(async () => {
                 try {
                     const response = await fetch(`/search_channels?q=${encodeURIComponent(query)}`);
                     const channels = await response.json();
-                    
                     dropdown.innerHTML = '';
-                    
                     if (channels.length === 0) {
                         dropdown.innerHTML = `
-                            <div style="padding: 12px; background-color: #0f172a; text-align: center; border-bottom: 1px solid #334155;">
-                                <p style="color: #facc15; margin: 0 0 8px 0; font-size: 12px;">📺 Channel not in database yet!</p>
-                                <button onclick="injectNewCrowdSourcedChannel('${query.replace(/'/g, "\\'")}')" style="background: linear-gradient(90deg, #16a34a, #22c55e); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; width: 100%;">+ Add "${query}" & Report Issue</button>
-                            </div>
-                        `;
+                            <div style="padding:8px; text-align:center; font-size:12px;">
+                                <p style="color:#facc15; margin:0 0 4px;">Channel not in database.</p>
+                                <button onclick="injectNewCrowdSourcedChannel('${query.replace(/'/g,"\\'")}')" 
+                                        style="background:linear-gradient(90deg,#16a34a,#22c55e); border:none; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">
+                                    + Add "${query}" & Report Issue
+                                </button>
+                            </div>`;
                         dropdown.style.display = 'block';
                         return;
                     }
-
                     channels.forEach(item => {
                         const div = document.createElement('div');
-                        div.style.padding = '10px 15px'; 
-                        div.style.cursor = 'pointer'; 
-                        div.style.borderBottom = '1px solid #334155'; 
-                        div.style.fontSize = '13px';
-                        div.innerHTML = `📺 <strong>${item.name}</strong> <span style="font-size:11px; color:#64748b;">(ID: ${item.id})</span>`;
-                        
+                        div.style.padding = '8px 10px';
+                        div.style.cursor = 'pointer';
+                        div.style.fontSize = '12px';
+                        div.style.borderBottom = '1px solid #334155';
+                        div.innerHTML = `📺 <strong>${item.name}</strong> <span style="font-size:11px;color:#64748b;">(ID: ${item.id})</span>`;
                         div.onmouseover = () => div.style.backgroundColor = '#334155';
                         div.onmouseout = () => div.style.backgroundColor = 'transparent';
-                        
                         div.onclick = () => {
                             document.getElementById('channel-search-input').value = item.name;
                             document.getElementById('selected-channel-display').innerText = item.name;
@@ -652,105 +738,90 @@
                     });
                     dropdown.style.display = 'block';
                 } catch (e) { console.error(e); }
-            }, 300);
+            }, 250);
         }
 
         async function injectNewCrowdSourcedChannel(typedName) {
             const randomStreamId = "LOCAL-" + Math.floor(10000 + Math.random() * 90000);
-            
             try {
                 const response = await fetch('/submit_crowdsourced_channel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: typedName, stream_id: randomStreamId })
                 });
-                
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('channel-search-input').value = typedName;
                     document.getElementById('selected-channel-display').innerText = typedName;
                     document.getElementById('selected-channel-id').value = randomStreamId;
-                    
                     document.getElementById('channel-reporting-options').style.display = 'block';
                     document.getElementById('channel-dropdown-results').style.display = 'none';
                 } else {
-                    alert("Database write error: " + data.message);
+                    alert("Database error: " + data.message);
                 }
-            } catch (err) { alert("Database injection timeout."); }
+            } catch (err) { alert("Database timeout."); }
         }
 
         async function submitChannelReport() {
             const chName = document.getElementById('selected-channel-display').innerText;
             const chId = document.getElementById('selected-channel-id').value;
             const issue = document.getElementById('channel-issue-select').value;
-            
             try {
                 const response = await fetch('/submit_channel_report', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel_name: chName,
-                        channel_id: chId,
-                        issue_type: issue
-                    })
+                    body: JSON.stringify({ channel_name: chName, channel_id: chId, issue_type: issue })
                 });
-                
                 const data = await response.json();
                 if (data.success) {
-                    alert('Thank you! The line report has been successfully logged. Admin has been notified.');
+                    alert('Channel issue logged. Thank you.');
                     document.getElementById('channel-search-input').value = '';
                     document.getElementById('channel-reporting-options').style.display = 'none';
                 } else {
-                    alert('Report channel failed to submit. Please refresh page.');
+                    alert('Failed to submit ticket.');
                 }
             } catch (err) {
-                alert('Connection failure recording ticket error code block.');
+                alert('Connection error.');
             }
         }
 
         // --- VOD dropdown & ticket ---
         async function searchVodCatalogDropdown(queryText) {
             const popup = document.getElementById('vod-results-popup');
-            if (queryText.trim().length < 2) { popup.style.display = 'none'; return; }
-            
+            if (!queryText || queryText.trim().length < 2) {
+                popup.style.display = 'none';
+                return;
+            }
             try {
                 const response = await fetch('/search_media?q=' + encodeURIComponent(queryText));
                 const data = await response.json();
                 const items = data.results || [];
-                
-                if (items.length === 0) { popup.style.display = 'none'; return; }
-                
+                if (!items.length) { popup.style.display = 'none'; return; }
                 popup.innerHTML = '';
-                items.slice(0, 6).forEach(item => {
+                items.slice(0,6).forEach(item => {
                     const title = item.title || item.name || 'Unknown Title';
                     const type = item.media_type || 'movie';
                     const year = (item.release_date || item.first_air_date || 'VOD').split('-')[0];
-                    
                     const div = document.createElement('div');
-                    div.style.padding = '10px 15px'; 
-                    div.style.cursor = 'pointer'; 
-                    div.style.borderBottom = '1px solid #334155'; 
-                    div.style.fontSize = '13px';
-                    div.innerHTML = `🎬 <strong>${title}</strong> <span style="font-size:11px; color:#64748b;">(${year}) [${type.toUpperCase()}]</span>`;
-                    
+                    div.style.padding = '8px 10px';
+                    div.style.cursor = 'pointer';
+                    div.style.fontSize = '12px';
+                    div.style.borderBottom = '1px solid #334155';
+                    div.innerHTML = `🎬 <strong>${title}</strong> <span style="font-size:11px;color:#64748b;">(${year}) [${type.toUpperCase()}]</span>`;
                     div.onmouseover = () => div.style.backgroundColor = '#334155';
                     div.onmouseout = () => div.style.backgroundColor = 'transparent';
-                    
                     div.onclick = () => {
                         document.getElementById('vod-search-box').value = `${title} (${year})`;
                         document.getElementById('selected-vod-display').innerText = `${title} (${year})`;
                         document.getElementById('selected-vod-title').value = title;
                         document.getElementById('selected-vod-type').value = type;
-                        
-                        const optionsRow = document.getElementById('vod-reporting-options');
-                        optionsRow.style.display = 'block';
-                        
+                        document.getElementById('vod-reporting-options').style.display = 'block';
                         popup.style.display = 'none';
                     };
                     popup.appendChild(div);
                 });
                 popup.style.display = 'block';
-            } catch (e) { console.error("VOD dropdown lookup crash:", e); }
+            } catch(e) { console.error("VOD dropdown:", e); }
         }
 
         function toggleVodOtherTextInput(chosenValue) {
@@ -771,14 +842,10 @@
             const issue = document.getElementById('vod-issue-type').value;
             const notesField = document.getElementById('vod-custom-issue-text');
             const customNotes = notesField ? notesField.value.trim() : "";
-            
-            if (!title) { alert("Please search and pick a valid Movie or Show title first from the search bar!"); return; }
-            if (issue === "Other" && !customNotes) { alert("⚠️ Entry Error: Please supply a short custom fault description text inside the input box!"); return; }
-            
-            const originalText = btn.innerHTML; 
-            btn.disabled = true; 
-            btn.innerHTML = 'Sending Ticket...';
-            
+            if (!title) { alert("Please select a title."); return; }
+            if (issue === "Other" && !customNotes) { alert("Please enter custom fault details."); return; }
+            const originalText = btn.innerHTML;
+            btn.disabled = true; btn.innerHTML = 'Sending...';
             try {
                 const response = await fetch('/submit_vod_report', {
                     method: 'POST',
@@ -792,26 +859,252 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    alert('🎉 Success! VOD catalog fault ticket successfully logged.');
+                    alert('VOD fault ticket logged.');
                     window.location.reload();
-                } else { 
-                    alert('Error: ' + data.message); 
+                } else {
+                    alert('Error: ' + data.message);
                 }
-            } catch (err) { 
-                alert('Connection timeout. Try again.'); 
+            } catch (err) {
+                alert('Connection timeout.');
             }
-            btn.disabled = false; 
-            btn.innerHTML = originalText;
+            btn.disabled = false; btn.innerHTML = originalText;
         }
 
-        // Close dropdown panels if user clicks away
+        // --- Referral friend purchase PayPal buttons ---
+        function renderReferralPayPalButtons() {
+            const container = document.getElementById('paypal-referral-container');
+            if (!container) return;
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    const firstName = document.getElementById('ref-first-name').value.trim();
+                    const lastName = document.getElementById('ref-last-name').value.trim();
+                    const phoneNumber = document.getElementById('ref-phone-number').value.trim();
+                    if (!firstName || !lastName || !phoneNumber) {
+                        alert('Please fill all friend details before payment.');
+                        return false;
+                    }
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { currency_code: "GBP", value: "75.00" },
+                            description: `Referral 1-Year Line for ${firstName} ${lastName} (${phoneNumber}) by {{ username }}`,
+                            custom_id: "{{ username }}"
+                        }]
+                    });
+                },
+                onApprove: function(data, actions) {
+                    return actions.order.capture().then(async function(details) {
+                        const firstName = document.getElementById('ref-first-name').value.trim();
+                        const lastName = document.getElementById('ref-last-name').value.trim();
+                        const phoneNumber = document.getElementById('ref-phone-number').value.trim();
+                        const receipt = document.getElementById('referral-success-receipt');
+                        const response = await fetch('/create_referral_line', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ first_name: firstName, last_name: lastName, phone: phoneNumber })
+                        });
+                        const resData = await response.json();
+                        if (resData.success) {
+                            document.getElementById('rec-user').innerText = resData.generated_user;
+                            document.getElementById('rec-pass').innerText = resData.generated_pass;
+                            receipt.style.display = 'block';
+                            document.getElementById('ref-first-name').value = '';
+                            document.getElementById('ref-last-name').value = '';
+                            document.getElementById('ref-phone-number').value = '';
+                            fetchWalletBalance();
+                            fetchReferralFriends();
+                            alert('Friend line created. Share the logins below.');
+                        } else {
+                            alert('Payment received but line creation failed: ' + resData.message);
+                        }
+                    });
+                }
+            }).render('#paypal-referral-container');
+        }
+
+        function validateReferralFormInputs() {
+            const firstName = document.getElementById('ref-first-name').value.trim();
+            const lastName = document.getElementById('ref-last-name').value.trim();
+            const phoneNumber = document.getElementById('ref-phone-number').value.trim();
+            const errorBanner = document.getElementById('referral-form-error');
+            const lockoutMask = document.getElementById('paypal-referral-lockout-mask');
+            let missing = [];
+            if (!firstName) missing.push("First Name");
+            if (!lastName) missing.push("Last Name");
+            if (!phoneNumber) missing.push("Mobile / Phone");
+            if (missing.length) {
+                errorBanner.style.display = 'block';
+                errorBanner.innerHTML = `Please enter: ${missing.join(', ')}`;
+                lockoutMask.style.pointerEvents = 'none';
+                lockoutMask.style.opacity = '0.3';
+            } else {
+                errorBanner.style.display = 'none';
+                errorBanner.innerHTML = '';
+                lockoutMask.style.pointerEvents = 'auto';
+                lockoutMask.style.opacity = '1.0';
+            }
+        }
+
+        // --- Spotify PayPal ---
+        let spotifyDiscount = 0.0;
+        function updateSpotifyPriceDisplay() {
+            const base = 45.00;
+            const priceSpan = document.getElementById('spotify-price-display');
+            const noteSpan = document.getElementById('spotify-discount-note');
+            let final = base - spotifyDiscount;
+            if (final < 0) final = 0;
+            priceSpan.innerText = `£${final.toFixed(2)}`;
+            if (spotifyDiscount > 0) {
+                noteSpan.innerText = `Wallet Discount Applied: -£${spotifyDiscount.toFixed(2)}`;
+                noteSpan.style.display = 'block';
+            } else {
+                noteSpan.style.display = 'none';
+            }
+        }
+
+        function applySpotifyDiscountUsingWallet(amount) {
+            const base = 45.00;
+            const usable = Math.min(maxAvailableWalletBalance, base);
+            spotifyDiscount = usable;
+            updateSpotifyPriceDisplay();
+        }
+
+        function renderSpotifyPayPalButtons() {
+            const container = document.getElementById('paypal-spotify-container');
+            if (!container) return;
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    const su = document.getElementById('spotify-username').value.trim();
+                    const sp = document.getElementById('spotify-password').value.trim();
+                    if (!su || !sp) {
+                        alert('Please enter Spotify username and password.');
+                        return false;
+                    }
+                    const base = 45.00;
+                    const finalAmount = Math.max(0, base - spotifyDiscount).toFixed(2);
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { currency_code: "GBP", value: finalAmount },
+                            description: `Spotify Upgrade for ${su} via {{ username }} (Discount: £${spotifyDiscount.toFixed(2)})`,
+                            custom_id: "{{ username }}"
+                        }]
+                    });
+                },
+                onApprove: function(data, actions) {
+                    return actions.order.capture().then(async function(details) {
+                        const su = document.getElementById('spotify-username').value.trim();
+                        const sp = document.getElementById('spotify-password').value.trim();
+                        const base = 45.00;
+                        const finalAmount = Math.max(0, base - spotifyDiscount).toFixed(2);
+                        const response = await fetch('/buy_spotify', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                orderID: details.id,
+                                spotify_username: su,
+                                spotify_password: sp,
+                                discount_redeemed: spotifyDiscount.toString()
+                            })
+                        });
+                        const dataRes = await response.json();
+                        if (dataRes.success) {
+                            alert('Spotify order received. We will upgrade your account shortly.');
+                            document.getElementById('spotify-username').value = '';
+                            document.getElementById('spotify-password').value = '';
+                            spotifyDiscount = 0.0;
+                            fetchWalletBalance();
+                        } else {
+                            alert('Order error: ' + dataRes.message);
+                        }
+                    });
+                }
+            }).render('#paypal-spotify-container');
+        }
+
+        // --- Referral Friends List & Renewals ---
+        async function fetchReferralFriends() {
+            const container = document.getElementById('friends-list');
+            if (!container) return;
+            container.innerHTML = '<p style="color:#94a3b8;">Loading friends...</p>';
+            try {
+                const response = await fetch('/get_referral_friends');
+                const list = await response.json();
+                if (!list.length) {
+                    container.innerHTML = '<p style="color:#64748b;">No referred friends yet.</p>';
+                    return;
+                }
+                container.innerHTML = '';
+                list.forEach(friend => {
+                    const wrapper = document.createElement('div');
+                    wrapper.style.borderBottom = '1px solid #334155';
+                    wrapper.style.padding = '6px 0';
+                    wrapper.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <div>
+                                <div><strong>${friend.friend_username}</strong></div>
+                                <div style="font-size:11px; color:#9ca3af;">Expiry: ${friend.expiry_date} ${friend.days_left !== null ? `(${friend.days_left} days)` : ''}</div>
+                            </div>
+                            <button onclick="renewFriendLine('${friend.friend_username}')" 
+                                    style="background:transparent; color:#22c55e; border:1px solid rgba(34,197,94,0.6); padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">
+                                Renew
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(wrapper);
+                });
+            } catch (e) {
+                container.innerHTML = '<p style="color:#f87171;">Error loading friends list.</p>';
+            }
+        }
+
+        function renewFriendLine(friendUsername) {
+            if (!confirm(`Renew 1-year IPTV line for ${friendUsername}?`)) return;
+            const base = 75.00; // reuse IPTV price or you can choose a separate price
+            let friendDiscount = Math.min(maxAvailableWalletBalance, base);
+            const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
+            // Quick PayPal flow:
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { currency_code: "GBP", value: finalAmount },
+                            description: `Friend Renewal for ${friendUsername} via {{ username }} (Discount: £${friendDiscount.toFixed(2)})`,
+                            custom_id: "{{ username }}"
+                        }]
+                    });
+                },
+                onApprove: function(data, actions) {
+                    return actions.order.capture().then(async function(details) {
+                        const response = await fetch('/renew_friend_line', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                friend_username: friendUsername,
+                                orderID: details.id,
+                                amount: finalAmount,
+                                discount_redeemed: friendDiscount.toString()
+                            })
+                        });
+                        const dataRes = await response.json();
+                        if (dataRes.success) {
+                            alert(dataRes.message);
+                            fetchWalletBalance();
+                            fetchReferralFriends();
+                        } else {
+                            alert('Error renewing friend: ' + dataRes.message);
+                        }
+                    });
+                }
+            }).render(document.createElement('div')); // ephemeral; not visible
+            alert("A PayPal popup should open. If it doesn't, please check your browser.");
+        }
+
+        // Close dropdowns when clicking outside
         document.addEventListener('click', function(e) {
             const chBox = document.getElementById('channel-search-input');
             const chPopup = document.getElementById('channel-dropdown-results');
             if (chBox && chPopup && !chBox.contains(e.target) && !chPopup.contains(e.target)) {
                 chPopup.style.display = 'none';
             }
-
             const vodBox = document.getElementById('vod-search-box');
             const vodPopup = document.getElementById('vod-results-popup');
             if (vodBox && vodPopup && !vodBox.contains(e.target) && !vodPopup.contains(e.target)) {
@@ -819,11 +1112,14 @@
             }
         });
 
-        // Initialize on load
+        // Init on load
         fetchWalletBalance();
+        updatePricingDisplay();
         renderPayPalButtons();
         renderReferralPayPalButtons();
-        setTimeout(validateReferralFormInputs, 600);
+        renderSpotifyPayPalButtons();
+        setTimeout(validateReferralFormInputs, 500);
+        fetchReferralFriends();
     </script>
 </body>
 </html>

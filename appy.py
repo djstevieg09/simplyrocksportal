@@ -1137,6 +1137,86 @@ def get_referral_friends():
     return jsonify(results)
 
 
+@app.route('/admin/reassign_referral_friend', methods=['POST'])
+def admin_reassign_referral_friend():
+    """
+    Admin: move a referred friend to a different referrer.
+    This ONLY changes referral_friends.referrer_username
+    and does NOT create or change any wallet credit.
+
+    Expected JSON body:
+    {
+        "friend_username": "childUser",
+        "new_referrer": "parentUser",
+        "old_referrer": "optionalOldReferrer"   # optional safety filter
+    }
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    friend_username = (data.get('friend_username') or '').strip()
+    new_referrer = (data.get('new_referrer') or '').strip()
+    old_referrer = (data.get('old_referrer') or '').strip()
+
+    if not friend_username or not new_referrer:
+        return jsonify({
+            'success': False,
+            'message': 'friend_username and new_referrer are required.'
+        }), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # Optional safety: ensure new referrer exists as a portal user
+            cursor.execute(
+                "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                (new_referrer.lower(),)
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    'success': False,
+                    'message': 'New referrer does not exist as a portal user.'
+                }), 400
+
+            # Build WHERE clause dynamically
+            params = [friend_username.lower()]
+            where_clause = "LOWER(friend_username) = ?"
+            if old_referrer:
+                where_clause += " AND LOWER(referrer_username) = ?"
+                params.append(old_referrer.lower())
+
+            # Perform reassignment
+            cursor.execute(f"""
+                UPDATE referral_friends
+                SET referrer_username = ?
+                WHERE {where_clause}
+            """, (new_referrer,) + tuple(params))
+
+            if cursor.rowcount == 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'No matching friend record found to reassign.'
+                }), 404
+
+            conn.commit()
+
+        log_activity(
+            session.get('username', 'admin'),
+            f"Reassigned referral friend '{friend_username}' to referrer '{new_referrer}'"
+            + (f" (from '{old_referrer}')" if old_referrer else "")
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Friend '{friend_username}' is now managed by '{new_referrer}'."
+        })
+    except Exception as e:
+        print(f"ADMIN REASSIGN REFERRAL ERROR: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/submit_channel_report', methods=['POST'])
 def submit_channel_report():
     if not session.get('logged_in'):

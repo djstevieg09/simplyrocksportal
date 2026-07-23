@@ -287,7 +287,7 @@
 
     <div class="main-wrapper">
         <div class="grid">
-            <!-- LEFT COLUMN: Requests, channel reports, VOD reports -->
+            <!-- LEFT COLUMN: Requests, friends, channel & VOD reports -->
             <div>
                 <!-- Media search & requests -->
                 <div class="card">
@@ -328,6 +328,13 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Friends list and renewals (MOVED TO LEFT) -->
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Friends You Referred</h2>
+                    <p>Renew your friends’ lines and earn £10 credit per renewal.</p>
+                    <div id="friends-list" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
                 </div>
 
                 <!-- Channel fault report -->
@@ -392,7 +399,7 @@
                 </div>
             </div>
 
-            <!-- RIGHT COLUMN: Wallet, IPTV renewals, Spotify, friends -->
+            <!-- RIGHT COLUMN: Wallet, IPTV, Spotify, refer-a-friend -->
             <div>
                 <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
@@ -406,13 +413,13 @@
                             Redeem Credit
                         </button>
                     </div>
-                    <p style="margin-top:8px;">Your wallet can be used towards IPTV renewals and Spotify subscriptions.</p>
+                    <p style="margin-top:8px;">Use wallet credit for IPTV renewals and Spotify subscriptions.</p>
                 </div>
 
                 <!-- IPTV Renewal -->
                 <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
                     <h2 style="color:#facc15;">Renew IPTV Subscription</h2>
-                    <p>Extend your premium IPTV line instantly. Choose how many devices you want to connect.</p>
+                    <p>Extend your IPTV line. Choose how many devices you want to connect.</p>
                     <label class="section-title">Connections:</label>
                     <select id="connection-tier-select" onchange="updatePricingDisplay()" class="form-field">
                         <option value="1" data-price="75.00">1 Device — £75.00</option>
@@ -423,7 +430,7 @@
                     <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
                         <span id="plan-title-display" style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Premium 1-Year (1 Connection)</span><br>
                         <span id="plan-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£75.00</span>
-                        <span id="discount-note" style="display:block; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold; display:none;">Wallet Discount Applied</span>
+                        <span id="discount-note" style="display:none; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold;">Wallet Discount Applied</span>
                     </div>
                     <div id="paypal-button-container"></div>
                 </div>
@@ -431,7 +438,7 @@
                 <!-- Spotify purchase -->
                 <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
                     <h2 style="color:#60a5fa;">Spotify Subscription (£45)</h2>
-                    <p>Upgrade your Spotify account to our premium package using your portal.</p>
+                    <p>Upgrade your Spotify account to our premium package.</p>
                     <label class="section-title">Spotify Username:</label>
                     <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email or username">
                     <label class="section-title">Spotify Password:</label>
@@ -439,7 +446,7 @@
                     <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
                         <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Spotify Upgrade</span><br>
                         <span id="spotify-price-display" style="font-size:22px; font-weight:900;">£45.00</span>
-                        <span id="spotify-discount-note" style="display:block; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold; display:none;"></span>
+                        <span id="spotify-discount-note" style="display:none; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold;"></span>
                     </div>
                     <div id="paypal-spotify-container"></div>
                 </div>
@@ -447,7 +454,7 @@
                 <!-- Refer a friend purchase -->
                 <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
                     <h2 style="color:#4ade80;">Refer a Friend (1-Year)</h2>
-                    <p>Buy a 12‑month IPTV line for your friend. You earn £25 credit on new signups.</p>
+                    <p>Buy a 12‑month IPTV line for a friend. You earn £25 credit on new signups.</p>
                     <div id="referral-form-error" style="display:none; background-color:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:8px; border-radius:6px; font-size:12px; margin-bottom:8px;"></div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
                         <div>
@@ -475,13 +482,6 @@
                             Password: <span id="rec-pass" style="color:#ffffff;"></span>
                         </div>
                     </div>
-                </div>
-
-                <!-- Friends list and renewals -->
-                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
-                    <h2>Friends You Referred</h2>
-                    <p>Renew your friends’ lines and earn £10 credit per renewal.</p>
-                    <div id="friends-list" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
                 </div>
             </div>
         </div>
@@ -526,11 +526,7 @@
 
         function applyReferralDiscount() {
             const renewalCost = parseFloat(basePrice);
-            if (maxAvailableWalletBalance >= renewalCost) {
-                discountDeduction = renewalCost;
-            } else {
-                discountDeduction = maxAvailableWalletBalance;
-            }
+            discountDeduction = Math.min(maxAvailableWalletBalance, renewalCost);
             const noteSpan = document.getElementById('discount-note');
             noteSpan.innerText = `Wallet Discount: -£${discountDeduction.toFixed(2)}`;
             noteSpan.style.display = 'block';
@@ -542,7 +538,7 @@
             let finalValue = basePrice - discountDeduction;
             const paypalWrapper = document.getElementById('paypal-button-container');
             let freeBtn = document.getElementById('free-checkout-btn');
-            if (freeBtn) { freeBtn.remove(); }
+            if (freeBtn) freeBtn.remove();
 
             if (finalValue <= 0) {
                 finalValue = 0; currentPrice = "0.00";
@@ -649,7 +645,7 @@
                     const title = item.media_type === 'movie' ? item.title : item.name;
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
                     let year = 'VOD';
-                    if (rawDate && rawDate.includes('-')) { year = rawDate.split('-')[0]; }
+                    if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
                     const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
                     const payload = { title, year, type: item.media_type, imdbID: "TMDB-" + item.id, poster: posterImg };
                     const b64Data = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
@@ -963,8 +959,7 @@
 
         function applySpotifyDiscountUsingWallet(amount) {
             const base = 45.00;
-            const usable = Math.min(maxAvailableWalletBalance, base);
-            spotifyDiscount = usable;
+            spotifyDiscount = Math.min(maxAvailableWalletBalance, base);
             updateSpotifyPriceDisplay();
         }
 
@@ -1033,10 +1028,12 @@
                     return;
                 }
                 container.innerHTML = '';
+                const now = Date.now() / 1000;
                 list.forEach(friend => {
                     const wrapper = document.createElement('div');
                     wrapper.style.borderBottom = '1px solid #334155';
                     wrapper.style.padding = '6px 0';
+                    const badgeClass = friend.days_left !== null && friend.days_left <= 7 ? 'pill-yellow' : 'pill-green';
                     wrapper.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                             <div>
@@ -1058,10 +1055,9 @@
 
         function renewFriendLine(friendUsername) {
             if (!confirm(`Renew 1-year IPTV line for ${friendUsername}?`)) return;
-            const base = 75.00; // reuse IPTV price or you can choose a separate price
+            const base = 75.00;
             let friendDiscount = Math.min(maxAvailableWalletBalance, base);
             const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
-            // Quick PayPal flow:
             paypal.Buttons({
                 createOrder: function(data, actions) {
                     return actions.order.create({
@@ -1094,7 +1090,7 @@
                         }
                     });
                 }
-            }).render(document.createElement('div')); // ephemeral; not visible
+            }).render(document.createElement('div')); // ephemeral
             alert("A PayPal popup should open. If it doesn't, please check your browser.");
         }
 

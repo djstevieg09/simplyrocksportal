@@ -731,7 +731,7 @@
                             await fetchWalletBalance();
                             window.location.reload();
                         } else {
-                            alert('Payment cleared but database sync failed.');
+                            alert('Payment issue: ' + (resData.message || 'database sync failed.'));
                         }
                     });
                 },
@@ -864,10 +864,17 @@
                         const lastName = document.getElementById('ref-last-name').value.trim();
                         const phoneNumber = document.getElementById('ref-phone-number').value.trim();
                         const receipt = document.getElementById('referral-success-receipt');
+                        // NOTE: orderID is now required by the backend so the
+                        // payment can be verified with PayPal before a line is created.
                         const response = await fetch('/create_referral_line', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ first_name: firstName, last_name: lastName, phone: phoneNumber })
+                            body: JSON.stringify({
+                                first_name: firstName,
+                                last_name: lastName,
+                                phone: phoneNumber,
+                                orderID: details.id
+                            })
                         });
                         const resData = await response.json();
                         if (resData.success) {

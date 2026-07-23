@@ -1136,6 +1136,96 @@ def get_referral_friends():
         print(f"GET_REFERRAL_FRIENDS ERROR: {e}")
     return jsonify(results)
 
+@app.route('/renew_friend_line', methods=['POST'])
+def renew_friend_line():
+    """
+    User-initiated: renew a referred friend's IPTV line.
+    Called after successful PayPal payment from the dashboard.
+
+    Expects JSON:
+      {
+        "friend_username": "friendUser",
+        "orderID": "PAYPAL-ID",
+        "amount": "75.00",
+        "discount_redeemed": "10.00"
+      }
+
+    Behaviour:
+    - Logs payment under the referrer's username (session user).
+    - Extends friend's expiry_timestamp by 1 year from now in referral_friends.
+    - Credits FRIEND_RENEWAL_BONUS to referrer's wallet.
+    - Sends Telegram notification to admin with all details.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    referrer = session.get('username')
+    friend_username = (data.get('friend_username') or '').strip()
+    order_id = (data.get('orderID') or '').strip()
+    amount_str = (data.get('amount') or '0').strip()
+    discount_str = (data.get('discount_redeemed') or '0').strip()
+
+    if not friend_username or not order_id:
+        return jsonify({'success': False, 'message': 'Missing friend_username or orderID'}), 400
+
+    try:
+        amount_val = float(amount_str)
+    except ValueError:
+        amount_val = 0.0
+    try:
+        discount_val = float(discount_str)
+    except ValueError:
+        discount_val = 0.0
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # 1) Log payment row under referrer
+            cursor.execute('''
+                INSERT INTO payments (username, order_id, amount, status)
+                VALUES (?, ?, ?, 'Completed')
+            ''', (referrer, order_id, f"{amount_val:.2f}"))
+
+            # 2) Extend friend's expiry by 1 year (from now)
+            one_year_ts = int(time.time()) + (365 * 86400)
+            cursor.execute("""
+                UPDATE referral_friends
+                SET expiry_timestamp = ?
+                WHERE LOWER(friend_username) = LOWER(?)
+            """, (one_year_ts, friend_username.lower()))
+
+            # 3) Credit renewal bonus into referrer's referral_wallet
+            cursor.execute("""
+                INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                VALUES (?, ?, 0.0)
+                ON CONFLICT(username) DO UPDATE SET
+                    earned_balance = earned_balance + ?
+            """, (referrer, FRIEND_RENEWAL_BONUS, FRIEND_RENEWAL_BONUS))
+
+            conn.commit()
+
+        # 4) Telegram alert for admin
+        readable_expiry = datetime.fromtimestamp(one_year_ts).strftime('%B %d, %Y')
+        send_telegram_alert_direct(
+            f"<b>🔁 FRIEND LINE RENEWAL</b>\n"
+            f"<b>Referrer:</b> <code>{referrer}</code>\n"
+            f"<b>Friend Line:</b> <code>{friend_username}</code>\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>\n"
+            f"<b>Paid:</b> £{amount_val:.2f}\n"
+            f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
+            f"<b>New Local Expiry (Portal):</b> {readable_expiry}"
+        )
+
+        log_activity(referrer, f"Renewed friend line {friend_username} (order {order_id})")
+
+        return jsonify({'success': True, 'message': f"Friend line '{friend_username}' renewed. Admin will extend it on the IPTV panel."})
+    except Exception as e:
+        print(f"RENEW_FRIEND_LINE ERROR: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 @app.route('/admin/reassign_referral_friend', methods=['POST'])
 def admin_reassign_referral_friend():

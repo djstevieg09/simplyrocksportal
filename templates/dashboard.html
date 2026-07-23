@@ -243,7 +243,7 @@
         .announcement-track {
             display: inline-block;
             white-space: nowrap;
-            animation: scroll-announcement 60s linear infinite;
+            animation: scroll-announcement 45s linear infinite;
             color: #fff7ed;
             font-size: 13px;
         }
@@ -292,6 +292,11 @@
                 <strong style="color: #ffffff;">
                     {{ expiry_date if expiry_date else 'Checking...' }}
                 </strong>
+                {% if days_left is not none %}
+                    <span style="margin-left:6px; font-size:11px; color:#e5e7eb;">
+                        ({{ days_left }} days left)
+                    </span>
+                {% endif %}
             </div>
             <span style="font-size: 12px;">User: <strong>{{ username }}</strong></span>
             <a href="/logout" class="logout-btn">Logout</a>
@@ -346,7 +351,11 @@
                 <!-- Friends referred / managed -->
                 <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
                     <h2>Friends You Referred</h2>
-                    <p>Renew your friends’ lines and earn £10 credit per renewal.</p>
+                    <p>
+                        Renew your friends’ lines and earn
+                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
+                        wallet credit per renewal.
+                    </p>
                     <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
                 </div>
 
@@ -426,7 +435,9 @@
                             Redeem Credit
                         </button>
                     </div>
-                    <p style="margin-top:8px;">Use wallet credit for IPTV renewals and Spotify subscriptions.</p>
+                    <p style="margin-top:8px;">
+                        Use wallet credit for IPTV renewals, Spotify, and friend renewals.
+                    </p>
                 </div>
 
                 <!-- Rewards & Purchase history -->
@@ -450,7 +461,7 @@
                         </div>
                     </div>
                     <h3 style="font-size:13px; margin-top:6px;">Recent Purchases</h3>
-                    <div style="max-height:180px; overflow-y:auto;">
+                    <div style="max-height:140px; overflow-y:auto;">
                         <table>
                             <thead>
                                 <tr>
@@ -473,6 +484,48 @@
                                 {% else %}
                                 <tr>
                                     <td colspan="4" style="text-align:center; color:#64748b; padding:8px;">No purchases recorded yet.</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 style="font-size:13px; margin-top:12px;">Recent Referral Earnings</h3>
+                    <div style="max-height:140px; overflow-y:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Friend</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if referral_history %}
+                                    {% for r in referral_history %}
+                                    <tr>
+                                        <td>{{ r.friend_username or '-' }}</td>
+                                        <td>
+                                            {% if r.type == 'NEW_FRIEND' %}
+                                                New Friend Bonus
+                                            {% elif r.type == 'FRIEND_RENEWAL' %}
+                                                Renewal Bonus
+                                            {% else %}
+                                                {{ r.type }}
+                                            {% endif %}
+                                        </td>
+                                        <td style="color:#4ade80; font-weight:bold;">
+                                            £{{ "%.2f"|format(r.amount) }}
+                                        </td>
+                                        <td style="font-size:11px; color:#9ca3af;">{{ r.timestamp }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" style="text-align:center; color:#64748b; padding:8px; font-size:12px;">
+                                        No referral rewards earned yet.
+                                    </td>
                                 </tr>
                                 {% endif %}
                             </tbody>
@@ -518,7 +571,16 @@
                 <!-- Refer a friend purchase -->
                 <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
                     <h2 style="color:#4ade80;">Refer a Friend (1-Year)</h2>
-                    <p>Buy a 12‑month IPTV line for a friend. You earn £25 credit on new signups.</p>
+                    <p>
+                        Buy a 12‑month IPTV line for a friend.
+                        <strong>You earn £{{ "%.2f"|format(new_friend_bonus or 0.0) }} wallet credit</strong>
+                        for each new sign-up.
+                    </p>
+                    <p style="font-size:12px; color:#94a3b8; margin-top:4px;">
+                        Share the portal link:
+                        <code>https://tinyurl.com/avatarportal</code>,
+                        then create their line here to earn your bonus.
+                    </p>
                     <div id="referral-form-error" style="display:none; background-color:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:8px; border-radius:6px; font-size:12px; margin-bottom:8px;"></div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
                         <div>
@@ -879,6 +941,10 @@
                             <div style="flex:1;">
                                 <div><strong>${friend.friend_username}</strong></div>
                                 <div style="font-size:11px; color:#9ca3af;">${expiryLine}</div>
+                                <div style="font-size:11px; color:#4ade80; margin-top:2px;">
+                                    Renewing this friend will earn you
+                                    <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong> wallet credit.
+                                </div>
                                 <div style="margin-top:4px;">
                                     <label style="font-size:11px; color:#9ca3af;">Connections:</label>
                                     <select id="friend-conn-${friendIdSafe}" style="margin-left:4px; padding:2px 4px; font-size:11px; background-color:#020617; color:#e5e7eb; border:1px solid #475569; border-radius:4px;">

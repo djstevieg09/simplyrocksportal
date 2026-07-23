@@ -1148,7 +1148,7 @@ def admin_reassign_referral_friend():
     {
         "friend_username": "childUser",
         "new_referrer": "parentUser",
-        "old_referrer": "optionalOldReferrer"   # optional safety filter
+        "old_referrer": "optionalOldReferrer"   # only used for logging / optional filter
     }
     """
     if not is_admin():
@@ -1169,7 +1169,7 @@ def admin_reassign_referral_friend():
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
 
-            # Optional safety: ensure new referrer exists as a portal user
+            # Ensure new referrer exists as a portal user
             cursor.execute(
                 "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
                 (new_referrer.lower(),)
@@ -1180,25 +1180,46 @@ def admin_reassign_referral_friend():
                     'message': 'New referrer does not exist as a portal user.'
                 }), 400
 
-            # Build WHERE clause dynamically
-            params = [friend_username.lower()]
-            where_clause = "LOWER(friend_username) = ?"
-            if old_referrer:
-                where_clause += " AND LOWER(referrer_username) = ?"
-                params.append(old_referrer.lower())
+            # Check that at least one record exists for this friend (for clearer errors)
+            cursor.execute("""
+                SELECT id, referrer_username
+                FROM referral_friends
+                WHERE LOWER(friend_username) = LOWER(?)
+            """, (friend_username.lower(),))
+            rows = cursor.fetchall()
 
-            # Perform reassignment
-            cursor.execute(f"""
-                UPDATE referral_friends
-                SET referrer_username = ?
-                WHERE {where_clause}
-            """, (new_referrer,) + tuple(params))
-
-            if cursor.rowcount == 0:
+            if not rows:
                 return jsonify({
                     'success': False,
-                    'message': 'No matching friend record found to reassign.'
+                    'message': f"No referral_friends record found for friend_username '{friend_username}'."
                 }), 404
+
+            # Apply update
+            if old_referrer:
+                # Only update records currently under the specified old_referrer
+                cursor.execute("""
+                    UPDATE referral_friends
+                    SET referrer_username = ?
+                    WHERE LOWER(friend_username) = LOWER(?)
+                      AND LOWER(referrer_username) = LOWER(?)
+                """, (new_referrer, friend_username.lower(), old_referrer.lower()))
+            else:
+                # Update all records for this friend, regardless of current referrer
+                cursor.execute("""
+                    UPDATE referral_friends
+                    SET referrer_username = ?
+                    WHERE LOWER(friend_username) = LOWER(?)
+                """, (new_referrer, friend_username.lower()))
+
+            if cursor.rowcount == 0:
+                # Friend exists but no row matched the optional old_referrer filter
+                msg = (
+                    f"Friend '{friend_username}' exists, but no record matched the "
+                    f"specified current referrer '{old_referrer}'."
+                    if old_referrer else
+                    "No matching friend record found to reassign."
+                )
+                return jsonify({'success': False, 'message': msg}), 404
 
             conn.commit()
 

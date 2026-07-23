@@ -12,11 +12,11 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# --- 1. INITIALISE MAIN FLASK APP INSTANCE (MUST BE DECLARED FIRST) ---
+# --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
 app = Flask(__name__)
 app.secret_key = "simplyrocks_secure_master_portal_key_string_09"
 
-# --- 2. GLOBAL SYSTEM CONFIGURATION & HARDWARE LINK PATHS ---
+# --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 
@@ -25,12 +25,12 @@ DB_FILE = "/data/database.db"
 # --- 3. QUEUE STORAGE CONFIGURATIONS ---
 NOTIFICATION_QUEUE = Queue()
 
-# --- MASTER RESELLER CODES AUTO-EXTEND CONFIGURATION ---
+# --- MASTER RESELLER CONFIG ---
 RESELLER_PANEL_URL = "https://theservice.rocks:80"
 RESELLER_USERNAME = os.environ.get('RESELLER_USER')
 RESELLER_PASSWORD = os.environ.get('RESELLER_PASS')
 
-# --- TELEGRAM BOT ALERTS CONFIGURATION ---
+# --- TELEGRAM BOT CONFIG ---
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
@@ -186,8 +186,141 @@ def init_db():
         conn.commit()
 
 
-# Trigger DB init
+def seed_uk_channels():
+    """Populate live_channels table with a broad set of popular UK channels in FHD/HD/SD variants."""
+    base_channels = [
+        # BBC family
+        "BBC One",
+        "BBC Two",
+        "BBC Three",
+        "BBC Four",
+        "CBBC",
+        "CBeebies",
+        "BBC News",
+        "BBC Parliament",
+
+        # ITV family
+        "ITV1",
+        "ITV2",
+        "ITV3",
+        "ITV4",
+        "ITVBe",
+
+        # Channel 4 family
+        "Channel 4",
+        "E4",
+        "More4",
+        "Film4",
+        "4seven",
+
+        # Channel 5 family
+        "Channel 5",
+        "5STAR",
+        "5USA",
+        "5Action",
+        "Paramount Network",
+
+        # Sky Entertainment / Lifestyle
+        "Sky One",
+        "Sky Atlantic",
+        "Sky Witness",
+        "Sky Max",
+        "Sky Comedy",
+        "Sky Crime",
+        "Sky Documentaries",
+        "Sky Nature",
+        "Sky Arts",
+
+        # Sky Cinema (Movies)
+        "Sky Cinema Premiere",
+        "Sky Cinema Action",
+        "Sky Cinema Comedy",
+        "Sky Cinema Drama",
+        "Sky Cinema Thriller",
+        "Sky Cinema Family",
+        "Sky Cinema Greats",
+        "Sky Cinema Scifi & Horror",
+
+        # Sky Sports
+        "Sky Sports Main Event",
+        "Sky Sports Premier League",
+        "Sky Sports Football",
+        "Sky Sports Cricket",
+        "Sky Sports Golf",
+        "Sky Sports F1",
+        "Sky Sports Arena",
+        "Sky Sports News",
+
+        # TNT Sports
+        "TNT Sports 1",
+        "TNT Sports 2",
+        "TNT Sports 3",
+        "TNT Sports 4",
+
+        # UKTV / Freeview entertainment
+        "Dave",
+        "Drama",
+        "Yesterday",
+        "GOLD",
+        "W",
+        "Alibi",
+
+        # News
+        "Sky News",
+        "GB News",
+        "TalkTV",
+        "CNN International",
+
+        # Kids
+        "Cartoon Network",
+        "Boomerang",
+        "Cartoonito",
+        "Nickelodeon",
+        "Nick Jr.",
+        "Nicktoons",
+        "POP",
+        "Tiny Pop",
+        "CITV",
+
+        # Music
+        "4Music",
+        "MTV",
+        "MTV Music",
+        "Kerrang!",
+        "Box Hits",
+    ]
+
+    variants = ["FHD", "HD", "SD"]
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            count = 0
+            for base_name in base_channels:
+                safe_base = (
+                    base_name.upper()
+                    .replace(" ", "-")
+                    .replace("&", "AND")
+                    .replace(".", "")
+                )
+                for v in variants:
+                    name = f"{base_name} {v}"
+                    stream_id = f"UK-{safe_base}-{v}"
+                    cursor.execute('''
+                        INSERT INTO live_channels (stream_id, name)
+                        VALUES (?, ?)
+                        ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
+                    ''', (stream_id, name))
+                    count += 1
+            conn.commit()
+        print(f"UK CHANNEL SEED: Loaded/updated {count} channel variants into live_channels.")
+    except Exception as e:
+        print(f"UK CHANNEL SEED ERROR: {e}")
+
+
+# Trigger DB init and channel seed
 init_db()
+seed_uk_channels()
 NOTIFICATION_QUEUE = Queue()
 CACHED_CHANNELS = []
 
@@ -599,8 +732,6 @@ def dashboard():
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM requests WHERE username = ? ORDER BY timestamp DESC", (session['username'],))
         user_requests = cursor.fetchall()
-
-        # Latest active announcement
         cursor.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1")
         row = cursor.fetchone()
         active_announcement = row['message'] if row else None
@@ -687,7 +818,7 @@ def create_referral_line():
                 VALUES (?, ?, ?, 0)
             ''', (generated_username, readable_expiry, one_year_ts))
 
-            # create or update wallet
+            # create/update wallet
             cursor.execute("SELECT username FROM referral_wallets WHERE LOWER(username) = LOWER(?)", (referrer.lower(),))
             wallet_exists = cursor.fetchone()
             if not wallet_exists:
@@ -794,7 +925,7 @@ def renew_friend_line():
                 """, (discount_redeemed, referrer.lower()))
 
             # log payment under the referrer
-            description = f"Spotify/Friend Renewal for {friend_username}"
+            description = f"Friend Renewal for {friend_username}"
             status_text = 'Completed' if amount_paid > 0 else 'Completed (Wallet Full Redeem)'
             cursor.execute("""
                 INSERT INTO payments (username, order_id, amount, status)
@@ -849,7 +980,7 @@ def renew_friend_line():
             f"<b>👥 FRIEND LINE RENEWAL</b>\n"
             f"<b>Referrer:</b> <code>{referrer}</code>\n"
             f"<b>Friend:</b> <code>{friend_username}</code>\n"
-            f"<b>Amount Paid:</b> £{amount_paid:.2f}\n"
+            f"<b>Paid:</b> £{amount_paid:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_redeemed:.2f}\n"
             f"<b>New Expiry:</b> {new_readable_date}\n"
             f"<b>Referrer Bonus:</b> +£{FRIEND_RENEWAL_BONUS:.2f}"
@@ -1004,7 +1135,7 @@ def buy_spotify():
                 VALUES (?, ?, ?, ?, ?, 'Pending')
             """, (portal_username, spotify_user, spotify_pass, final_amount, discount_redeemed))
 
-            # Also log to payments table for visibility
+            # Also log to payments table
             cursor.execute("""
                 INSERT INTO payments (username, order_id, amount, status)
                 VALUES (?, ?, ?, ?)
@@ -1140,6 +1271,13 @@ def admin_panel():
         cursor.execute("SELECT * FROM live_channels ORDER BY name ASC")
         all_live_channels = cursor.fetchall()
 
+        cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
+        spotify_orders = cursor.fetchall()
+
+        cursor.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        latest_announcement = row['message'] if row else ''
+
     return render_template(
         'admin.html',
         requests=all_requests,
@@ -1149,7 +1287,9 @@ def admin_panel():
         wallets=all_wallets,
         portal_users=all_portal_users,
         live_channels=all_live_channels,
-        client_expiration_list=client_expiration_list
+        client_expiration_list=client_expiration_list,
+        spotify_orders=spotify_orders,
+        latest_announcement=latest_announcement
     )
 
 
@@ -1233,7 +1373,7 @@ def search_channels():
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT stream_id, name FROM live_channels WHERE LOWER(name) LIKE ? ORDER BY name ASC LIMIT 15",
+            cursor.execute("SELECT stream_id, name FROM live_channels WHERE LOWER(name) LIKE ? ORDER BY name ASC LIMIT 50",
                            (f"%{query}%",))
             rows = cursor.fetchall()
             for row in rows:
@@ -1241,16 +1381,6 @@ def search_channels():
                     'id': str(row['stream_id']),
                     'name': str(row['name'])
                 })
-        if not matches:
-            backup_map = [
-                {"id": "101", "name": "Sky Sports Main Event HD"},
-                {"id": "102", "name": "Sky Sports Premier League HD"},
-                {"id": "103", "name": "TNT Sports 1 HD"},
-                {"id": "104", "name": "TNT Sports 2 HD"}
-            ]
-            for ch in backup_map:
-                if query in ch['name'].lower():
-                    matches.append(ch)
     except Exception as e:
         print(f"LOCAL CHANNEL SEARCH EXCEPTION: {e}")
 
@@ -1499,11 +1629,9 @@ def admin_clear_vod_report(report_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# --- Announcements (Admin) ---
-
 @app.route('/admin/set_announcement', methods=['POST'])
 def admin_set_announcement():
-    """Admin: set a new active announcement (old ones stay in DB but can be marked inactive)."""
+    """Admin: set a new active announcement."""
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     data = request.json or {}
@@ -1513,7 +1641,6 @@ def admin_set_announcement():
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            # Option: either keep multiple active or deactivate old ones. We'll deactivate old:
             cursor.execute("UPDATE announcements SET active = 0")
             cursor.execute("INSERT INTO announcements (message, active) VALUES (?, 1)", (message,))
             conn.commit()

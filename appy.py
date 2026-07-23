@@ -1140,9 +1140,19 @@ def get_referral_friends():
 @app.route('/admin/reassign_referral_friend', methods=['POST'])
 def admin_reassign_referral_friend():
     """
-    Admin: move a referred friend to a different referrer.
-    This ONLY changes referral_friends.referrer_username
-    and does NOT create or change any wallet credit.
+    Admin: move ANY portal user under ANY referrer so they appear as a managed friend.
+
+    Behaviour:
+    - Verifies new_referrer exists in portal_users.
+    - Verifies friend_username exists in portal_users.
+    - If a referral_friends row already exists for friend_username:
+        - UPDATE referrer_username to new_referrer (optionally filter by old_referrer).
+    - If no referral_friends row exists:
+        - INSERT a new row in referral_friends with:
+            referrer_username = new_referrer,
+            friend_username   = friend_username,
+            friend_password   = 'N/A',
+            expiry_timestamp  = 0.
 
     Expected JSON body:
     {
@@ -1156,8 +1166,8 @@ def admin_reassign_referral_friend():
 
     data = request.json or {}
     friend_username = (data.get('friend_username') or '').strip()
-    new_referrer = (data.get('new_referrer') or '').strip()
-    old_referrer = (data.get('old_referrer') or '').strip()
+    new_referrer    = (data.get('new_referrer') or '').strip()
+    old_referrer    = (data.get('old_referrer') or '').strip()
 
     if not friend_username or not new_referrer:
         return jsonify({
@@ -1177,10 +1187,21 @@ def admin_reassign_referral_friend():
             if not cursor.fetchone():
                 return jsonify({
                     'success': False,
-                    'message': 'New referrer does not exist as a portal user.'
+                    'message': f"New referrer '{new_referrer}' does not exist as a portal user."
                 }), 400
 
-            # Check that at least one record exists for this friend (for clearer errors)
+            # Ensure friend exists as a portal user
+            cursor.execute(
+                "SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                (friend_username.lower(),)
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    'success': False,
+                    'message': f"Friend user '{friend_username}' does not exist in portal_users."
+                }), 400
+
+            # Check for existing referral_friends rows for this friend
             cursor.execute("""
                 SELECT id, referrer_username
                 FROM referral_friends
@@ -1189,14 +1210,29 @@ def admin_reassign_referral_friend():
             rows = cursor.fetchall()
 
             if not rows:
-                return jsonify({
-                    'success': False,
-                    'message': f"No referral_friends record found for friend_username '{friend_username}'."
-                }), 404
+                # No referral record yet: create one
+                cursor.execute("""
+                    INSERT INTO referral_friends
+                        (referrer_username, friend_username, friend_password, expiry_timestamp)
+                    VALUES (?, ?, ?, 0)
+                """, (new_referrer, friend_username, 'N/A'))
+                conn.commit()
 
-            # Apply update
+                log_activity(
+                    session.get('username', 'admin'),
+                    f"Created new referral_friends row: friend '{friend_username}' now managed by '{new_referrer}'"
+                )
+
+                return jsonify({
+                    'success': True,
+                    'message': (
+                        f"No existing referral record; created new link: "
+                        f"friend '{friend_username}' is now managed by '{new_referrer}'."
+                    )
+                })
+
+            # There is already at least one referral_friends row for this friend
             if old_referrer:
-                # Only update records currently under the specified old_referrer
                 cursor.execute("""
                     UPDATE referral_friends
                     SET referrer_username = ?
@@ -1204,7 +1240,6 @@ def admin_reassign_referral_friend():
                       AND LOWER(referrer_username) = LOWER(?)
                 """, (new_referrer, friend_username.lower(), old_referrer.lower()))
             else:
-                # Update all records for this friend, regardless of current referrer
                 cursor.execute("""
                     UPDATE referral_friends
                     SET referrer_username = ?
@@ -1212,10 +1247,10 @@ def admin_reassign_referral_friend():
                 """, (new_referrer, friend_username.lower()))
 
             if cursor.rowcount == 0:
-                # Friend exists but no row matched the optional old_referrer filter
+                # Friend had referrals, but none under the specified old_referrer
                 msg = (
-                    f"Friend '{friend_username}' exists, but no record matched the "
-                    f"specified current referrer '{old_referrer}'."
+                    f"Friend '{friend_username}' has referral records, but none under "
+                    f"current referrer '{old_referrer}'."
                     if old_referrer else
                     "No matching friend record found to reassign."
                 )

@@ -463,6 +463,28 @@
             </table>
         </div>
 
+        <!-- Reassign Referral Ownership -->
+        <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+            <h2>Reassign Referral Ownership</h2>
+            <p class="muted">
+                Move an existing referred friend under a different referrer so they can manage renewals.
+                This does <strong>not</strong> create or change any wallet credit.
+            </p>
+            <label class="section-title">Friend Username:</label>
+            <input type="text" id="reassign-friend-username" class="form-field"
+                   placeholder="Friend / child username (e.g. john-doe-line)">
+            <label class="section-title">New Referrer Username:</label>
+            <input type="text" id="reassign-new-referrer" class="form-field"
+                   placeholder="Referrer / manager username (e.g. main-account)">
+            <label class="section-title">Current Referrer (optional):</label>
+            <input type="text" id="reassign-old-referrer" class="form-field"
+                   placeholder="Only fill if you want to restrict from this referrer">
+            <button class="btn btn-blue" style="width:100%; margin-top:6px;"
+                    onclick="submitReferralReassign(this)">
+                Move Friend to New Referrer
+            </button>
+        </div>
+
         <!-- Portal user management -->
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Portal Access Accounts</h2>
@@ -934,6 +956,54 @@
                 }
             }).catch(() => {
                 alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        // --- Reassign referral ownership ---
+        function submitReferralReassign(btn) {
+            const friend = document.getElementById('reassign-friend-username').value.trim();
+            const newRef = document.getElementById('reassign-new-referrer').value.trim();
+            const oldRef = document.getElementById('reassign-old-referrer').value.trim();
+
+            if (!friend || !newRef) {
+                alert("Friend username and new referrer are required.");
+                return;
+            }
+
+            if (!confirm(
+                `Move '${friend}' so they are managed by '${newRef}'?\n\n` +
+                "This will only change referral ownership and will NOT create any wallet credit."
+            )) {
+                return;
+            }
+
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Reassigning...";
+
+            fetch('/admin/reassign_referral_friend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    friend_username: friend,
+                    new_referrer: newRef,
+                    old_referrer: oldRef || undefined
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert("Error: " + data.message);
+                }
+                btn.disabled = false;
+                btn.innerText = orig;
+            })
+            .catch(() => {
+                alert("Server error while reassigning referral.");
                 btn.disabled = false;
                 btn.innerText = orig;
             });

@@ -921,47 +921,60 @@
         }
 
         function renderFriendPayPal(divId, friendUsername) {
-            const base = 75.00;
-            let friendDiscount = Math.min(maxAvailableWalletBalance, base);
-            const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
-            const cont = document.getElementById(divId);
-            if (!cont) return;
-            cont.innerHTML = '';
+    // Get selected connections & price from the main selector
+    const select = document.getElementById('connection-tier-select');
+    let friendConnections = "1";
+    let base = 75.00;
 
-            paypal.Buttons({
-                createOrder: function(data, actions) {
-                    return actions.order.create({
-                        purchase_units: [{
-                            amount: { currency_code: "GBP", value: finalAmount },
-                            description: `Friend Renewal for ${friendUsername} via {{ username }} (Discount: £${friendDiscount.toFixed(2)})`,
-                            custom_id: "{{ username }}"
-                        }]
-                    });
-                },
-                onApprove: function(data, actions) {
-                    return actions.order.capture().then(async function(details) {
-                        const resp = await fetch('/renew_friend_line', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                friend_username: friendUsername,
-                                orderID: details.id,
-                                amount: finalAmount,
-                                discount_redeemed: friendDiscount.toString()
-                            })
-                        });
-                        const dataRes = await resp.json();
-                        if (dataRes.success) {
-                            alert(dataRes.message);
-                            await fetchWalletBalance();
-                            fetchReferralFriends();
-                        } else {
-                            alert('Error renewing friend: ' + dataRes.message);
-                        }
-                    });
+    if (select) {
+        const opt = select.options[select.selectedIndex];
+        friendConnections = opt.value;
+        const p = parseFloat(opt.getAttribute('data-price'));
+        if (!isNaN(p)) base = p;
+    }
+
+    let friendDiscount = Math.min(maxAvailableWalletBalance, base);
+    const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
+    const cont = document.getElementById(divId);
+    if (!cont) return;
+    cont.innerHTML = '';
+
+    paypal.Buttons({
+        createOrder: function(data, actions) {
+            return actions.order.create({
+                purchase_units: [{
+                    amount: { currency_code: "GBP", value: finalAmount },
+                    description: `Friend Renewal (${friendConnections} Conn) for ${friendUsername} via {{ username }} (Discount: £${friendDiscount.toFixed(2)})`,
+                    custom_id: "{{ username }}"
+                }]
+            });
+        },
+        onApprove: function(data, actions) {
+            return actions.order.capture().then(async function(details) {
+                const resp = await fetch('/renew_friend_line', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        friend_username: friendUsername,
+                        orderID: details.id,
+                        amount: finalAmount,
+                        discount_redeemed: friendDiscount.toString(),
+                        connections: friendConnections   // optional, if you want to log it server-side
+                    })
+                });
+                const dataRes = await resp.json();
+                if (dataRes.success) {
+                    alert(dataRes.message);
+                    await fetchWalletBalance();
+                    fetchReferralFriends();
+                } else {
+                    alert('Error renewing friend: ' + dataRes.message);
                 }
-            }).render('#' + divId);
+            });
         }
+    }).render('#' + divId);
+}
+
 
         async function removeManagedFriend(friendUsername) {
             if (!confirm(`Remove ${friendUsername} from your managed list?`)) return;

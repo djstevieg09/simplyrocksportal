@@ -1099,42 +1099,72 @@ def search_media():
 
 @app.route('/get_referral_friends')
 def get_referral_friends():
-    """Return a list of referred friends for the logged-in user."""
+    """Return a list of referred friends for the logged-in user, pulling expiry from main portal user data."""
     if not session.get('logged_in'):
         return jsonify([]), 401
 
     referrer = session.get('username')
     results = []
+    now_ts = int(time.time())
+
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Get managed friends
             cursor.execute('''
-                SELECT friend_username, friend_password, expiry_timestamp
+                SELECT friend_username
                 FROM referral_friends
                 WHERE LOWER(referrer_username) = LOWER(?)
                 ORDER BY created_at DESC
             ''', (referrer.lower(),))
-            rows = cursor.fetchall()
-            now_ts = int(time.time())
-            for row in rows:
-                friend_user = row[0]
-                friend_pass = row[1]
-                exp_ts = row[2]
+            friends = cursor.fetchall()
+
+            for row in friends:
+                friend_user = row['friend_username']
+
+                # Try portal_users expiry first
+                cursor.execute("""
+                    SELECT expiry_timestamp
+                    FROM portal_users
+                    WHERE LOWER(username) = LOWER(?)
+                """, (friend_user.lower(),))
+                row_portal = cursor.fetchone()
+
+                exp_ts = 0
+                if row_portal and row_portal['expiry_timestamp']:
+                    exp_ts = int(row_portal['expiry_timestamp'])
+
+                # If not found in portal_users, fall back to user_metadata
+                if exp_ts <= 0:
+                    cursor.execute("""
+                        SELECT expiry_timestamp
+                        FROM user_metadata
+                        WHERE LOWER(username) = LOWER(?)
+                    """, (friend_user.lower(),))
+                    row_meta = cursor.fetchone()
+                    if row_meta and row_meta['expiry_timestamp']:
+                        exp_ts = int(row_meta['expiry_timestamp'])
+
                 if exp_ts > 0:
                     readable = datetime.fromtimestamp(exp_ts).strftime('%B %d, %Y')
                     days_left = int((exp_ts - now_ts) / 86400)
                 else:
                     readable = "Unknown"
                     days_left = None
+
                 results.append({
                     'friend_username': friend_user,
-                    'friend_password': friend_pass,
                     'expiry_date': readable,
                     'days_left': days_left
                 })
+
     except Exception as e:
         print(f"GET_REFERRAL_FRIENDS ERROR: {e}")
+
     return jsonify(results)
+
 
 @app.route('/renew_friend_line', methods=['POST'])
 def renew_friend_line():

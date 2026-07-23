@@ -206,6 +206,22 @@ def init_db():
             )
         ''')
 
+        # vod_library table - a manually-maintained catalog of movies/shows
+        # already available on the IPTV panel. Since there's no API access
+        # to the reseller panel, this list is built by the admin (bulk
+        # pasting titles) and used to flag "already available" matches
+        # when someone searches to submit a request.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS vod_library (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                normalized_title TEXT NOT NULL,
+                media_type TEXT NOT NULL,
+                year TEXT,
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # announcements table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS announcements (
@@ -316,6 +332,16 @@ def init_db():
         except sqlite3.OperationalError as e:
             print(f"PAYMENTS ORDER_ID INDEX NOTICE: {e}")
 
+        # Unique index on vod_library so importing the same title twice
+        # (e.g. re-pasting a list) doesn't create duplicate catalog rows.
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_vod_library_unique
+                ON vod_library (normalized_title, media_type)
+            ''')
+        except sqlite3.OperationalError as e:
+            print(f"VOD LIBRARY INDEX NOTICE: {e}")
+
         conn.commit()
 
 
@@ -408,6 +434,15 @@ def is_admin():
     return current_user == secure_admin_username.lower()
 
 
+def normalize_title(title):
+    """
+    Reduce a title down to just lowercase letters/numbers so that small
+    differences in punctuation/spacing/formatting ("Spider-Man" vs
+    "Spiderman" vs "spider man") still match against the VOD library.
+    """
+    return re.sub(r'[^a-z0-9]', '', (title or '').lower())
+
+
 def log_activity(username, action):
     """Record a simple audit log entry."""
     try:
@@ -478,6 +513,73 @@ def verify_xtream_credentials(dns, username, password):
     except Exception as e:
         print(f"LOCAL LOGIN MAPPING ERROR: {e}")
     return False, None
+
+
+# --- XTREAM CODES API (REAL RESELLER PANEL INTEGRATION) ---
+# This is the same API that apps like TiviMate/IPTV Smarters use when you
+# type in your DNS + username + password - it's a standard format almost
+# every IPTV reseller panel speaks, reached via player_api.php. We use the
+# RESELLER_USERNAME/RESELLER_PASSWORD credentials (any working line's
+# login works) to pull the real VOD movie list and series list.
+
+def fetch_xtream_api(action, extra_params=None, timeout=60):
+    """
+    Call the Xtream Codes-compatible reseller panel API and return the
+    parsed JSON response. Raises an exception on failure - callers should
+    catch and report a friendly error.
+    """
+    if not RESELLER_PANEL_URL or not RESELLER_USERNAME or not RESELLER_PASSWORD:
+        raise RuntimeError(
+            "Reseller panel isn't configured. Set RESELLER_USER and RESELLER_PASS "
+            "environment variables (RESELLER_PANEL_URL is already set in the code)."
+        )
+
+    url = f"{RESELLER_PANEL_URL.rstrip('/')}/player_api.php"
+    params = {
+        'username': RESELLER_USERNAME,
+        'password': RESELLER_PASSWORD,
+        'action': action
+    }
+    if extra_params:
+        params.update(extra_params)
+
+    resp = requests.get(url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def parse_xtream_title(raw_name):
+    """
+    Xtream panel entries are often messy - things like
+    "Gladiator (2000) [4K]" or "Breaking Bad HEVC MULTI". This does a
+    best-effort cleanup to pull out a clean title and, if present, a year.
+    It won't be perfect for every naming convention your provider uses, but
+    combined with normalize_title()'s punctuation-stripping when matching,
+    it catches the vast majority of real-world cases.
+    """
+    name = (raw_name or '').strip()
+
+    # Strip common bracketed quality/language/codec tags.
+    name = re.sub(
+        r'\s*[\[\(](?:4K|UHD|FHD|HD|SD|HDR|HEVC|MULTI[- ]?AUDIO|DUAL[- ]?AUDIO|VOSTFR|SUBBED|SUBS?)[\]\)]\s*',
+        ' ', name, flags=re.IGNORECASE
+    )
+
+    year = None
+    # Trailing "(YYYY)" is the cleanest signal.
+    match = re.search(r'\((\d{4})\)\s*$', name)
+    if match:
+        year = match.group(1)
+        name = name[:match.start()].strip()
+    else:
+        # Fall back to a bare trailing 19xx/20xx year with no brackets.
+        match2 = re.search(r'\b(19|20)\d{2}\b\s*$', name)
+        if match2:
+            year = match2.group(0)
+            name = name[:match2.start()].strip()
+
+    name = re.sub(r'\s+', ' ', name).strip(' -_')
+    return name, year
 
 
 # =============================================================================
@@ -859,11 +961,39 @@ def search_media():
             'include_adult': 'false'
         }, timeout=6)
 
-        if response.status_code == 200:
-            return jsonify(response.json())
+        if response.status_code != 200:
+            print(f"TMDB ERROR code {response.status_code}")
+            return jsonify({"results": []})
 
-        print(f"TMDB ERROR code {response.status_code}")
-        return jsonify({"results": []})
+        data = response.json()
+
+        # Flag each result as already_available if it matches something in
+        # the manually-maintained vod_library catalog. This is the only way
+        # to know what's "already on the system" since there's no API access
+        # to the actual IPTV reseller panel.
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT normalized_title, media_type FROM vod_library")
+                library_rows = cursor.fetchall()
+            movie_titles = {r['normalized_title'] for r in library_rows if r['media_type'] == 'movie'}
+            tv_titles = {r['normalized_title'] for r in library_rows if r['media_type'] == 'tv'}
+        except Exception as e:
+            print("SEARCH_MEDIA VOD LIBRARY LOOKUP ERROR:", e)
+            movie_titles, tv_titles = set(), set()
+
+        for item in data.get('results', []):
+            media_type = item.get('media_type')
+            if media_type not in ('movie', 'tv'):
+                item['already_available'] = False
+                continue
+            display_title = item.get('title') if media_type == 'movie' else item.get('name')
+            norm = normalize_title(display_title)
+            lookup_set = movie_titles if media_type == 'movie' else tv_titles
+            item['already_available'] = norm in lookup_set
+
+        return jsonify(data)
     except Exception as e:
         print(f"TMDB EXCEPTION: {e}")
         return jsonify({"results": []})
@@ -1893,6 +2023,12 @@ def admin_panel():
         cursor.execute("SELECT * FROM live_channels ORDER BY name ASC")
         all_live_channels = cursor.fetchall()
 
+        cursor.execute("SELECT id, title, media_type, year, added_at FROM vod_library ORDER BY added_at DESC LIMIT 200")
+        all_vod_library = cursor.fetchall()
+
+        cursor.execute("SELECT COUNT(*) FROM vod_library")
+        vod_library_count = cursor.fetchone()[0]
+
         cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
         spotify_orders = cursor.fetchall()
 
@@ -1912,6 +2048,8 @@ def admin_panel():
         wallets=all_wallets,
         portal_users=all_portal_users,
         live_channels=all_live_channels,
+        vod_library=all_vod_library,
+        vod_library_count=vod_library_count,
         client_expiration_list=client_expiration_list,
         spotify_orders=spotify_orders,
         latest_announcement=latest_announcement,
@@ -2350,6 +2488,262 @@ def delete_live_channel(stream_id):
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_LIVE_CHANNEL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# --- VOD LIBRARY: MANUALLY-MAINTAINED "ALREADY ON THE SYSTEM" CATALOG ---
+# There's no API access to the actual IPTV reseller panel, so this catalog
+# is built by the admin (pasting in titles that are already available) and
+# used to flag matches when users search to submit a request.
+
+@app.route('/admin/search_vod_library')
+def admin_search_vod_library():
+    """Search the local VOD library catalog - used by the admin panel to
+    check whether something is already on the system."""
+    if not is_admin():
+        return jsonify([]), 403
+
+    q = (request.args.get('q') or '').strip()
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if q:
+                like = f"%{q}%"
+                cursor.execute("""
+                    SELECT id, title, media_type, year, added_at
+                    FROM vod_library
+                    WHERE title LIKE ?
+                    ORDER BY title ASC
+                    LIMIT 200
+                """, (like,))
+            else:
+                cursor.execute("""
+                    SELECT id, title, media_type, year, added_at
+                    FROM vod_library
+                    ORDER BY added_at DESC
+                    LIMIT 200
+                """)
+            rows = cursor.fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        print("ADMIN_SEARCH_VOD_LIBRARY ERROR:", e)
+        return jsonify([]), 500
+
+
+@app.route('/admin/import_vod_library', methods=['POST'])
+def admin_import_vod_library():
+    """
+    Bulk-import a pasted list of titles into the VOD library.
+    Expects JSON: { "media_type": "movie"|"tv", "titles_text": "one title per line" }
+    Lines can optionally end with a year in parentheses, e.g. "Gladiator (2000)"
+    - the year is parsed out and stored separately, but matching is by title only.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    media_type = (data.get('media_type') or '').strip().lower()
+    titles_text = data.get('titles_text') or ''
+
+    if media_type not in ('movie', 'tv'):
+        return jsonify({'success': False, 'message': "media_type must be 'movie' or 'tv'."}), 400
+
+    lines = [line.strip() for line in titles_text.splitlines() if line.strip()]
+    if not lines:
+        return jsonify({'success': False, 'message': 'No titles provided.'}), 400
+
+    year_pattern = re.compile(r'^(.*?)\s*\((\d{4})\)\s*$')
+
+    added = 0
+    skipped_duplicates = 0
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            for line in lines:
+                match = year_pattern.match(line)
+                if match:
+                    title = match.group(1).strip()
+                    year = match.group(2).strip()
+                else:
+                    title = line
+                    year = None
+
+                if not title:
+                    continue
+
+                norm = normalize_title(title)
+
+                cursor.execute(
+                    "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = ?",
+                    (norm, media_type)
+                )
+                already_existed = cursor.fetchone() is not None
+
+                cursor.execute('''
+                    INSERT INTO vod_library (title, normalized_title, media_type, year)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(normalized_title, media_type) DO UPDATE SET
+                        title = excluded.title,
+                        year = excluded.year
+                ''', (title, norm, media_type, year))
+
+                if already_existed:
+                    skipped_duplicates += 1
+                else:
+                    added += 1
+
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Imported {added} new VOD library entries, updated {skipped_duplicates} existing ({media_type})")
+
+        return jsonify({
+            'success': True,
+            'message': f"Imported {len(lines)} line(s): {added} new, {skipped_duplicates} already existed (refreshed)."
+        })
+    except Exception as e:
+        print("ADMIN_IMPORT_VOD_LIBRARY ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/delete_vod_library_entry/<int:entry_id>', methods=['POST'])
+def admin_delete_vod_library_entry(entry_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM vod_library WHERE id = ?', (entry_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Entry not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("ADMIN_DELETE_VOD_LIBRARY_ENTRY ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/sync_vod_library_from_panel', methods=['POST'])
+def admin_sync_vod_library_from_panel():
+    """
+    Pull the REAL movie and series list from your IPTV reseller panel via
+    the Xtream Codes API (the same API TiviMate/IPTV Smarters use when you
+    log a device in) and use it to populate/refresh the VOD library catalog.
+
+    This can take a while for large libraries (some panels have tens of
+    thousands of VOD entries) - if your hosting platform has a request
+    timeout shorter than this takes, the sync may get cut off. If that
+    happens repeatedly, consider raising your gunicorn worker timeout
+    (e.g. add `--timeout 120` to your start command on Render).
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    if not RESELLER_USERNAME or not RESELLER_PASSWORD:
+        return jsonify({
+            'success': False,
+            'message': 'RESELLER_USER and RESELLER_PASS environment variables are not set. '
+                       'These should be any working line\'s username/password on your panel.'
+        }), 400
+
+    movies_added = 0
+    movies_updated = 0
+    series_added = 0
+    series_updated = 0
+
+    try:
+        # --- Movies (VOD) ---
+        vod_streams = fetch_xtream_api('get_vod_streams')
+        if isinstance(vod_streams, list):
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                for item in vod_streams:
+                    raw_name = (item.get('name') or '').strip()
+                    if not raw_name:
+                        continue
+                    title, year = parse_xtream_title(raw_name)
+                    if not title:
+                        continue
+                    norm = normalize_title(title)
+
+                    cursor.execute(
+                        "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'movie'",
+                        (norm,)
+                    )
+                    existed = cursor.fetchone() is not None
+
+                    cursor.execute('''
+                        INSERT INTO vod_library (title, normalized_title, media_type, year)
+                        VALUES (?, ?, 'movie', ?)
+                        ON CONFLICT(normalized_title, media_type) DO UPDATE SET
+                            title = excluded.title,
+                            year = excluded.year
+                    ''', (title, norm, year))
+
+                    if existed:
+                        movies_updated += 1
+                    else:
+                        movies_added += 1
+                conn.commit()
+
+        # --- Series ---
+        series_list = fetch_xtream_api('get_series')
+        if isinstance(series_list, list):
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.cursor()
+                for item in series_list:
+                    raw_name = (item.get('name') or '').strip()
+                    if not raw_name:
+                        continue
+                    title, year = parse_xtream_title(raw_name)
+                    if not title:
+                        continue
+                    norm = normalize_title(title)
+
+                    cursor.execute(
+                        "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'tv'",
+                        (norm,)
+                    )
+                    existed = cursor.fetchone() is not None
+
+                    cursor.execute('''
+                        INSERT INTO vod_library (title, normalized_title, media_type, year)
+                        VALUES (?, ?, 'tv', ?)
+                        ON CONFLICT(normalized_title, media_type) DO UPDATE SET
+                            title = excluded.title,
+                            year = excluded.year
+                    ''', (title, norm, year))
+
+                    if existed:
+                        series_updated += 1
+                    else:
+                        series_added += 1
+                conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(
+            admin_user,
+            f"Synced VOD library from IPTV panel: "
+            f"{movies_added} new movies ({movies_updated} refreshed), "
+            f"{series_added} new series ({series_updated} refreshed)"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': (
+                f"Synced from your panel: {movies_added} new movies "
+                f"({movies_updated} already catalogued, refreshed), "
+                f"{series_added} new series ({series_updated} already catalogued, refreshed)."
+            )
+        })
+    except requests.exceptions.RequestException as e:
+        print("SYNC_VOD_LIBRARY_FROM_PANEL NETWORK ERROR:", e)
+        return jsonify({'success': False, 'message': f"Could not reach your IPTV panel: {e}"}), 502
+    except Exception as e:
+        print("SYNC_VOD_LIBRARY_FROM_PANEL ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

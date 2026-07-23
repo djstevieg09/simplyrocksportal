@@ -622,7 +622,7 @@
                 paypalWrapper.innerHTML = ''; paypalButtonInstance = null;
                 freeBtn = document.createElement('button');
                 freeBtn.id = 'free-checkout-btn';
-                freeBtn.innerText = '🎁 Claim Free IPTV Renewal';
+                freeBtn.textContent = 'Claim Free IPTV Renewal';
                 freeBtn.className = 'btn-secondary';
                 freeBtn.style.marginTop = '8px';
                 freeBtn.onclick = function() { processFreeWalletRenewal(); };
@@ -1002,6 +1002,8 @@
             }
         }
 
+        // --- TMDB media search for requests ---
+
         async function searchMedia() {
             const query = document.getElementById('search-input').value;
             const resultsDiv = document.getElementById('results');
@@ -1062,6 +1064,203 @@
             }
         }
 
+        // --- Live channel search & report ---
+
+        let channelSearchTimeout = null;
+
+        async function searchChannelsLive() {
+            const input = document.getElementById('channel-search-input');
+            const popup = document.getElementById('channel-dropdown-results');
+            const q = input.value.trim();
+            if (!q) {
+                popup.style.display = 'none';
+                popup.innerHTML = '';
+                return;
+            }
+
+            if (channelSearchTimeout) clearTimeout(channelSearchTimeout);
+            channelSearchTimeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/search_channels?q=${encodeURIComponent(q)}`);
+                    const channels = await resp.json();
+                    popup.innerHTML = '';
+                    if (!channels.length) {
+                        popup.innerHTML = '<div style="padding:6px 8px; font-size:12px; color:#9ca3af;">No channels found.</div>';
+                        popup.style.display = 'block';
+                        return;
+                    }
+                    channels.forEach(ch => {
+                        const row = document.createElement('div');
+                        row.style.padding = '6px 8px';
+                        row.style.fontSize = '12px';
+                        row.style.cursor = 'pointer';
+                        row.style.borderBottom = '1px solid #334155';
+                        row.innerHTML = `<strong>${ch.name}</strong><br><span style="font-size:11px;color:#9ca3af;">ID: ${ch.stream_id}</span>`;
+                        row.onclick = () => {
+                            selectChannelForReport(ch.name, ch.stream_id);
+                        };
+                        popup.appendChild(row);
+                    });
+                    popup.style.display = 'block';
+                } catch (e) {
+                    popup.innerHTML = '<div style="padding:6px 8px; font-size:12px; color:#f87171;">Error loading channels.</div>';
+                    popup.style.display = 'block';
+                }
+            }, 250);
+        }
+
+        function selectChannelForReport(name, id) {
+            const popup = document.getElementById('channel-dropdown-results');
+            document.getElementById('channel-search-input').value = name;
+            document.getElementById('selected-channel-display').textContent = `${name} (${id})`;
+            document.getElementById('selected-channel-id').value = id;
+            document.getElementById('channel-reporting-options').style.display = 'block';
+            popup.style.display = 'none';
+        }
+
+        async function submitChannelReport() {
+            const name = document.getElementById('channel-search-input').value.trim();
+            const id = document.getElementById('selected-channel-id').value.trim();
+            const issue = document.getElementById('channel-issue-select').value;
+            if (!name || !id || !issue) {
+                alert('Please select a channel and issue type.');
+                return;
+            }
+            try {
+                const resp = await fetch('/submit_channel_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel_name: name,
+                        channel_id: id,
+                        issue_type: issue
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('Channel issue reported. Thank you.');
+                    document.getElementById('channel-search-input').value = '';
+                    document.getElementById('selected-channel-id').value = '';
+                    document.getElementById('selected-channel-display').textContent = 'None';
+                    document.getElementById('channel-reporting-options').style.display = 'none';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) {
+                alert('Server error while submitting channel report.');
+            }
+        }
+
+        // --- VOD TMDB search & report ---
+
+        let vodSearchTimeout = null;
+
+        async function searchVodCatalogDropdown(query) {
+            const popup = document.getElementById('vod-results-popup');
+            if (!query.trim()) {
+                popup.style.display = 'none';
+                popup.innerHTML = '';
+                return;
+            }
+
+            if (vodSearchTimeout) clearTimeout(vodSearchTimeout);
+            vodSearchTimeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/search_vod_catalog?q=${encodeURIComponent(query.trim())}`);
+                    const data = await resp.json();
+                    const results = data.results || [];
+                    popup.innerHTML = '';
+                    if (!results.length) {
+                        popup.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:#9ca3af;">No matches found.</div>';
+                        popup.style.display = 'block';
+                        return;
+                    }
+                    results.forEach(item => {
+                        if (item.media_type !== 'movie' && item.media_type !== 'tv') return;
+                        const title = item.media_type === 'movie' ? item.title : item.name;
+                        const year = (item.release_date || item.first_air_date || '').slice(0,4) || 'N/A';
+                        const row = document.createElement('div');
+                        row.style.padding = '6px 8px';
+                        row.style.cursor = 'pointer';
+                        row.style.fontSize = '12px';
+                        row.style.borderBottom = '1px solid #334155';
+                        row.innerHTML = `<strong>${title}</strong> <span style="font-size:11px;color:#9ca3af;">(${year}) • ${item.media_type.toUpperCase()}</span>`;
+                        row.onclick = () => {
+                            selectVodForReport(title, item.media_type);
+                        };
+                        popup.appendChild(row);
+                    });
+                    popup.style.display = 'block';
+                } catch (e) {
+                    popup.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:#f87171;">Error searching VOD.</div>';
+                    popup.style.display = 'block';
+                }
+            }, 250);
+        }
+
+        function selectVodForReport(title, mediaType) {
+            const popup = document.getElementById('vod-results-popup');
+            document.getElementById('vod-search-box').value = title;
+            document.getElementById('selected-vod-display').textContent = `${title} (${mediaType.toUpperCase()})`;
+            document.getElementById('selected-vod-title').value = title;
+            document.getElementById('selected-vod-type').value = mediaType;
+            document.getElementById('vod-reporting-options').style.display = 'block';
+            popup.style.display = 'none';
+        }
+
+        function toggleVodOtherTextInput(value) {
+            const wrap = document.getElementById('vod-custom-notes-wrapper');
+            if (value === 'Other') {
+                wrap.style.display = 'block';
+            } else {
+                wrap.style.display = 'none';
+            }
+        }
+
+        async function submitVodFaultTicket(btn) {
+            const title = document.getElementById('selected-vod-title').value.trim();
+            const type = document.getElementById('selected-vod-type').value.trim();
+            const issueType = document.getElementById('vod-issue-type').value;
+            const customNotes = document.getElementById('vod-custom-issue-text').value.trim();
+            if (!title || !type || !issueType) {
+                alert('Please select a VOD title and issue type.');
+                return;
+            }
+            const origText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+            try {
+                const resp = await fetch('/submit_vod_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: title,
+                        media_type: type,
+                        issue_type: issueType,
+                        issue_notes: customNotes
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('VOD issue reported. Thank you.');
+                    document.getElementById('vod-search-box').value = '';
+                    document.getElementById('selected-vod-title').value = '';
+                    document.getElementById('selected-vod-type').value = '';
+                    document.getElementById('selected-vod-display').textContent = 'None';
+                    document.getElementById('vod-custom-issue-text').value = '';
+                    document.getElementById('vod-reporting-options').style.display = 'none';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) {
+                alert('Server error while submitting VOD report.');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = origText;
+            }
+        }
+
+        // Click-away hiding for dropdowns
         document.addEventListener('click', function(e) {
             const chBox = document.getElementById('channel-search-input');
             const chPopup = document.getElementById('channel-dropdown-results');

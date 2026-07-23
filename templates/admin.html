@@ -252,7 +252,7 @@
                         <th>Days Left</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="expiration-matrix-body">
                     {% if client_expiration_list %}
                         {% for client in client_expiration_list %}
                         <tr>
@@ -305,6 +305,11 @@
                             <div>
                                 <strong style="font-size:13px;">{{ req.title }}</strong>
                                 <div style="font-size:11px; color:#9ca3af;">({{ req.year or 'VOD' }})</div>
+                                {% if req.season_number and req.episode_number %}
+                                    <div style="font-size:11px; color:#60a5fa;">Season {{ req.season_number }}, Episode {{ req.episode_number }}</div>
+                                {% elif req.season_number %}
+                                    <div style="font-size:11px; color:#60a5fa;">Season {{ req.season_number }} (entire season)</div>
+                                {% endif %}
                             </div>
                         </td>
                         <td style="text-transform:capitalize;">{{ req.media_type }}</td>
@@ -626,7 +631,11 @@
                             <tr>
                                 <td><strong>{{ order.portal_username }}</strong></td>
                                 <td style="font-size:11px;">{{ order.spotify_username }}</td>
-                                <td style="font-family:monospace; font-size:11px;">{{ order.spotify_password }}</td>
+                                <td style="font-family:monospace; font-size:11px;">
+                                    <span id="spotify-pass-display-{{ order.id }}">••••••••</span>
+                                    <button class="btn btn-blue btn-small" style="margin-left:4px; padding:2px 6px;"
+                                            onclick="toggleSpotifyPassword({{ order.id }}, this)">Reveal</button>
+                                </td>
                                 <td>£{{ "%.2f"|format(order.amount) }}</td>
                                 <td>£{{ "%.2f"|format(order.discount_used) }}</td>
                                 <td>{{ order.status }}</td>
@@ -839,6 +848,33 @@
         }
 
         // --- Expiration sync ---
+        function renderExpirationMatrixRows(clients) {
+            const tbody = document.getElementById('expiration-matrix-body');
+            if (!tbody) return;
+            if (!clients || !clients.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
+                            No clients expiring within the next 31 days.
+                        </td>
+                    </tr>`;
+                return;
+            }
+            tbody.innerHTML = clients.map(client => {
+                const urgent = client.days_remaining <= 7;
+                const daysChip = urgent
+                    ? `<span class="badge-chip badge-chip-yellow" style="border-color:rgba(220,38,38,0.5); color:#fecaca;">⚠️ ${client.days_remaining} days</span>`
+                    : `<span class="badge-chip badge-chip-yellow">⏳ ${client.days_remaining} days</span>`;
+                return `
+                    <tr>
+                        <td><strong>👤 ${client.username}</strong></td>
+                        <td>${client.expiry_date}</td>
+                        <td><span class="badge badge-done">${client.status}</span></td>
+                        <td>${daysChip}</td>
+                    </tr>`;
+            }).join('');
+        }
+
         function triggerLivePanelSync(btnElement) {
             const orig = btnElement.innerText;
             btnElement.disabled = true;
@@ -849,8 +885,12 @@
             }).then(r => r.json())
              .then(data => {
                  if (data.success) {
-                     alert(data.message);
-                     window.location.reload();
+                     renderExpirationMatrixRows(data.clients);
+                     btnElement.innerText = '✅ Synced';
+                     setTimeout(() => {
+                         btnElement.disabled = false;
+                         btnElement.innerText = orig;
+                     }, 1500);
                  } else {
                      alert('Sync failed: ' + data.message);
                      btnElement.disabled = false;
@@ -1139,6 +1179,48 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => window.location.reload());
+        }
+
+        // --- Spotify password reveal/hide ---
+        const spotifyPasswordCache = {};
+
+        async function toggleSpotifyPassword(orderId, btn) {
+            const span = document.getElementById('spotify-pass-display-' + orderId);
+            if (!span) return;
+
+            const isRevealed = btn.innerText === 'Hide';
+            if (isRevealed) {
+                span.innerText = '••••••••';
+                btn.innerText = 'Reveal';
+                return;
+            }
+
+            if (spotifyPasswordCache[orderId]) {
+                span.innerText = spotifyPasswordCache[orderId];
+                btn.innerText = 'Hide';
+                return;
+            }
+
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = '...';
+            try {
+                const resp = await fetch('/admin/reveal_spotify_password/' + orderId);
+                const data = await resp.json();
+                if (data.success) {
+                    spotifyPasswordCache[orderId] = data.password;
+                    span.innerText = data.password;
+                    btn.innerText = 'Hide';
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerText = orig;
+                }
+            } catch (e) {
+                alert('Server error while revealing password.');
+                btn.innerText = orig;
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // --- Payments ---

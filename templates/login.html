@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - SimplyRocks Portal</title>
     <style>
+        :root { color-scheme: dark; }
         body { 
             background-color: #0f172a; 
             color: #ffffff; 
@@ -18,83 +19,139 @@
         }
         .login-container {
             background-color: #1e293b;
-            padding: 40px;
+            padding: 24px 24px 30px;
             border-radius: 12px;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.05);
+            box-shadow: 0 10px 20px -3px rgba(0,0,0,0.5);
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
             box-sizing: border-box;
             border: 1px solid #334155;
         }
         .login-header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         .login-header h1 {
             color: #60a5fa;
-            margin: 0 0 10px 0;
-            font-size: 26px;
+            margin: 0 0 6px 0;
+            font-size: 24px;
             font-weight: 800;
         }
         .login-header p {
             color: #94a3b8;
             margin: 0;
-            font-size: 14px;
+            font-size: 13px;
+        }
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .tab-btn {
+            flex: 1;
+            text-align: center;
+            padding: 6px;
+            border-radius: 999px;
+            font-size: 12px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .tab-btn.active {
+            background: linear-gradient(90deg, #2563eb, #38bdf8);
+            border-color: rgba(59,130,246,0.5);
+            color: #f9fafb;
+            font-weight: bold;
+        }
+        .tab-btn.inactive {
+            background-color: #020617;
+            border-color: #1f2937;
+            color: #9ca3af;
         }
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 14px;
         }
         .form-group label {
             display: block;
-            font-size: 12px;
+            font-size: 11px;
             color: #cbd5e1;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-weight: bold;
             letter-spacing: 0.5px;
         }
         .form-group input {
             width: 100%;
             box-sizing: border-box;
-            padding: 12px;
+            padding: 10px;
             background-color: #334155;
             border: 1px solid #475569;
             border-radius: 6px;
             color: white;
-            font-size: 15px;
+            font-size: 14px;
             outline: none;
             transition: 0.2s;
         }
         .form-group input:focus {
             border-color: #3b82f6;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5);
         }
-        .login-btn {
+        .login-btn, .register-btn {
             background-color: #2563eb;
             color: white;
             border: none;
-            padding: 14px;
+            padding: 12px;
             width: 100%;
             border-radius: 6px;
             font-weight: bold;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 15px;
             transition: 0.2s;
-            margin-top: 10px;
+            margin-top: 6px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        .login-btn:hover {
+        .login-btn:hover, .register-btn:hover {
             background-color: #1d4ed8;
         }
-        .error-box {
-            background-color: rgba(220, 38, 38, 0.2);
-            border: 1px solid #ef4444;
-            color: #f87171;
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            margin-bottom: 20px;
+        .secondary-link {
+            margin-top: 8px;
             text-align: center;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .secondary-link button {
+            border: none;
+            background: none;
+            color: #60a5fa;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: underline;
+        }
+        .error-box, .info-box, .success-box {
+            border-radius: 6px;
+            font-size: 13px;
+            padding: 10px;
+            margin-bottom: 12px;
+            text-align: left;
+        }
+        .error-box {
+            background-color: rgba(220, 38, 38, 0.15);
+            border: 1px solid #ef4444;
+            color: #fecaca;
+        }
+        .info-box {
+            background-color: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.6);
+            color: #bfdbfe;
+        }
+        .success-box {
+            background-color: rgba(22, 163, 74, 0.15);
+            border: 1px solid #22c55e;
+            color: #bbf7d0;
+        }
+        #register-form {
+            display: none;
+            margin-top: 6px;
         }
     </style>
 </head>
@@ -103,17 +160,30 @@
     <div class="login-container">
         <div class="login-header">
             <h1>SimplyRocks Portal</h1>
-            <p>Sign in using your premium IPTV credentials</p>
+            <p>Sign in using your approved IPTV credentials</p>
         </div>
 
-        <!-- Displays error message cleanly if login info is rejected -->
+        <!-- Tabs to visually indicate Login vs Register focus -->
+        <div class="tabs">
+            <div id="tab-login" class="tab-btn active">Login</div>
+            <div id="tab-register" class="tab-btn inactive" onclick="showRegisterForm()">Register</div>
+        </div>
+
+        <!-- Login error from backend -->
         {% if error %}
         <div class="error-box">
             ❌ {{ error }}
         </div>
         {% endif %}
 
-        <form action="/" method="POST">
+        <!-- Info text -->
+        <div class="info-box" id="info-box">
+            Use your IPTV/portal username and password to log in.  
+            New here? Click the <b>Register</b> tab below to submit an access request.
+        </div>
+
+        <!-- Login form -->
+        <form id="login-form" action="/" method="POST">
             <div class="form-group">
                 <label for="username">IPTV Username</label>
                 <input type="text" id="username" name="username" placeholder="Enter username..." required autocomplete="off">
@@ -129,7 +199,118 @@
 
             <button type="submit" class="login-btn">Sign In to Dashboard</button>
         </form>
+
+        <!-- Registration feedback -->
+        <div id="register-feedback" class="error-box" style="display:none;"></div>
+
+        <!-- Registration form (client-side only, uses /register JSON) -->
+        <div id="register-form">
+            <div class="form-group" style="margin-top:8px;">
+                <label for="reg-username">Choose Username</label>
+                <input type="text" id="reg-username" placeholder="e.g. John-Smith" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="reg-password">Choose Password</label>
+                <input type="password" id="reg-password" placeholder="Minimum 4 characters">
+            </div>
+            <div class="form-group">
+                <label for="reg-email">Email (Optional)</label>
+                <input type="email" id="reg-email" placeholder="For admin to contact you (optional)">
+            </div>
+            <button type="button" class="register-btn" onclick="submitRegistration()">Submit Registration</button>
+            <div class="secondary-link">
+                <span>Already registered?</span>
+                <button type="button" onclick="showLoginForm()">Back to Login</button>
+            </div>
+        </div>
+
+        <div class="secondary-link" style="margin-top:10px;">
+            <small>Note: New registrations must be approved by admin before login is allowed.</small>
+        </div>
     </div>
+
+    <script>
+        function showRegisterForm() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'block';
+            document.getElementById('tab-login').classList.remove('active');
+            document.getElementById('tab-login').classList.add('inactive');
+            document.getElementById('tab-register').classList.remove('inactive');
+            document.getElementById('tab-register').classList.add('active');
+            const info = document.getElementById('info-box');
+            if (info) {
+                info.innerHTML = "Fill in the details below to request a portal account. An admin will approve your registration.";
+            }
+        }
+
+        function showLoginForm() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-form').style.display = 'none';
+            document.getElementById('tab-login').classList.add('active');
+            document.getElementById('tab-login').classList.remove('inactive');
+            document.getElementById('tab-register').classList.add('inactive');
+            document.getElementById('tab-register').classList.remove('active');
+            const info = document.getElementById('info-box');
+            if (info) {
+                info.innerHTML = "Use your IPTV/portal username and password to log in. New here? Click the <b>Register</b> tab below to submit an access request.";
+            }
+        }
+
+        async function submitRegistration() {
+            const uname = document.getElementById('reg-username').value.trim();
+            const pword = document.getElementById('reg-password').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const feedback = document.getElementById('register-feedback');
+
+            feedback.style.display = 'none';
+            feedback.className = 'error-box';
+
+            if (!uname || !pword) {
+                feedback.innerText = "❌ Username and password are required.";
+                feedback.style.display = 'block';
+                return;
+            }
+            if (uname.length < 3) {
+                feedback.innerText = "❌ Username must be at least 3 characters.";
+                feedback.style.display = 'block';
+                return;
+            }
+            if (pword.length < 4) {
+                feedback.innerText = "❌ Password must be at least 4 characters.";
+                feedback.style.display = 'block';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: uname,
+                        password: pword,
+                        email: email
+                    })
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    feedback.className = 'success-box';
+                    feedback.innerText = "✅ " + data.message;
+                    feedback.style.display = 'block';
+                    // Optionally clear fields
+                    document.getElementById('reg-password').value = '';
+                } else {
+                    feedback.className = 'error-box';
+                    feedback.innerText = "❌ " + (data.message || 'Registration failed.');
+                    feedback.style.display = 'block';
+                }
+            } catch (e) {
+                feedback.className = 'error-box';
+                feedback.innerText = "❌ Could not contact server. Please try again.";
+                feedback.style.display = 'block';
+            }
+        }
+    </script>
 
 </body>
 </html>

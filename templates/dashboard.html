@@ -395,20 +395,22 @@
                 <!-- VOD fault report -->
                 <div class="card" style="border:1px solid rgba(245, 158, 11, 0.3);">
                     <h2 style="color:#f59e0b;">Report a VOD Issue</h2>
-                    <p>Search for your broken movie or show below to submit a fault alert ticket.</p>
+                    <p>Search for your broken movie or show below to submit a fault alert ticket. Only titles already on the system will show up.</p>
                     <label class="section-title">Search Movie or Show Title:</label>
-                    <div style="position:relative; margin-bottom:10px;">
-                        <input type="text" id="vod-search-box" oninput="searchVodCatalogDropdown(this.value)"
-                               placeholder="Type title (e.g. Gladiator)..." class="form-field" style="margin-bottom:0;">
-                        <div id="vod-results-popup"
-                             style="display:none; position:absolute; top:100%; left:0; right:0; background-color:#1e293b; border:1px solid #475569; border-radius:6px; max-height:180px; overflow-y:auto; z-index:20;"></div>
+                    <div class="search-box" style="margin-bottom:0;">
+                        <input type="text" id="vod-search-box" placeholder="Type title (e.g. Gladiator)...">
+                        <button onclick="searchVodCatalog()">Search</button>
                     </div>
-                    <div id="vod-reporting-options" style="display:none; border-top:1px solid #334155; padding-top:10px;">
-                        <span style="font-size: 13px;">Target Content:
+                    <div id="vod-search-results" class="results-grid"></div>
+
+                    <div id="vod-reporting-options" style="display:none; border-top:1px solid #334155; padding-top:10px; margin-top:10px;">
+                        <span style="font-size: 13px;">Reporting Fault For:
                             <b id="selected-vod-display" style="color:#fff;">None</b>
                         </span>
                         <input type="hidden" id="selected-vod-title">
                         <input type="hidden" id="selected-vod-type">
+                        <input type="hidden" id="selected-vod-season">
+                        <input type="hidden" id="selected-vod-episode">
                         <label class="section-title" style="margin-top:8px;">Fault Category:</label>
                         <select id="vod-issue-type" onchange="toggleVodOtherTextInput(this.value)" class="form-field">
                             <option value="Video Buffering / Constantly Freezing">⚠️ Video Buffering / Freezing</option>
@@ -1440,61 +1442,136 @@
             }
         }
 
-        // --- VOD TMDB search & report ---
+        // --- VOD TMDB search & report (only shows titles already on the system) ---
 
-        let vodSearchTimeout = null;
-
-        async function searchVodCatalogDropdown(query) {
-            const popup = document.getElementById('vod-results-popup');
-            if (!query.trim()) {
-                popup.style.display = 'none';
-                popup.innerHTML = '';
-                return;
-            }
-
-            if (vodSearchTimeout) clearTimeout(vodSearchTimeout);
-            vodSearchTimeout = setTimeout(async () => {
-                try {
-                    const resp = await fetch(`/search_vod_catalog?q=${encodeURIComponent(query.trim())}`);
-                    const data = await resp.json();
-                    const results = data.results || [];
-                    popup.innerHTML = '';
-                    if (!results.length) {
-                        popup.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:#9ca3af;">No matches found.</div>';
-                        popup.style.display = 'block';
-                        return;
-                    }
-                    results.forEach(item => {
-                        if (item.media_type !== 'movie' && item.media_type !== 'tv') return;
-                        const title = item.media_type === 'movie' ? item.title : item.name;
-                        const year = (item.release_date || item.first_air_date || '').slice(0,4) || 'N/A';
-                        const row = document.createElement('div');
-                        row.style.padding = '6px 8px';
-                        row.style.cursor = 'pointer';
-                        row.style.fontSize = '12px';
-                        row.style.borderBottom = '1px solid #334155';
-                        row.innerHTML = `<strong>${title}</strong> <span style="font-size:11px;color:#9ca3af;">(${year}) • ${item.media_type.toUpperCase()}</span>`;
-                        row.onclick = () => {
-                            selectVodForReport(title, item.media_type);
-                        };
-                        popup.appendChild(row);
-                    });
-                    popup.style.display = 'block';
-                } catch (e) {
-                    popup.innerHTML = '<div style="padding:6px 8px;font-size:12px;color:#f87171;">Error searching VOD.</div>';
-                    popup.style.display = 'block';
+        async function searchVodCatalog() {
+            const query = document.getElementById('vod-search-box').value;
+            const resultsDiv = document.getElementById('vod-search-results');
+            if (!query.trim()) return;
+            resultsDiv.innerHTML = '<p style="color:#94a3b8; grid-column:1/-1;">Searching...</p>';
+            try {
+                const resp = await fetch(`/search_vod_catalog?q=${encodeURIComponent(query.trim())}`);
+                const data = await resp.json();
+                const items = data.results || [];
+                resultsDiv.innerHTML = '';
+                if (!items.length) {
+                    resultsDiv.innerHTML = '<p style="color:#f87171; grid-column:1/-1;">No matches found on the system.</p>';
+                    return;
                 }
-            }, 250);
+                items.forEach(item => {
+                    if (item.media_type !== 'movie' && item.media_type !== 'tv') return;
+                    const title = item.media_type === 'movie' ? item.title : item.name;
+                    const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
+                    let year = 'N/A';
+                    if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
+                    const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
+
+                    // Reuse the same cache used by the media request search -
+                    // same shape, same cacheKey scheme, so the season/episode
+                    // picker logic can be shared between both features.
+                    const cacheKey = `${item.media_type}-${item.id}`;
+                    mediaResultsCache[cacheKey] = {
+                        title, year, type: item.media_type,
+                        imdbID: "TMDB-" + item.id,
+                        poster: posterImg
+                    };
+
+                    const card = document.createElement('div');
+                    card.className = "media-card";
+                    card.dataset.cacheKey = cacheKey;
+
+                    if (item.media_type === 'movie') {
+                        card.innerHTML = `
+                            <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
+                            <div class="media-info">
+                                <h4>${title}</h4>
+                                <p>${year} • MOVIE</p>
+                                <button onclick="selectMovieForReport('${cacheKey}')" class="req-btn" style="background-color:#f59e0b;">Report This</button>
+                            </div>
+                        `;
+                    } else {
+                        card.innerHTML = `
+                            <img src="${posterImg}" class="media-poster" onerror="this.onerror=null; this.src='https://placehold.co';">
+                            <div class="media-info" style="flex:1;">
+                                <h4>${title}</h4>
+                                <p>${year} • TV</p>
+                                <select class="form-field tv-scope-select" style="margin-bottom:6px; padding:5px; font-size:11px;"
+                                        onchange="handleTvScopeChange('${cacheKey}', this)">
+                                    <option value="series">Entire Series</option>
+                                    <option value="season">Specific Season</option>
+                                    <option value="episode">Specific Episode</option>
+                                </select>
+                                <div class="tv-season-picker" style="display:none; margin-bottom:6px;">
+                                    <select class="form-field tv-season-select" style="padding:5px; font-size:11px;"
+                                            onchange="handleTvSeasonChange('${cacheKey}', this)">
+                                        <option value="">Loading seasons...</option>
+                                    </select>
+                                </div>
+                                <div class="tv-episode-picker" style="display:none; margin-bottom:6px;">
+                                    <select class="form-field tv-episode-select" style="padding:5px; font-size:11px;">
+                                        <option value="">Loading episodes...</option>
+                                    </select>
+                                </div>
+                                <button onclick="selectTvForReport('${cacheKey}', this)" class="req-btn" style="background-color:#f59e0b;">Report This</button>
+                            </div>
+                        `;
+                    }
+                    resultsDiv.appendChild(card);
+                });
+            } catch (err) {
+                resultsDiv.innerHTML = '<p style="color:#f87171; grid-column:1/-1;">Error reading data.</p>';
+            }
         }
 
-        function selectVodForReport(title, mediaType) {
-            const popup = document.getElementById('vod-results-popup');
-            document.getElementById('vod-search-box').value = title;
-            document.getElementById('selected-vod-display').textContent = `${title} (${mediaType.toUpperCase()})`;
-            document.getElementById('selected-vod-title').value = title;
-            document.getElementById('selected-vod-type').value = mediaType;
+        function selectMovieForReport(cacheKey) {
+            const item = mediaResultsCache[cacheKey];
+            if (!item) { alert('Item data expired, please search again.'); return; }
+
+            document.getElementById('selected-vod-title').value = item.title;
+            document.getElementById('selected-vod-type').value = item.type;
+            document.getElementById('selected-vod-season').value = '';
+            document.getElementById('selected-vod-episode').value = '';
+            document.getElementById('selected-vod-display').textContent = `${item.title} (${item.year})`;
             document.getElementById('vod-reporting-options').style.display = 'block';
-            popup.style.display = 'none';
+            document.getElementById('vod-reporting-options').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+
+        function selectTvForReport(cacheKey, btn) {
+            const item = mediaResultsCache[cacheKey];
+            if (!item) { alert('Item data expired, please search again.'); return; }
+
+            const card = btn.closest('.media-card');
+            const scope = card.querySelector('.tv-scope-select').value;
+
+            let seasonNumber = '';
+            let episodeNumber = '';
+            let scopeLabel = 'Entire Series';
+
+            if (scope === 'season' || scope === 'episode') {
+                seasonNumber = card.querySelector('.tv-season-select').value;
+                if (!seasonNumber) {
+                    alert('Please select a season.');
+                    return;
+                }
+                scopeLabel = `Season ${seasonNumber}`;
+            }
+
+            if (scope === 'episode') {
+                episodeNumber = card.querySelector('.tv-episode-select').value;
+                if (!episodeNumber) {
+                    alert('Please select an episode.');
+                    return;
+                }
+                scopeLabel = `Season ${seasonNumber}, Episode ${episodeNumber}`;
+            }
+
+            document.getElementById('selected-vod-title').value = item.title;
+            document.getElementById('selected-vod-type').value = item.type;
+            document.getElementById('selected-vod-season').value = seasonNumber;
+            document.getElementById('selected-vod-episode').value = episodeNumber;
+            document.getElementById('selected-vod-display').textContent = `${item.title} (${item.year}) - ${scopeLabel}`;
+            document.getElementById('vod-reporting-options').style.display = 'block';
+            document.getElementById('vod-reporting-options').scrollIntoView({behavior: 'smooth', block: 'nearest'});
         }
 
         function toggleVodOtherTextInput(value) {
@@ -1509,10 +1586,12 @@
         async function submitVodFaultTicket(btn) {
             const title = document.getElementById('selected-vod-title').value.trim();
             const type = document.getElementById('selected-vod-type').value.trim();
+            const seasonNumber = document.getElementById('selected-vod-season').value.trim();
+            const episodeNumber = document.getElementById('selected-vod-episode').value.trim();
             const issueType = document.getElementById('vod-issue-type').value;
             const customNotes = document.getElementById('vod-custom-issue-text').value.trim();
             if (!title || !type || !issueType) {
-                alert('Please select a VOD title and issue type.');
+                alert('Please select a title and issue type.');
                 return;
             }
             const origText = btn.innerText;
@@ -1525,6 +1604,8 @@
                     body: JSON.stringify({
                         title: title,
                         media_type: type,
+                        season_number: seasonNumber || null,
+                        episode_number: episodeNumber || null,
                         issue_type: issueType,
                         issue_notes: customNotes
                     })
@@ -1535,9 +1616,12 @@
                     document.getElementById('vod-search-box').value = '';
                     document.getElementById('selected-vod-title').value = '';
                     document.getElementById('selected-vod-type').value = '';
+                    document.getElementById('selected-vod-season').value = '';
+                    document.getElementById('selected-vod-episode').value = '';
                     document.getElementById('selected-vod-display').textContent = 'None';
                     document.getElementById('vod-custom-issue-text').value = '';
                     document.getElementById('vod-reporting-options').style.display = 'none';
+                    document.getElementById('vod-search-results').innerHTML = '';
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -1549,17 +1633,12 @@
             }
         }
 
-        // Click-away hiding for dropdowns
+        // Click-away hiding for the channel search dropdown
         document.addEventListener('click', function(e) {
             const chBox = document.getElementById('channel-search-input');
             const chPopup = document.getElementById('channel-dropdown-results');
             if (chBox && chPopup && !chBox.contains(e.target) && !chPopup.contains(e.target)) {
                 chPopup.style.display = 'none';
-            }
-            const vodBox = document.getElementById('vod-search-box');
-            const vodPopup = document.getElementById('vod-results-popup');
-            if (vodBox && vodPopup && !vodBox.contains(e.target) && !vodPopup.contains(e.target)) {
-                vodPopup.style.display = 'none';
             }
         });
 

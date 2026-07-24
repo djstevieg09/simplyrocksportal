@@ -3068,6 +3068,53 @@ def reveal_spotify_password(order_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/admin/mark_spotify_order_upgraded/<int:order_id>', methods=['POST'])
+def admin_mark_spotify_order_upgraded(order_id):
+    """
+    Admin: acknowledge that a Spotify account has actually been upgraded
+    (done by hand on Spotify's side). Marks the order as Upgraded and sends
+    a Telegram confirmation.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT portal_username, spotify_username, status FROM spotify_orders WHERE id = ?",
+                (order_id,)
+            )
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': 'Spotify order not found.'}), 404
+            if order['status'] == 'Upgraded':
+                return jsonify({'success': False, 'message': 'This order is already marked as upgraded.'}), 400
+
+            cursor.execute(
+                "UPDATE spotify_orders SET status = 'Upgraded' WHERE id = ?",
+                (order_id,)
+            )
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Marked Spotify order #{order_id} as upgraded ({order['spotify_username']})")
+
+        send_telegram_alert_direct(
+            f"<b>🎵 SPOTIFY UPGRADE COMPLETED</b>\n"
+            f"<b>Portal User:</b> <code>{order['portal_username']}</code>\n"
+            f"<b>Spotify User:</b> <code>{order['spotify_username']}</code>\n"
+            f"<b>Confirmed by:</b> <code>{admin_user}</code>"
+        )
+
+        return jsonify({'success': True, 'message': f"Order #{order_id} marked as upgraded."})
+    except Exception as e:
+        print("ADMIN_MARK_SPOTIFY_ORDER_UPGRADED ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/logout')
 def logout():
     username = session.get('username')

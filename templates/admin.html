@@ -479,7 +479,14 @@
                     {% if vod_reports %}
                         {% for report in vod_reports %}
                         <tr id="vod-report-row-{{ report[0] }}">
-                            <td><strong>🎬 {{ report[2] }}</strong></td>
+                            <td>
+                                <strong>🎬 {{ report[2] }}</strong>
+                                {% if report[5] and report[6] %}
+                                    <div style="font-size:11px; color:#60a5fa;">Season {{ report[5] }}, Episode {{ report[6] }}</div>
+                                {% elif report[5] %}
+                                    <div style="font-size:11px; color:#60a5fa;">Season {{ report[5] }} (entire season)</div>
+                                {% endif %}
+                            </td>
                             <td style="text-transform:capitalize;">{{ report[3] }}</td>
                             <td><strong>{{ report[1] }}</strong></td>
                             <td>

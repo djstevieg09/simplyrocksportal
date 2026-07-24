@@ -491,11 +491,11 @@ def send_telegram_alert_direct(message_text):
 
 def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
     """
-    Download a poster image, stamp a bold "REQUEST" or "REPORT" banner
-    across the top of it, and send that composited image to Telegram with
-    the given caption. Telegram captions only ever appear below/beside a
-    photo - there's no way to overlay text on the image itself through the
-    API - so the banner has to be drawn onto the image before it's sent.
+    Download a poster image, stamp a bold diagonal "REQUEST" or "REPORT"
+    ribbon across it, and send that composited image to Telegram with the
+    given caption. Telegram captions only ever appear below/beside a photo
+    - there's no way to overlay text on the image itself through the API -
+    so the ribbon has to be drawn onto the image before it's sent.
 
     Falls back to a plain text alert (no image) if the poster can't be
     downloaded/processed for any reason, so a broken or missing poster URL
@@ -515,18 +515,14 @@ def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
         img_resp = requests.get(poster_url, timeout=10)
         img_resp.raise_for_status()
         image = Image.open(BytesIO(img_resp.content)).convert("RGB")
-
-        draw = ImageDraw.Draw(image, "RGBA")
         width, height = image.size
-        banner_height = max(48, int(height * 0.13))
 
-        # Red banner for reports, blue for requests - matches the color
+        # Red ribbon for reports, blue for requests - matches the color
         # scheme already used elsewhere in the portal for these two things.
         is_report = overlay_text.strip().upper() == "REPORT"
-        banner_color = (220, 38, 38, 215) if is_report else (37, 99, 235, 215)
-        draw.rectangle([(0, 0), (width, banner_height)], fill=banner_color)
+        banner_color = (220, 38, 38, 230) if is_report else (37, 99, 235, 230)
 
-        font_size = max(22, int(banner_height * 0.55))
+        font_size = max(26, int(height * 0.06))
         font = None
         for font_path in (
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -540,17 +536,41 @@ def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
                 continue
         if font is None:
             # No TrueType font found on this system - fall back to PIL's
-            # built-in bitmap font. It'll look plainer, but the banner and
+            # built-in bitmap font. It'll look plainer, but the ribbon and
             # image still get sent either way.
             font = ImageFont.load_default()
 
         text = overlay_text.strip().upper()
-        text_bbox = draw.textbbox((0, 0), text, font=font)
+
+        # Draw the ribbon on its own separate strip first (flat/horizontal),
+        # then rotate that whole strip and paste it onto the poster - this
+        # is what actually makes the text appear diagonally rather than in
+        # a straight bar across the top.
+        ribbon_length = int(width * 1.6)
+        ribbon_thickness = max(50, int(height * 0.09))
+
+        ribbon = Image.new("RGBA", (ribbon_length, ribbon_thickness), (0, 0, 0, 0))
+        ribbon_draw = ImageDraw.Draw(ribbon)
+        ribbon_draw.rectangle([(0, 0), (ribbon_length, ribbon_thickness)], fill=banner_color)
+
+        text_bbox = ribbon_draw.textbbox((0, 0), text, font=font)
         text_w = text_bbox[2] - text_bbox[0]
         text_h = text_bbox[3] - text_bbox[1]
-        text_x = (width - text_w) / 2
-        text_y = (banner_height - text_h) / 2 - text_bbox[1]
-        draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font)
+        text_x = (ribbon_length - text_w) / 2
+        text_y = (ribbon_thickness - text_h) / 2 - text_bbox[1]
+        ribbon_draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font)
+
+        # Rotate the strip to create the diagonal effect, then paste it
+        # across the upper portion of the poster using its own alpha
+        # channel as the mask so only the ribbon (not its transparent
+        # surroundings) actually shows up on the poster.
+        rotated = ribbon.rotate(-20, expand=True, resample=Image.BICUBIC)
+        paste_x = (width - rotated.width) // 2
+        paste_y = int(height * 0.10) - (rotated.height // 2)
+
+        image = image.convert("RGBA")
+        image.paste(rotated, (paste_x, paste_y), rotated)
+        image = image.convert("RGB")
 
         buffer = BytesIO()
         image.save(buffer, format="JPEG", quality=88)

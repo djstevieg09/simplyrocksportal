@@ -869,55 +869,13 @@ def accept_renewal_job(job_id):
     }
 
 
-# --- USER REGISTRATION & LOGIN ---
-
-@app.route('/register', methods=['POST'])
-def register():
-    """
-    Public registration endpoint.
-    """
-    data = request.json or {}
-    uname = data.get('username', '').strip()
-    pword = data.get('password', '').strip()
-    email = data.get('email', '').strip()
-
-    if not uname or not pword:
-        return jsonify({'success': False, 'message': 'Username and password are required.'}), 400
-    if len(uname) < 3:
-        return jsonify({'success': False, 'message': 'Username must be at least 3 characters.'}), 400
-    if len(pword) < 4:
-        return jsonify({'success': False, 'message': 'Password must be at least 4 characters.'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT username FROM portal_users WHERE LOWER(username) = LOWER(?)", (uname.lower(),))
-            if cursor.fetchone():
-                return jsonify({'success': False, 'message': 'This username is already approved and in use.'}), 400
-
-            cursor.execute("SELECT username FROM pending_users WHERE LOWER(username) = LOWER(?)", (uname.lower(),))
-            if cursor.fetchone():
-                return jsonify({'success': False, 'message': 'This username is already awaiting approval.'}), 400
-
-            hashed_pword = generate_password_hash(pword)
-            cursor.execute('''
-                INSERT INTO pending_users (username, password, email)
-                VALUES (?, ?, ?)
-            ''', (uname, hashed_pword, email or None))
-            conn.commit()
-
-        log_activity(uname, "Registration submitted (pending approval)")
-
-        send_telegram_alert_direct(
-            f"<b>📝 NEW REGISTRATION PENDING APPROVAL</b>\n"
-            f"<b>Username:</b> <code>{uname}</code>\n"
-            f"<b>Email:</b> <code>{email or 'N/A'}</code>"
-        )
-
-        return jsonify({'success': True, 'message': 'Registration submitted. Admin must approve your account before you can log in.'})
-    except Exception as e:
-        print(f"REGISTRATION ERROR: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+# --- USER LOGIN ---
+# NOTE: the old /register + admin approval workflow has been removed.
+# Since login now authenticates live against the real IPTV panel and
+# auto-creates/refreshes the local portal account on success (see
+# verify_xtream_credentials() / upsert_portal_user_from_panel()), there's
+# no longer any need for people to "sign up" separately - anyone with a
+# real, active line can just log straight in.
 
 
 @app.route('/', endpoint='login', methods=['GET', 'POST'])
@@ -2338,106 +2296,6 @@ def set_announcement():
         return jsonify({'success': True, 'message': 'Announcement updated.'})
     except Exception as e:
         print("SET_ANNOUNCEMENT ERROR:", e)
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/get_pending_users')
-def admin_get_pending_users():
-    if not is_admin():
-        return jsonify([]), 403
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute('SELECT id, username, email, created_at FROM pending_users ORDER BY created_at ASC')
-            rows = cursor.fetchall()
-        return jsonify([dict(r) for r in rows])
-    except Exception as e:
-        print("GET_PENDING_USERS ERROR:", e)
-        return jsonify([]), 500
-
-
-@app.route('/admin/approve_user', methods=['POST'])
-def approve_user():
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
-    data = request.json or {}
-    pid = data.get('id')
-    if not pid:
-        return jsonify({'success': False, 'message': 'Missing pending user ID.'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT * FROM pending_users WHERE id = ?', (pid,))
-            pending = cursor.fetchone()
-            if not pending:
-                return jsonify({'success': False, 'message': 'Pending user not found.'}), 404
-
-            uname = pending['username']
-            hashed_pw = pending['password']
-
-            expiry_ts = int(time.time()) + 365 * 86400
-            expiry_date = datetime.fromtimestamp(expiry_ts).strftime('%Y-%m-%d')
-
-            cursor.execute('''
-                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(username) DO UPDATE SET
-                    password = excluded.password,
-                    expiry_date = excluded.expiry_date,
-                    expiry_timestamp = excluded.expiry_timestamp
-            ''', (uname, hashed_pw, expiry_date, expiry_ts))
-
-            cursor.execute('DELETE FROM pending_users WHERE id = ?', (pid,))
-            conn.commit()
-
-        admin_user = session.get('username', 'admin')
-        log_activity(admin_user, f"Approved pending user {uname}")
-        send_telegram_alert_direct(
-            f"<b>✅ REGISTRATION APPROVED</b>\n"
-            f"<b>User:</b> <code>{uname}</code>\n"
-            f"<b>Approved by:</b> <code>{admin_user}</code>"
-        )
-
-        return jsonify({'success': True, 'message': f"User '{uname}' approved and portal account created."})
-    except Exception as e:
-        print("APPROVE_USER ERROR:", e)
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-@app.route('/admin/reject_user', methods=['POST'])
-def reject_user():
-    if not is_admin():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
-    data = request.json or {}
-    pid = data.get('id')
-    if not pid:
-        return jsonify({'success': False, 'message': 'Missing pending user ID.'}), 400
-
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT username FROM pending_users WHERE id = ?', (pid,))
-            row = cursor.fetchone()
-            if not row:
-                return jsonify({'success': False, 'message': 'Pending user not found.'}), 404
-            uname = row[0]
-
-            cursor.execute('DELETE FROM pending_users WHERE id = ?', (pid,))
-            conn.commit()
-
-        admin_user = session.get('username', 'admin')
-        log_activity(admin_user, f"Rejected pending user {uname}")
-
-        return jsonify({'success': True, 'message': f"Registration for '{uname}' rejected and removed."})
-    except Exception as e:
-        print("REJECT_USER ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

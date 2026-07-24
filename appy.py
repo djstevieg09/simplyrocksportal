@@ -346,6 +346,20 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Same season/episode granularity for VOD fault reports, so people
+        # can report an issue with one specific episode instead of only
+        # ever reporting against the whole show.
+        try:
+            cursor.execute("ALTER TABLE vod_reports ADD COLUMN season_number INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+        try:
+            cursor.execute("ALTER TABLE vod_reports ADD COLUMN episode_number INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Unique index on referral_friends to prevent duplicates
         try:
             cursor.execute('''
@@ -2103,7 +2117,8 @@ def submit_vod_report():
     """
     User: submit VOD fault ticket.
     Expects JSON:
-      title, media_type ('movie'|'tv'), issue_type, issue_notes (optional)
+      title, media_type ('movie'|'tv'), issue_type, issue_notes (optional),
+      season_number (optional), episode_number (optional)
     """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
@@ -2115,6 +2130,17 @@ def submit_vod_report():
     issue_type = (data.get('issue_type') or '').strip()
     issue_notes = (data.get('issue_notes') or '').strip()
 
+    def _parse_int(value):
+        try:
+            if value in (None, '', 'null'):
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    season_number = _parse_int(data.get('season_number'))
+    episode_number = _parse_int(data.get('episode_number'))
+
     if not title or not media_type or not issue_type:
         return jsonify({'success': False, 'message': 'Missing title, type or issue.'}), 400
 
@@ -2122,19 +2148,25 @@ def submit_vod_report():
     if issue_type.lower() == 'other' and issue_notes:
         final_issue_type = f"Other: {issue_notes[:100]}"
 
+    scope_label = ""
+    if season_number and episode_number:
+        scope_label = f" - Season {season_number}, Episode {episode_number}"
+    elif season_number:
+        scope_label = f" - Season {season_number} (entire season)"
+
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO vod_reports (username, title, media_type, issue_type, issue_notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (username, title, media_type, final_issue_type, issue_notes[:255]))
+                INSERT INTO vod_reports (username, title, media_type, issue_type, issue_notes, season_number, episode_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (username, title, media_type, final_issue_type, issue_notes[:255], season_number, episode_number))
             conn.commit()
 
         send_telegram_alert_direct(
             f"<b>🎬 VOD FAULT TICKET</b>\n"
             f"<b>User:</b> <code>{username}</code>\n"
-            f"<b>Title:</b> {title}\n"
+            f"<b>Title:</b> {title}{scope_label}\n"
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>Issue:</b> {final_issue_type}"
         )
@@ -2215,7 +2247,7 @@ def admin_panel():
         cursor.execute("SELECT * FROM channel_reports ORDER BY timestamp DESC")
         all_reports = cursor.fetchall()
 
-        cursor.execute("SELECT id, username, title, media_type, issue_type FROM vod_reports ORDER BY timestamp DESC")
+        cursor.execute("SELECT id, username, title, media_type, issue_type, season_number, episode_number FROM vod_reports ORDER BY timestamp DESC")
         all_vod_reports = cursor.fetchall()
 
         cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")

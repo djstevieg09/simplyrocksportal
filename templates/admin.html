@@ -759,12 +759,13 @@
                             <th>Wallet Used</th>
                             <th>Status</th>
                             <th>When</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% if spotify_orders %}
                             {% for order in spotify_orders %}
-                            <tr>
+                            <tr id="spotify-order-row-{{ order.id }}">
                                 <td><strong>{{ order.portal_username }}</strong></td>
                                 <td style="font-size:11px;">{{ order.spotify_username }}</td>
                                 <td style="font-family:monospace; font-size:11px;">
@@ -774,13 +775,28 @@
                                 </td>
                                 <td>£{{ "%.2f"|format(order.amount) }}</td>
                                 <td>£{{ "%.2f"|format(order.discount_used) }}</td>
-                                <td>{{ order.status }}</td>
+                                <td id="spotify-status-cell-{{ order.id }}">
+                                    {% if order.status == 'Upgraded' %}
+                                        <span class="badge badge-done">✅ Upgraded</span>
+                                    {% else %}
+                                        <span class="badge-chip badge-chip-yellow">⏳ {{ order.status }}</span>
+                                    {% endif %}
+                                </td>
                                 <td style="font-size:11px; color:#9ca3af;">{{ order.timestamp }}</td>
+                                <td id="spotify-action-cell-{{ order.id }}">
+                                    {% if order.status != 'Upgraded' %}
+                                    <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ order.id }})">
+                                        ✓ Mark Upgraded
+                                    </button>
+                                    {% else %}
+                                    <span style="color:#64748b; font-size:11px;">Done</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="7" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No Spotify orders yet.</td>
+                            <td colspan="8" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No Spotify orders yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -1441,6 +1457,24 @@
             } finally {
                 btn.disabled = false;
             }
+        }
+
+        function markSpotifyUpgraded(orderId) {
+            if (!confirm("Confirm this Spotify account has actually been upgraded?")) return;
+            fetch('/admin/mark_spotify_order_upgraded/' + orderId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const statusCell = document.getElementById('spotify-status-cell-' + orderId);
+                    const actionCell = document.getElementById('spotify-action-cell-' + orderId);
+                    if (statusCell) statusCell.innerHTML = '<span class="badge badge-done">✅ Upgraded</span>';
+                    if (actionCell) actionCell.innerHTML = '<span style="color:#64748b; font-size:11px;">Done</span>';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout while marking Spotify order upgraded."));
         }
 
         // --- Payments ---

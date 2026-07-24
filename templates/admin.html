@@ -237,6 +237,89 @@
             </div>
         </div>
 
+        <!-- Renewal Jobs: manual line extension queue -->
+        <div class="card" style="border:1px solid rgba(234,179,8,0.5);">
+            <div class="section-header-row">
+                <h2 style="color:#facc15;">Renewal Jobs - Needs Manual Line Extension</h2>
+                <span class="pill-info">{{ pending_renewal_jobs|length if pending_renewal_jobs else 0 }} pending</span>
+            </div>
+            <p class="muted">
+                Every paid renewal - your own or a referred friend's - lands here. Once you've
+                actually extended the line on your real IPTV panel, click Accept: it adds 365 days
+                to whatever the account's expiry already was (matching how the panel itself renews
+                a line) and updates their expiry here automatically.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Account To Extend</th>
+                        <th>Type</th>
+                        <th>Connections</th>
+                        <th>Amount Paid</th>
+                        <th>Requested</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if pending_renewal_jobs %}
+                        {% for job in pending_renewal_jobs %}
+                        <tr id="renewal-job-row-{{ job.id }}">
+                            <td><strong>👤 {{ job.username }}</strong></td>
+                            <td>
+                                {% if job.renewal_type == 'friend' %}
+                                    <span class="badge-chip badge-chip-yellow">Friend Line</span>
+                                    <div style="font-size:10px; color:#9ca3af; margin-top:2px;">via {{ job.referrer_username }}</div>
+                                {% else %}
+                                    <span class="badge-chip badge-chip-gray">Own Line</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ job.connections }}</td>
+                            <td>£{{ job.amount }}</td>
+                            <td style="font-size:11px; color:#9ca3af;">{{ job.created_at }}</td>
+                            <td>
+                                <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ job.id }})">
+                                    ✓ Accept (+365 days)
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" style="text-align:center; color:#64748b; padding:16px; font-size:13px;">
+                            No renewals waiting on manual extension.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+
+            {% if recent_completed_renewal_jobs %}
+            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Recently Completed</h3>
+            <div style="max-height:180px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Previous Expiry</th>
+                            <th>New Expiry</th>
+                            <th>Completed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in recent_completed_renewal_jobs %}
+                        <tr>
+                            <td><strong>{{ job.username }}</strong></td>
+                            <td style="font-size:11px; color:#9ca3af;">{{ job.previous_expiry_date }}</td>
+                            <td style="font-size:11px; color:#4ade80;">{{ job.new_expiry_date }}</td>
+                            <td style="font-size:11px; color:#9ca3af;">{{ job.completed_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+
         <!-- Expiration matrix -->
         <div class="card">
             <div class="section-header-row" style="margin-bottom:8px; border-bottom:1px solid rgba(148,163,184,0.25); padding-bottom:6px;">
@@ -838,6 +921,24 @@
         }
 
         // --- Pending Registrations ---
+        // --- Renewal Jobs ---
+        function acceptRenewalJob(jobId) {
+            if (!confirm("Confirm you've extended this line on your real IPTV panel? "
+                       + "This will add 365 days to their previous expiry.")) return;
+            fetch('/admin/accept_renewal_job/' + jobId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout while accepting renewal job."));
+        }
+
         async function loadPendingUsers() {
             const tbody = document.getElementById('pending-users-body');
             if (!tbody) return;

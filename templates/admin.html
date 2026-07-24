@@ -219,53 +219,55 @@
                 to whatever the account's expiry already was (matching how the panel itself renews
                 a line) and updates their expiry here automatically.
             </p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Account To Extend</th>
-                        <th>Type</th>
-                        <th>Connections</th>
-                        <th>Amount Paid</th>
-                        <th>Requested</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if pending_renewal_jobs %}
-                        {% for job in pending_renewal_jobs %}
-                        <tr id="renewal-job-row-{{ job.id }}">
-                            <td><strong>👤 {{ job.username }}</strong></td>
-                            <td>
-                                {% if job.renewal_type == 'friend' %}
-                                    <span class="badge-chip badge-chip-yellow">Friend Line</span>
-                                    <div style="font-size:10px; color:#9ca3af; margin-top:2px;">via {{ job.referrer_username }}</div>
-                                {% else %}
-                                    <span class="badge-chip badge-chip-gray">Own Line</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ job.connections }}</td>
-                            <td>£{{ job.amount }}</td>
-                            <td style="font-size:11px; color:#9ca3af;">{{ job.created_at }}</td>
-                            <td>
-                                <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ job.id }})">
-                                    ✓ Accept (+365 days)
-                                </button>
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Account To Extend</th>
+                            <th>Type</th>
+                            <th>Connections</th>
+                            <th>Amount Paid</th>
+                            <th>Requested</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if pending_renewal_jobs %}
+                            {% for job in pending_renewal_jobs %}
+                            <tr id="renewal-job-row-{{ job.id }}">
+                                <td style="white-space:nowrap;"><strong>👤 {{ job.username }}</strong></td>
+                                <td style="white-space:nowrap;">
+                                    {% if job.renewal_type == 'friend' %}
+                                        <span class="badge-chip badge-chip-yellow">Friend Line</span>
+                                        <div style="font-size:10px; color:#9ca3af; margin-top:2px;">via {{ job.referrer_username }}</div>
+                                    {% else %}
+                                        <span class="badge-chip badge-chip-gray">Own Line</span>
+                                    {% endif %}
+                                </td>
+                                <td style="white-space:nowrap;">{{ job.connections }}</td>
+                                <td style="white-space:nowrap;">£{{ job.amount }}</td>
+                                <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.created_at }}</td>
+                                <td style="white-space:nowrap;">
+                                    <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ job.id }})">
+                                        ✓ Accept (+365 days)
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="6" style="text-align:center; color:#64748b; padding:16px; font-size:13px;">
+                                No renewals waiting on manual extension.
                             </td>
                         </tr>
-                        {% endfor %}
-                    {% else %}
-                    <tr>
-                        <td colspan="6" style="text-align:center; color:#64748b; padding:16px; font-size:13px;">
-                            No renewals waiting on manual extension.
-                        </td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
 
             {% if recent_completed_renewal_jobs %}
             <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Recently Completed</h3>
-            <div style="max-height:180px; overflow-y:auto;">
+            <div style="max-height:180px; overflow-y:auto; overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
@@ -278,10 +280,10 @@
                     <tbody>
                         {% for job in recent_completed_renewal_jobs %}
                         <tr>
-                            <td><strong>{{ job.username }}</strong></td>
-                            <td style="font-size:11px; color:#9ca3af;">{{ job.previous_expiry_date }}</td>
-                            <td style="font-size:11px; color:#4ade80;">{{ job.new_expiry_date }}</td>
-                            <td style="font-size:11px; color:#9ca3af;">{{ job.completed_at }}</td>
+                            <td style="white-space:nowrap;"><strong>{{ job.username }}</strong></td>
+                            <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.previous_expiry_date }}</td>
+                            <td style="font-size:11px; color:#4ade80; white-space:nowrap;">{{ job.new_expiry_date }}</td>
+                            <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.completed_at }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

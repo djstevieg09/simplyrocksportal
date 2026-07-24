@@ -232,6 +232,29 @@ def init_db():
             )
         ''')
 
+        # renewal_jobs table - every line renewal (self or a referred
+        # friend's line) creates a job here that the admin must manually
+        # accept, since the actual line extension has to be done by hand on
+        # the real IPTV reseller panel. Accepting a job adds 365 days to
+        # whatever the account's expiry already was (matching how the panel
+        # itself extends a renewed line), rather than 365 days from today.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS renewal_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                renewal_type TEXT NOT NULL,
+                referrer_username TEXT,
+                connections TEXT,
+                order_id TEXT,
+                amount TEXT,
+                status TEXT DEFAULT 'Pending',
+                previous_expiry_date TEXT,
+                new_expiry_date TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME
+            )
+        ''')
+
         # announcements table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS announcements (
@@ -728,6 +751,99 @@ def get_wallet_balance(username):
         if not row:
             return 0.0
         return (row['earned_balance'] or 0.0) - (row['spent_balance'] or 0.0)
+
+
+# --- RENEWAL JOBS: MANUAL LINE EXTENSION QUEUE ---
+# Every paid line renewal (a user's own line, or a referred friend's line)
+# creates a job here. The actual extension has to happen on the real IPTV
+# panel by hand, so this queue is what the admin works through - accepting
+# a job adds 365 days to whatever the account's expiry already was, exactly
+# matching how the real panel extends a renewed line.
+
+def create_renewal_job(username, renewal_type, connections, order_id, amount, referrer_username=None):
+    """Insert a new pending renewal job for the admin to accept."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO renewal_jobs (username, renewal_type, referrer_username, connections, order_id, amount, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'Pending')
+            ''', (username, renewal_type, referrer_username, connections, order_id, amount))
+            conn.commit()
+    except Exception as e:
+        print("CREATE_RENEWAL_JOB ERROR:", e)
+
+
+def accept_renewal_job(job_id):
+    """
+    Accept a pending renewal job: add 365 days to the account's PREVIOUS
+    expiry (not from today), update portal_users, mirror the new expiry
+    into referral_friends if this was a friend renewal, and mark the job
+    Completed. Returns (success, message_or_data).
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM renewal_jobs WHERE id = ?", (job_id,))
+        job = cursor.fetchone()
+        if not job:
+            return False, "Renewal job not found."
+        if job['status'] == 'Completed':
+            return False, "This renewal job has already been completed."
+
+        username = job['username']
+
+        cursor.execute(
+            "SELECT expiry_timestamp FROM portal_users WHERE LOWER(username) = LOWER(?)",
+            (username.lower(),)
+        )
+        user_row = cursor.fetchone()
+        if not user_row:
+            return False, f"Portal account '{username}' not found - can't extend its expiry."
+
+        previous_ts = user_row['expiry_timestamp'] or 0
+        previous_readable = datetime.fromtimestamp(previous_ts).strftime('%Y-%m-%d') if previous_ts > 0 else 'None'
+
+        # Add 365 days to whatever the expiry already was, matching how the
+        # real panel extends a line. If there's no valid prior expiry to
+        # build from (brand new/blank account), fall back to extending from
+        # today instead of adding 365 days to a meaningless zero value.
+        base_ts = previous_ts if previous_ts > 0 else int(time.time())
+        new_ts = base_ts + (365 * 86400)
+        new_readable = datetime.fromtimestamp(new_ts).strftime('%Y-%m-%d')
+
+        cursor.execute('''
+            UPDATE portal_users
+            SET expiry_date = ?, expiry_timestamp = ?
+            WHERE LOWER(username) = LOWER(?)
+        ''', (new_readable, new_ts, username.lower()))
+
+        # Keep the referral_friends tracking table in sync for friend renewals,
+        # since that's what the "Friends You Referred" dashboard list reads from.
+        if job['renewal_type'] == 'friend':
+            cursor.execute('''
+                UPDATE referral_friends
+                SET expiry_timestamp = ?
+                WHERE LOWER(friend_username) = LOWER(?)
+            ''', (new_ts, username.lower()))
+
+        cursor.execute('''
+            UPDATE renewal_jobs
+            SET status = 'Completed',
+                previous_expiry_date = ?,
+                new_expiry_date = ?,
+                completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (previous_readable, new_readable, job_id))
+
+        conn.commit()
+
+    return True, {
+        'username': username,
+        'previous_expiry_date': previous_readable,
+        'new_expiry_date': new_readable
+    }
 
 
 # --- USER REGISTRATION & LOGIN ---
@@ -1335,12 +1451,12 @@ def renew_friend_line():
                 VALUES (?, ?, ?, 'Completed')
             ''', (referrer, order_id, f"{amount_val:.2f}"))
 
-            one_year_ts = int(time.time()) + (365 * 86400)
-            cursor.execute("""
-                UPDATE referral_friends
-                SET expiry_timestamp = ?
-                WHERE LOWER(friend_username) = LOWER(?)
-            """, (one_year_ts, friend_username.lower()))
+            # NOTE: the friend's actual expiry is NOT extended here anymore.
+            # It used to be bumped immediately in this table, but that never
+            # touched the friend's real portal_users record - meaning their
+            # account expiry was never actually extended at all. The real
+            # extension now only happens once the admin accepts the renewal
+            # job below, via accept_renewal_job().
 
             cursor.execute("""
                 INSERT INTO referral_wallets (username, earned_balance, spent_balance)
@@ -1364,16 +1480,26 @@ def renew_friend_line():
 
             conn.commit()
 
-        readable = datetime.fromtimestamp(one_year_ts).strftime('%B %d, %Y')
+        # Create the job the admin will accept to actually extend the
+        # friend's line on the real panel (see accept_renewal_job()).
+        create_renewal_job(
+            username=friend_username,
+            renewal_type='friend',
+            connections=connections,
+            order_id=order_id,
+            amount=f"{amount_val:.2f}",
+            referrer_username=referrer
+        )
+
         send_telegram_alert_direct(
-            f"<b>🔁 FRIEND LINE RENEWAL</b>\n"
+            f"<b>🔁 FRIEND LINE RENEWAL PAID</b>\n"
             f"<b>Referrer:</b> <code>{referrer}</code>\n"
             f"<b>Friend Line:</b> <code>{friend_username}</code>\n"
             f"<b>Order ID:</b> <code>{order_id}</code>\n"
             f"<b>Paid:</b> £{amount_val:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
             f"<b>Connections:</b> {connections}\n"
-            f"<b>New Local Expiry (Portal):</b> {readable}"
+            f"<b>Status:</b> Pending manual extension in admin panel"
         )
 
         log_activity(referrer, f"Renewed friend line {friend_username} ({connections} conn, order {order_id})")
@@ -1618,6 +1744,16 @@ def log_payment():
                 ''', (username, discount_val, discount_val))
 
             conn.commit()
+
+        # Create the job the admin will accept to actually extend this
+        # account's expiry on the real panel (see accept_renewal_job()).
+        create_renewal_job(
+            username=username,
+            renewal_type='self',
+            connections=connections,
+            order_id=order_id,
+            amount=f"{amount_val:.2f}"
+        )
 
         readable_connections = f"{connections} connection{'s' if str(connections) != '1' else ''}"
 
@@ -1904,7 +2040,11 @@ def submit_channel_report():
 @app.route('/search_vod_catalog')
 def search_vod_catalog():
     """
-    Use TMDB to search movies & TV for VOD reporting dropdown.
+    Use TMDB to search movies & TV for VOD reporting dropdown - but unlike
+    the media request search, this ONLY returns titles that are actually on
+    the system (matched against the vod_library catalog). There's no point
+    letting someone file a fault report against something that was never
+    added to the panel in the first place.
     Query param: ?q=
     """
     if not session.get('logged_in'):
@@ -1926,7 +2066,33 @@ def search_vod_catalog():
         if resp.status_code != 200:
             print("TMDB VOD SEARCH ERROR:", resp.status_code, resp.text[:200])
             return jsonify({"results": []})
-        return jsonify(resp.json())
+
+        data = resp.json()
+
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT normalized_title, media_type FROM vod_library")
+                library_rows = cursor.fetchall()
+            movie_titles = {r['normalized_title'] for r in library_rows if r['media_type'] == 'movie'}
+            tv_titles = {r['normalized_title'] for r in library_rows if r['media_type'] == 'tv'}
+        except Exception as e:
+            print("SEARCH_VOD_CATALOG VOD LIBRARY LOOKUP ERROR:", e)
+            movie_titles, tv_titles = set(), set()
+
+        filtered_results = []
+        for item in data.get('results', []):
+            media_type = item.get('media_type')
+            if media_type not in ('movie', 'tv'):
+                continue
+            display_title = item.get('title') if media_type == 'movie' else item.get('name')
+            norm = normalize_title(display_title)
+            lookup_set = movie_titles if media_type == 'movie' else tv_titles
+            if norm in lookup_set:
+                filtered_results.append(item)
+
+        return jsonify({"results": filtered_results})
     except Exception as e:
         print("TMDB VOD SEARCH EXCEPTION:", e)
         return jsonify({"results": []})
@@ -2067,6 +2233,21 @@ def admin_panel():
         cursor.execute("SELECT COUNT(*) FROM vod_library")
         vod_library_count = cursor.fetchone()[0]
 
+        cursor.execute("""
+            SELECT * FROM renewal_jobs
+            WHERE status = 'Pending'
+            ORDER BY created_at ASC
+        """)
+        pending_renewal_jobs = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM renewal_jobs
+            WHERE status = 'Completed'
+            ORDER BY completed_at DESC
+            LIMIT 25
+        """)
+        recent_completed_renewal_jobs = cursor.fetchall()
+
         cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
         spotify_orders = cursor.fetchall()
 
@@ -2088,6 +2269,8 @@ def admin_panel():
         live_channels=all_live_channels,
         vod_library=all_vod_library,
         vod_library_count=vod_library_count,
+        pending_renewal_jobs=pending_renewal_jobs,
+        recent_completed_renewal_jobs=recent_completed_renewal_jobs,
         client_expiration_list=client_expiration_list,
         spotify_orders=spotify_orders,
         latest_announcement=latest_announcement,
@@ -2806,6 +2989,42 @@ def complete_manual_renewal(payment_id):
         return jsonify({'success': True})
     except Exception as e:
         print("COMPLETE_MANUAL_RENEWAL ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/accept_renewal_job/<int:job_id>', methods=['POST'])
+def admin_accept_renewal_job(job_id):
+    """
+    Admin: accept a pending renewal job. This is the actual "I've extended
+    this line on the real panel" confirmation - it adds 365 days to whatever
+    the account's expiry already was (matching how the reseller panel
+    itself renews a line) and updates portal_users (and referral_friends,
+    for friend renewals) to match.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        success, result = accept_renewal_job(job_id)
+        if not success:
+            return jsonify({'success': False, 'message': result}), 400
+
+        admin_user = session.get('username', 'admin')
+        log_activity(
+            admin_user,
+            f"Accepted renewal job #{job_id}: {result['username']} extended from "
+            f"{result['previous_expiry_date']} to {result['new_expiry_date']}"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': (
+                f"{result['username']}'s line extended: "
+                f"{result['previous_expiry_date']} → {result['new_expiry_date']}."
+            )
+        })
+    except Exception as e:
+        print("ADMIN_ACCEPT_RENEWAL_JOB ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

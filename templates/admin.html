@@ -652,8 +652,13 @@
         <div class="card" style="border:1px solid rgba(239,68,68,0.4);">
             <h2 style="color:#f87171;">Live Channels Registry</h2>
             <p style="font-size:12px; color:#94a3b8;">
-                Manage channels available for users to search and report issues against.
+                Pulled directly from your IPTV panel (auto-refreshes every 3 days) - this is what
+                users search against when reporting a channel fault. You can also add/remove
+                individual channels manually below.
             </p>
+            <button class="btn btn-blue" style="width:100%; margin-bottom:10px;" onclick="triggerLiveChannelsSync(this)">
+                🔄 Sync Channels From Panel
+            </button>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
                 <div>
                     <label class="section-title">Channel Name</label>
@@ -1423,6 +1428,34 @@
             }).catch(() => {
                 alert("Connection timeout or error while syncing. Large libraries can take a while - "
                     + "if this keeps happening, your hosting platform's request timeout may need increasing.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        function triggerLiveChannelsSync(btn) {
+            if (!confirm("Pull the current live channel list from your IPTV panel? "
+                       + "This will replace the existing channel list with what's really on your panel.")) return;
+
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Syncing...";
+
+            fetch('/admin/sync_live_channels_from_panel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Sync failed: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Connection timeout or error while syncing channels.");
                 btn.disabled = false;
                 btn.innerText = orig;
             });

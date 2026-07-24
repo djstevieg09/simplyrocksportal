@@ -392,72 +392,12 @@ def init_db():
         conn.commit()
 
 
-def seed_uk_channels():
-    """Populate live_channels table with a broad set of popular UK channels in FHD/HD/SD variants."""
-    base_channels = [
-        # BBC family
-        "BBC One", "BBC Two", "BBC Three", "BBC Four",
-        "CBBC", "CBeebies", "BBC News", "BBC Parliament",
-        # ITV family
-        "ITV1", "ITV2", "ITV3", "ITV4", "ITVBe",
-        # Channel 4 family
-        "Channel 4", "E4", "More4", "Film4", "4seven",
-        # Channel 5 family
-        "Channel 5", "5STAR", "5USA", "5Action", "Paramount Network",
-        # Sky Entertainment / Lifestyle
-        "Sky One", "Sky Atlantic", "Sky Witness", "Sky Max", "Sky Comedy",
-        "Sky Crime", "Sky Documentaries", "Sky Nature", "Sky Arts",
-        # Sky Cinema (Movies)
-        "Sky Cinema Premiere", "Sky Cinema Action", "Sky Cinema Comedy",
-        "Sky Cinema Drama", "Sky Cinema Thriller", "Sky Cinema Family",
-        "Sky Cinema Greats", "Sky Cinema Scifi & Horror",
-        # Sky Sports
-        "Sky Sports Main Event", "Sky Sports Premier League", "Sky Sports Football",
-        "Sky Sports Cricket", "Sky Sports Golf", "Sky Sports F1",
-        "Sky Sports Arena", "Sky Sports News",
-        # TNT Sports
-        "TNT Sports 1", "TNT Sports 2", "TNT Sports 3", "TNT Sports 4",
-        # UKTV / Freeview entertainment
-        "Dave", "Drama", "Yesterday", "GOLD", "W", "Alibi",
-        # News
-        "Sky News", "GB News", "TalkTV", "CNN International",
-        # Kids
-        "Cartoon Network", "Boomerang", "Cartoonito", "Nickelodeon",
-        "Nick Jr.", "Nicktoons", "POP", "Tiny Pop", "CITV",
-        # Music
-        "4Music", "MTV", "MTV Music", "Kerrang!", "Box Hits",
-    ]
-    variants = ["FHD", "HD", "SD"]
+# NOTE: the static UK channel seed list has been removed. Live channels are
+# now pulled directly from the real IPTV panel via the "Sync Live Channels
+# From Panel" button in the admin panel, the same way movies/series are.
 
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            count = 0
-            for base_name in base_channels:
-                safe_base = (
-                    base_name.upper()
-                    .replace(" ", "-")
-                    .replace("&", "AND")
-                    .replace(".", "")
-                )
-                for v in variants:
-                    name = f"{base_name} {v}"
-                    stream_id = f"UK-{safe_base}-{v}"
-                    cursor.execute('''
-                        INSERT INTO live_channels (stream_id, name)
-                        VALUES (?, ?)
-                        ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
-                    ''', (stream_id, name))
-                    count += 1
-            conn.commit()
-        print(f"UK CHANNEL SEED: Loaded/updated {count} channel variants into live_channels.")
-    except Exception as e:
-        print(f"UK CHANNEL SEED ERROR: {e}")
-
-
-# Trigger DB init and channel seed
+# Trigger DB init
 init_db()
-seed_uk_channels()
 NOTIFICATION_QUEUE = Queue()
 CACHED_CHANNELS = []
 
@@ -2879,6 +2819,131 @@ def admin_delete_vod_library_entry(entry_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+def perform_vod_library_sync():
+    """
+    Core VOD library sync logic - pulls movies + series from the real panel
+    and refreshes the vod_library catalog. Has no Flask/session dependency
+    so it can be called both from the admin "Sync" button and from the
+    automatic background sync task. Returns a stats dict. Raises RuntimeError
+    or requests exceptions on failure - callers handle those.
+    """
+    movies_added = 0
+    movies_updated = 0
+    series_added = 0
+    series_updated = 0
+
+    # --- Movies (VOD) ---
+    vod_streams = fetch_xtream_api('get_vod_streams')
+    if isinstance(vod_streams, list):
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            for item in vod_streams:
+                raw_name = (item.get('name') or '').strip()
+                if not raw_name:
+                    continue
+                title, year = parse_xtream_title(raw_name)
+                if not title:
+                    continue
+                norm = normalize_title(title)
+
+                cursor.execute(
+                    "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'movie'",
+                    (norm,)
+                )
+                existed = cursor.fetchone() is not None
+
+                cursor.execute('''
+                    INSERT INTO vod_library (title, normalized_title, media_type, year)
+                    VALUES (?, ?, 'movie', ?)
+                    ON CONFLICT(normalized_title, media_type) DO UPDATE SET
+                        title = excluded.title,
+                        year = excluded.year
+                ''', (title, norm, year))
+
+                if existed:
+                    movies_updated += 1
+                else:
+                    movies_added += 1
+            conn.commit()
+
+    # --- Series ---
+    series_list = fetch_xtream_api('get_series')
+    if isinstance(series_list, list):
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            for item in series_list:
+                raw_name = (item.get('name') or '').strip()
+                if not raw_name:
+                    continue
+                title, year = parse_xtream_title(raw_name)
+                if not title:
+                    continue
+                norm = normalize_title(title)
+
+                cursor.execute(
+                    "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'tv'",
+                    (norm,)
+                )
+                existed = cursor.fetchone() is not None
+
+                cursor.execute('''
+                    INSERT INTO vod_library (title, normalized_title, media_type, year)
+                    VALUES (?, ?, 'tv', ?)
+                    ON CONFLICT(normalized_title, media_type) DO UPDATE SET
+                        title = excluded.title,
+                        year = excluded.year
+                ''', (title, norm, year))
+
+                if existed:
+                    series_updated += 1
+                else:
+                    series_added += 1
+            conn.commit()
+
+    return {
+        'movies_added': movies_added,
+        'movies_updated': movies_updated,
+        'series_added': series_added,
+        'series_updated': series_updated,
+    }
+
+
+def perform_live_channels_sync():
+    """
+    Core live channels sync logic - fully replaces live_channels with the
+    real list from the panel. No Flask/session dependency, so this can be
+    called both from the admin "Sync" button and the automatic background
+    sync task. Returns a stats dict. Raises RuntimeError if the panel
+    returns nothing (so a failed call can't wipe the existing list).
+    """
+    live_streams = fetch_xtream_api('get_live_streams')
+
+    if not isinstance(live_streams, list) or not live_streams:
+        raise RuntimeError("Panel returned no live channels - nothing was changed.")
+
+    channel_count = 0
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM live_channels")
+
+        for item in live_streams:
+            name = (item.get('name') or '').strip()
+            raw_stream_id = item.get('stream_id')
+            if not name or raw_stream_id is None:
+                continue
+
+            cursor.execute('''
+                INSERT INTO live_channels (stream_id, name)
+                VALUES (?, ?)
+                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
+            ''', (str(raw_stream_id), name))
+            channel_count += 1
+
+        conn.commit()
+
+    return {'channel_count': channel_count}
+
+
 @app.route('/admin/sync_vod_library_from_panel', methods=['POST'])
 def admin_sync_vod_library_from_panel():
     """
@@ -2891,6 +2956,10 @@ def admin_sync_vod_library_from_panel():
     timeout shorter than this takes, the sync may get cut off. If that
     happens repeatedly, consider raising your gunicorn worker timeout
     (e.g. add `--timeout 120` to your start command on Render).
+
+    Note: this now also runs automatically every 3 days in the background
+    (see auto_sync_loop()) - this button is for triggering an on-demand
+    refresh in between those automatic runs.
     """
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
@@ -2902,94 +2971,23 @@ def admin_sync_vod_library_from_panel():
                        'These should be any working line\'s username/password on your panel.'
         }), 400
 
-    movies_added = 0
-    movies_updated = 0
-    series_added = 0
-    series_updated = 0
-
     try:
-        # --- Movies (VOD) ---
-        vod_streams = fetch_xtream_api('get_vod_streams')
-        if isinstance(vod_streams, list):
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                for item in vod_streams:
-                    raw_name = (item.get('name') or '').strip()
-                    if not raw_name:
-                        continue
-                    title, year = parse_xtream_title(raw_name)
-                    if not title:
-                        continue
-                    norm = normalize_title(title)
-
-                    cursor.execute(
-                        "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'movie'",
-                        (norm,)
-                    )
-                    existed = cursor.fetchone() is not None
-
-                    cursor.execute('''
-                        INSERT INTO vod_library (title, normalized_title, media_type, year)
-                        VALUES (?, ?, 'movie', ?)
-                        ON CONFLICT(normalized_title, media_type) DO UPDATE SET
-                            title = excluded.title,
-                            year = excluded.year
-                    ''', (title, norm, year))
-
-                    if existed:
-                        movies_updated += 1
-                    else:
-                        movies_added += 1
-                conn.commit()
-
-        # --- Series ---
-        series_list = fetch_xtream_api('get_series')
-        if isinstance(series_list, list):
-            with sqlite3.connect(DB_FILE) as conn:
-                cursor = conn.cursor()
-                for item in series_list:
-                    raw_name = (item.get('name') or '').strip()
-                    if not raw_name:
-                        continue
-                    title, year = parse_xtream_title(raw_name)
-                    if not title:
-                        continue
-                    norm = normalize_title(title)
-
-                    cursor.execute(
-                        "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'tv'",
-                        (norm,)
-                    )
-                    existed = cursor.fetchone() is not None
-
-                    cursor.execute('''
-                        INSERT INTO vod_library (title, normalized_title, media_type, year)
-                        VALUES (?, ?, 'tv', ?)
-                        ON CONFLICT(normalized_title, media_type) DO UPDATE SET
-                            title = excluded.title,
-                            year = excluded.year
-                    ''', (title, norm, year))
-
-                    if existed:
-                        series_updated += 1
-                    else:
-                        series_added += 1
-                conn.commit()
+        stats = perform_vod_library_sync()
 
         admin_user = session.get('username', 'admin')
         log_activity(
             admin_user,
             f"Synced VOD library from IPTV panel: "
-            f"{movies_added} new movies ({movies_updated} refreshed), "
-            f"{series_added} new series ({series_updated} refreshed)"
+            f"{stats['movies_added']} new movies ({stats['movies_updated']} refreshed), "
+            f"{stats['series_added']} new series ({stats['series_updated']} refreshed)"
         )
 
         return jsonify({
             'success': True,
             'message': (
-                f"Synced from your panel: {movies_added} new movies "
-                f"({movies_updated} already catalogued, refreshed), "
-                f"{series_added} new series ({series_updated} already catalogued, refreshed)."
+                f"Synced from your panel: {stats['movies_added']} new movies "
+                f"({stats['movies_updated']} already catalogued, refreshed), "
+                f"{stats['series_added']} new series ({stats['series_updated']} already catalogued, refreshed)."
             )
         })
     except RuntimeError as e:
@@ -3002,6 +3000,58 @@ def admin_sync_vod_library_from_panel():
         return jsonify({'success': False, 'message': "Could not reach your IPTV panel."}), 502
     except Exception as e:
         print("SYNC_VOD_LIBRARY_FROM_PANEL UNEXPECTED ERROR:", type(e).__name__)
+        return jsonify({'success': False, 'message': "An unexpected error occurred during sync."}), 500
+
+
+@app.route('/admin/sync_live_channels_from_panel', methods=['POST'])
+def admin_sync_live_channels_from_panel():
+    """
+    Pull the REAL live channel list from your IPTV reseller panel via the
+    Xtream Codes API (action=get_live_streams) and use it to fully replace
+    the live_channels table - this is what people search against when
+    reporting a channel fault, so it needs to reflect what's actually live
+    on the panel rather than a static placeholder list.
+
+    This does a full replace (clears old entries, inserts fresh ones) rather
+    than merging, since the old static UK channel list has been retired in
+    favor of this real sync. The replace only happens after a successful,
+    non-empty response from the panel, so a failed/empty API call can't
+    wipe out your existing channel list.
+
+    Note: this now also runs automatically every 3 days in the background
+    (see auto_sync_loop()) - this button is for triggering an on-demand
+    refresh in between those automatic runs.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    if not RESELLER_USERNAME or not RESELLER_PASSWORD:
+        return jsonify({
+            'success': False,
+            'message': 'RESELLER_USER and RESELLER_PASS environment variables are not set. '
+                       'These should be any working line\'s username/password on your panel.'
+        }), 400
+
+    try:
+        stats = perform_live_channels_sync()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Synced live channels from IPTV panel: {stats['channel_count']} channels")
+
+        return jsonify({
+            'success': True,
+            'message': f"Synced {stats['channel_count']} live channels from your panel."
+        })
+    except RuntimeError as e:
+        # Safe to print/show - fetch_xtream_api() never lets credentials
+        # reach this exception.
+        print("SYNC_LIVE_CHANNELS_FROM_PANEL ERROR:", str(e))
+        return jsonify({'success': False, 'message': str(e)}), 502
+    except requests.exceptions.RequestException:
+        print("SYNC_LIVE_CHANNELS_FROM_PANEL NETWORK ERROR: connection failed")
+        return jsonify({'success': False, 'message': "Could not reach your IPTV panel."}), 502
+    except Exception as e:
+        print("SYNC_LIVE_CHANNELS_FROM_PANEL UNEXPECTED ERROR:", type(e).__name__)
         return jsonify({'success': False, 'message': "An unexpected error occurred during sync."}), 500
 
 
@@ -3098,6 +3148,63 @@ def logout():
     if username:
         log_activity(username, "Logout")
     return redirect('/')
+
+
+# --- AUTOMATIC PANEL SYNC (every 3 days) ---
+# Keeps the VOD library (movies/series) and live channel list up to date
+# without anyone needing to click the manual "Sync" buttons. Runs as a
+# background thread so it doesn't block normal web requests.
+
+AUTO_SYNC_INTERVAL_SECONDS = 3 * 24 * 60 * 60  # 3 days
+
+
+def auto_sync_loop():
+    # Wait a bit after startup before the first run, partly so the app is
+    # fully up before doing any work, and partly so every name this thread
+    # calls is guaranteed to already exist (this function is only started
+    # after the whole file has finished loading, so this is just an extra
+    # safety margin, not a strict requirement).
+    time.sleep(60)
+
+    while True:
+        if not RESELLER_USERNAME or not RESELLER_PASSWORD:
+            print("AUTO SYNC: Skipped - RESELLER_USER/RESELLER_PASS not configured.", flush=True)
+        else:
+            try:
+                print("AUTO SYNC: Starting scheduled VOD/series sync...", flush=True)
+                vod_stats = perform_vod_library_sync()
+                print(
+                    f"AUTO SYNC: VOD library done - "
+                    f"{vod_stats['movies_added']} new movies ({vod_stats['movies_updated']} refreshed), "
+                    f"{vod_stats['series_added']} new series ({vod_stats['series_updated']} refreshed).",
+                    flush=True
+                )
+                log_activity(
+                    "System (auto-sync)",
+                    f"Automatic VOD library sync: {vod_stats['movies_added']} new movies, "
+                    f"{vod_stats['series_added']} new series"
+                )
+            except Exception as e:
+                print(f"AUTO SYNC: VOD library sync failed - {type(e).__name__}: {e}", flush=True)
+
+            try:
+                print("AUTO SYNC: Starting scheduled live channel sync...", flush=True)
+                channel_stats = perform_live_channels_sync()
+                print(f"AUTO SYNC: Live channels done - {channel_stats['channel_count']} channels.", flush=True)
+                log_activity(
+                    "System (auto-sync)",
+                    f"Automatic live channel sync: {channel_stats['channel_count']} channels"
+                )
+            except Exception as e:
+                print(f"AUTO SYNC: Live channel sync failed - {type(e).__name__}: {e}", flush=True)
+
+        time.sleep(AUTO_SYNC_INTERVAL_SECONDS)
+
+
+# Started unconditionally at module load (not inside `if __name__ == '__main__'`)
+# so it also runs under gunicorn on Render, not just when run directly.
+_auto_sync_thread = Thread(target=auto_sync_loop, daemon=True)
+_auto_sync_thread.start()
 
 
 if __name__ == '__main__':

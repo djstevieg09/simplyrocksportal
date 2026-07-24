@@ -1026,6 +1026,22 @@
             if (!cont) return;
             cont.innerHTML = '';
 
+            // If the wallet credit fully covers this renewal, the price is
+            // £0.00 - PayPal's checkout button can't process a £0 order and
+            // will just open and immediately close if we try. So instead,
+            // show a "claim free renewal" button, same as the self-renewal
+            // flow already does.
+            if (parseFloat(finalAmount) <= 0) {
+                const freeBtn = document.createElement('button');
+                freeBtn.className = 'btn-secondary';
+                freeBtn.textContent = `Claim Free Renewal for ${friendUsername}`;
+                freeBtn.onclick = function() {
+                    processFreeFriendRenewal(friendUsername, friendConnections, friendDiscount, divId);
+                };
+                cont.appendChild(freeBtn);
+                return;
+            }
+
             paypal.Buttons({
                 createOrder: function(data, actions) {
                     return actions.order.create({
@@ -1060,6 +1076,33 @@
                     });
                 }
             }).render('#' + divId);
+        }
+
+        async function processFreeFriendRenewal(friendUsername, connections, discount, divId) {
+            if (!confirm(`Redeem your wallet for a free renewal for ${friendUsername}?`)) return;
+            try {
+                const resp = await fetch('/renew_friend_line', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        friend_username: friendUsername,
+                        orderID: `WALLET-FREE-FRIEND-${Date.now()}`,
+                        amount: "0.00",
+                        discount_redeemed: discount.toString(),
+                        connections: connections
+                    })
+                });
+                const dataRes = await resp.json();
+                if (dataRes.success) {
+                    alert(dataRes.message);
+                    await fetchWalletBalance();
+                    fetchReferralFriends();
+                } else {
+                    alert('Error renewing friend: ' + dataRes.message);
+                }
+            } catch (e) {
+                alert('Server error while redeeming free renewal.');
+            }
         }
 
         async function removeManagedFriend(friendUsername) {

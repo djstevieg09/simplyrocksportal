@@ -800,6 +800,68 @@
             } else {
                 noteSpan.style.display = 'none';
             }
+            refreshSpotifyCheckout();
+        }
+
+        function refreshSpotifyCheckout() {
+            const base = 45.00;
+            const final = Math.max(0, base - spotifyDiscount);
+            const container = document.getElementById('paypal-spotify-container');
+            if (!container) return;
+
+            let freeBtn = document.getElementById('spotify-free-btn');
+            if (freeBtn) freeBtn.remove();
+
+            if (final <= 0) {
+                // Wallet credit fully covers the Spotify price - PayPal's
+                // checkout button can't process a £0 order and would just
+                // open and immediately close, so show a free-redeem button
+                // instead, same as the IPTV renewal flow already does.
+                container.innerHTML = '';
+                freeBtn = document.createElement('button');
+                freeBtn.id = 'spotify-free-btn';
+                freeBtn.className = 'btn-secondary';
+                freeBtn.textContent = 'Get Spotify Free';
+                freeBtn.style.marginTop = '8px';
+                freeBtn.onclick = function() { processFreeSpotifyRedeem(); };
+                container.parentNode.appendChild(freeBtn);
+            } else {
+                renderSpotifyPayPalButtons();
+            }
+        }
+
+        async function processFreeSpotifyRedeem() {
+            const su = document.getElementById('spotify-username').value.trim();
+            const sp = document.getElementById('spotify-password').value.trim();
+            if (!su || !sp) {
+                alert('Please enter your Spotify username and password.');
+                return;
+            }
+            if (!confirm("Redeem your wallet for a free Spotify upgrade?")) return;
+            try {
+                const response = await fetch('/buy_spotify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderID: `WALLET-FREE-SPOTIFY-${Date.now()}`,
+                        spotify_username: su,
+                        spotify_password: sp,
+                        discount_redeemed: spotifyDiscount.toString()
+                    })
+                });
+                const dataRes = await response.json();
+                if (dataRes.success) {
+                    alert('Spotify order received. We will upgrade your account shortly.');
+                    document.getElementById('spotify-username').value = '';
+                    document.getElementById('spotify-password').value = '';
+                    spotifyDiscount = 0.0;
+                    await fetchWalletBalance();
+                } else {
+                    alert('Order error: ' + dataRes.message);
+                }
+            } catch (e) {
+                alert('Server error while redeeming free Spotify upgrade.');
+            }
         }
 
         function renderSpotifyPayPalButtons() {

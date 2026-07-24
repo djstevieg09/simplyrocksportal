@@ -52,6 +52,16 @@ PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID')
 PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET')
 PAYPAL_API_BASE = os.environ.get('PAYPAL_API_BASE', 'https://api-m.paypal.com')
 
+# The PUBLIC client-id used by the PayPal JS SDK in the browser (safe to be
+# visible - it's not a secret). Set PAYPAL_JS_CLIENT_ID to switch between
+# your sandbox and live PayPal apps without editing any HTML - just change
+# this one environment variable (and PAYPAL_API_BASE/PAYPAL_CLIENT_ID/
+# PAYPAL_CLIENT_SECRET to match) and redeploy.
+PAYPAL_JS_CLIENT_ID = os.environ.get(
+    'PAYPAL_JS_CLIENT_ID',
+    'ATdPR1St1opgGEMuPFAy_fB40wlVWHQROIw6QcFUzNETlUOORBD-dYxoQVr6I4xHfIqALFi28mBxfTJx'
+)
+
 # Simple in-memory token cache so we don't re-authenticate with PayPal on every request.
 _paypal_token_cache = {"token": None, "expires_at": 0}
 
@@ -527,6 +537,10 @@ def fetch_xtream_api(action, extra_params=None, timeout=60):
     Call the Xtream Codes-compatible reseller panel API and return the
     parsed JSON response. Raises an exception on failure - callers should
     catch and report a friendly error.
+
+    IMPORTANT: this deliberately never lets the username/password reach an
+    exception message, a log line, or anything else that could get printed
+    or stored - only the action name and HTTP status code are ever surfaced.
     """
     if not RESELLER_PANEL_URL or not RESELLER_USERNAME or not RESELLER_PASSWORD:
         raise RuntimeError(
@@ -543,8 +557,31 @@ def fetch_xtream_api(action, extra_params=None, timeout=60):
     if extra_params:
         params.update(extra_params)
 
-    resp = requests.get(url, params=params, timeout=timeout)
-    resp.raise_for_status()
+    # Many Xtream panels reject requests that don't look like they're
+    # coming from a real player app (TiviMate, VLC, IPTV Smarters, etc.) as
+    # a basic anti-scraping measure. A plain Python request's default
+    # User-Agent gets silently blocked by some panels, so we identify as a
+    # generic mobile player app instead.
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 '
+                       '(KHTML, like Gecko) TiviMate/4.7.0 Chrome/108.0.0.0 Mobile Safari/537.36'
+    }
+
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+    except requests.exceptions.RequestException:
+        # Re-raise as a clean error with no URL/credentials attached.
+        raise RuntimeError(f"Could not connect to the IPTV panel for action '{action}'.") from None
+
+    if resp.status_code != 200:
+        # Deliberately does NOT include resp.url (which contains the
+        # username/password as query params) anywhere in this message.
+        raise RuntimeError(
+            f"IPTV panel returned HTTP {resp.status_code} for action '{action}'. "
+            f"This usually means the username/password isn't a valid line login, "
+            f"or the panel doesn't support this API action."
+        )
+
     return resp.json()
 
 
@@ -938,7 +975,8 @@ def dashboard():
         total_spent=total_spent,
         new_friend_bonus=NEW_FRIEND_BONUS,
         friend_renewal_bonus=FRIEND_RENEWAL_BONUS,
-        referral_history=referral_history
+        referral_history=referral_history,
+        paypal_client_id=PAYPAL_JS_CLIENT_ID
     )
 
 
@@ -2739,12 +2777,17 @@ def admin_sync_vod_library_from_panel():
                 f"{series_added} new series ({series_updated} already catalogued, refreshed)."
             )
         })
-    except requests.exceptions.RequestException as e:
-        print("SYNC_VOD_LIBRARY_FROM_PANEL NETWORK ERROR:", e)
-        return jsonify({'success': False, 'message': f"Could not reach your IPTV panel: {e}"}), 502
+    except RuntimeError as e:
+        # This message is always safe to print/show - fetch_xtream_api()
+        # never lets credentials reach this exception.
+        print("SYNC_VOD_LIBRARY_FROM_PANEL ERROR:", str(e))
+        return jsonify({'success': False, 'message': str(e)}), 502
+    except requests.exceptions.RequestException:
+        print("SYNC_VOD_LIBRARY_FROM_PANEL NETWORK ERROR: connection failed")
+        return jsonify({'success': False, 'message': "Could not reach your IPTV panel."}), 502
     except Exception as e:
-        print("SYNC_VOD_LIBRARY_FROM_PANEL ERROR:", e)
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print("SYNC_VOD_LIBRARY_FROM_PANEL UNEXPECTED ERROR:", type(e).__name__)
+        return jsonify({'success': False, 'message': "An unexpected error occurred during sync."}), 500
 
 
 @app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])

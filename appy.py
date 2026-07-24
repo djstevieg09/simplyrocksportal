@@ -33,6 +33,17 @@ NOTIFICATION_QUEUE = Queue()
 
 # --- MASTER RESELLER CONFIG ---
 RESELLER_PANEL_URL = "http://simplyapple.xyz"
+
+# Many Xtream panels reject requests that don't look like they're coming
+# from a real player app (TiviMate, VLC, IPTV Smarters, etc.) as a basic
+# anti-scraping measure. A plain Python request's default User-Agent gets
+# silently blocked by some panels, so every Xtream API call this app makes
+# (bulk syncs AND live per-user login checks) identifies as a generic
+# mobile player app instead.
+XTREAM_USER_AGENT = (
+    'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) TiviMate/4.7.0 Chrome/108.0.0.0 Mobile Safari/537.36'
+)
 RESELLER_USERNAME = os.environ.get('RESELLER_USER')
 RESELLER_PASSWORD = os.environ.get('RESELLER_PASS')
 
@@ -478,28 +489,94 @@ def send_telegram_alert_direct(message_text):
 
 def verify_xtream_credentials(dns, username, password):
     """
-    Authenticates clients securely against local portal_users database.
+    Authenticate a customer DIRECTLY against the real IPTV panel - the exact
+    same check TiviMate/IPTV Smarters do when you type in your DNS +
+    username + password. This uses the person's OWN credentials (not the
+    reseller admin login), so it only succeeds if they genuinely have a
+    real, active line on the panel.
+
+    On success, the local portal_users record is automatically created (if
+    it doesn't exist) or refreshed (if it does) via upsert_portal_user_from_panel(),
+    so someone with a real line can just log in and "appear" in the portal
+    without needing to be manually added first - but without real DNS
+    access, no local account is ever created or updated at all.
     """
+    dns_base = (dns or DEFAULT_DNS or '').strip()
+    if not dns_base:
+        print("VERIFY_XTREAM_CREDENTIALS ERROR: no DNS configured to check against.")
+        return False, None
+
+    try:
+        url = f"{dns_base.rstrip('/')}/player_api.php"
+        resp = requests.get(
+            url,
+            params={'username': username.strip(), 'password': password.strip()},
+            headers={'User-Agent': XTREAM_USER_AGENT},
+            timeout=15
+        )
+    except requests.exceptions.RequestException:
+        print("VERIFY_XTREAM_CREDENTIALS ERROR: could not reach the panel.")
+        return False, None
+
+    if resp.status_code != 200:
+        print(f"VERIFY_XTREAM_CREDENTIALS: panel returned HTTP {resp.status_code}.")
+        return False, None
+
+    try:
+        data = resp.json()
+    except ValueError:
+        print("VERIFY_XTREAM_CREDENTIALS ERROR: panel response wasn't valid JSON.")
+        return False, None
+
+    user_info = data.get('user_info') or {}
+    auth_ok = user_info.get('auth') == 1
+    status_ok = str(user_info.get('status') or '').strip().lower() == 'active'
+
+    if not (auth_ok and status_ok):
+        return False, None
+
+    # Real, active line confirmed by the panel itself - auto-provision the
+    # local portal_users record so the rest of the portal's features
+    # (wallet, referrals, requests, admin visibility) work for this user.
+    upsert_portal_user_from_panel(username.strip(), password.strip(), user_info)
+
+    return True, user_info
+
+
+def upsert_portal_user_from_panel(username, password, user_info):
+    """
+    Called only after a successful LIVE panel authentication. Creates the
+    local portal_users record on someone's first-ever login, or refreshes
+    it on subsequent logins - keeping their expiry date in sync with
+    whatever the real panel says, automatically, every time they log in.
+    """
+    raw_exp = user_info.get('exp_date')
+    exp_ts = 0
+    if raw_exp is not None and str(raw_exp).strip().lower() not in ('', 'null', '0', 'none', 'false'):
+        try:
+            candidate = int(raw_exp)
+            if candidate >= 100000000:
+                exp_ts = candidate
+        except (TypeError, ValueError):
+            pass
+
+    expiry_date_str = datetime.fromtimestamp(exp_ts).strftime('%Y-%m-%d') if exp_ts > 0 else 'Unlimited'
+    hashed = generate_password_hash(password)
+
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM portal_users WHERE LOWER(username) = LOWER(?)",
-                (username.strip().lower(),)
-            )
-            user_row = cursor.fetchone()
-
-        if user_row and check_password_hash(user_row['password'], password.strip()):
-            mock_info = {
-                'auth': 1,
-                'status': 'Active',
-                'exp_date': user_row['expiry_timestamp']
-            }
-            return True, mock_info
+            cursor.execute('''
+                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    password = excluded.password,
+                    expiry_date = excluded.expiry_date,
+                    expiry_timestamp = excluded.expiry_timestamp
+            ''', (username, hashed, expiry_date_str, exp_ts))
+            conn.commit()
     except Exception as e:
-        print(f"LOCAL LOGIN MAPPING ERROR: {e}")
-    return False, None
+        print("UPSERT_PORTAL_USER_FROM_PANEL ERROR:", e)
 
 
 # --- XTREAM CODES API (REAL RESELLER PANEL INTEGRATION) ---
@@ -534,15 +611,7 @@ def fetch_xtream_api(action, extra_params=None, timeout=60):
     if extra_params:
         params.update(extra_params)
 
-    # Many Xtream panels reject requests that don't look like they're
-    # coming from a real player app (TiviMate, VLC, IPTV Smarters, etc.) as
-    # a basic anti-scraping measure. A plain Python request's default
-    # User-Agent gets silently blocked by some panels, so we identify as a
-    # generic mobile player app instead.
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 '
-                       '(KHTML, like Gecko) TiviMate/4.7.0 Chrome/108.0.0.0 Mobile Safari/537.36'
-    }
+    headers = {'User-Agent': XTREAM_USER_AGENT}
 
     try:
         resp = requests.get(url, params=params, headers=headers, timeout=timeout)

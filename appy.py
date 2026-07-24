@@ -12,6 +12,8 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet, InvalidToken
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 
 # --- 1. INITIALISE MAIN FLASK APP INSTANCE ---
 app = Flask(__name__)
@@ -485,6 +487,89 @@ def send_telegram_alert_direct(message_text):
     except Exception as e:
         print(f"TELEGRAM DIRECT PUSH ERROR: {e}", flush=True)
         return False
+
+
+def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
+    """
+    Download a poster image, stamp a bold "REQUEST" or "REPORT" banner
+    across the top of it, and send that composited image to Telegram with
+    the given caption. Telegram captions only ever appear below/beside a
+    photo - there's no way to overlay text on the image itself through the
+    API - so the banner has to be drawn onto the image before it's sent.
+
+    Falls back to a plain text alert (no image) if the poster can't be
+    downloaded/processed for any reason, so a broken or missing poster URL
+    never stops the alert getting through.
+    """
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+    if not bot_token or not chat_id:
+        print("TELEGRAM NOTICE: Missing secure environment keys.", flush=True)
+        return False
+
+    try:
+        if not poster_url or not poster_url.startswith('http'):
+            raise ValueError("No usable poster URL provided")
+
+        img_resp = requests.get(poster_url, timeout=10)
+        img_resp.raise_for_status()
+        image = Image.open(BytesIO(img_resp.content)).convert("RGB")
+
+        draw = ImageDraw.Draw(image, "RGBA")
+        width, height = image.size
+        banner_height = max(48, int(height * 0.13))
+
+        # Red banner for reports, blue for requests - matches the color
+        # scheme already used elsewhere in the portal for these two things.
+        is_report = overlay_text.strip().upper() == "REPORT"
+        banner_color = (220, 38, 38, 215) if is_report else (37, 99, 235, 215)
+        draw.rectangle([(0, 0), (width, banner_height)], fill=banner_color)
+
+        font_size = max(22, int(banner_height * 0.55))
+        font = None
+        for font_path in (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        ):
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except Exception:
+                continue
+        if font is None:
+            # No TrueType font found on this system - fall back to PIL's
+            # built-in bitmap font. It'll look plainer, but the banner and
+            # image still get sent either way.
+            font = ImageFont.load_default()
+
+        text = overlay_text.strip().upper()
+        text_bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = text_bbox[2] - text_bbox[0]
+        text_h = text_bbox[3] - text_bbox[1]
+        text_x = (width - text_w) / 2
+        text_y = (banner_height - text_h) / 2 - text_bbox[1]
+        draw.text((text_x, text_y), text, fill=(255, 255, 255, 255), font=font)
+
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=88)
+        buffer.seek(0)
+
+        api_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        files = {'photo': ('poster.jpg', buffer, 'image/jpeg')}
+        data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'}
+
+        response = requests.post(api_url, data=data, files=files, timeout=15)
+        print(f"TELEGRAM PHOTO PUSH CODE: {response.status_code}", flush=True)
+        if response.status_code == 200:
+            return True
+        # Telegram rejected the photo for some reason - still get the alert
+        # through as plain text rather than losing it entirely.
+        return send_telegram_alert_direct(caption)
+    except Exception as e:
+        print(f"TELEGRAM PHOTO PUSH ERROR (falling back to text): {e}", flush=True)
+        return send_telegram_alert_direct(caption)
 
 
 def verify_xtream_credentials(dns, username, password):
@@ -1280,13 +1365,17 @@ def submit_request():
             ''', (username, title, year, media_type, imdb_id, poster, season_number, episode_number))
             conn.commit()
 
-        send_telegram_alert_direct(
+        request_caption = (
             f"<b>🎞 NEW MEDIA REQUEST</b>\n"
             f"<b>User:</b> <code>{username}</code>\n"
             f"<b>Title:</b> {title} {f'({year})' if year else ''}{scope_label}\n"
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>ID:</b> <code>{imdb_id or 'N/A'}</code>"
         )
+        if poster:
+            send_telegram_photo_with_overlay(poster, "REQUEST", request_caption)
+        else:
+            send_telegram_alert_direct(request_caption)
 
         log_activity(username, f"Submitted media request: {title} [{media_type}] {year}{scope_label}")
         return jsonify({'success': True, 'message': 'Request submitted.'})
@@ -2085,7 +2174,8 @@ def submit_vod_report():
     User: submit VOD fault ticket.
     Expects JSON:
       title, media_type ('movie'|'tv'), issue_type, issue_notes (optional),
-      season_number (optional), episode_number (optional)
+      season_number (optional), episode_number (optional),
+      poster (optional - only used for the Telegram alert image, not stored)
     """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
@@ -2096,6 +2186,7 @@ def submit_vod_report():
     media_type = (data.get('media_type') or '').strip()
     issue_type = (data.get('issue_type') or '').strip()
     issue_notes = (data.get('issue_notes') or '').strip()
+    poster = (data.get('poster') or '').strip()
 
     def _parse_int(value):
         try:
@@ -2130,13 +2221,17 @@ def submit_vod_report():
             ''', (username, title, media_type, final_issue_type, issue_notes[:255], season_number, episode_number))
             conn.commit()
 
-        send_telegram_alert_direct(
+        report_caption = (
             f"<b>🎬 VOD FAULT TICKET</b>\n"
             f"<b>User:</b> <code>{username}</code>\n"
             f"<b>Title:</b> {title}{scope_label}\n"
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>Issue:</b> {final_issue_type}"
         )
+        if poster:
+            send_telegram_photo_with_overlay(poster, "REPORT", report_caption)
+        else:
+            send_telegram_alert_direct(report_caption)
 
         log_activity(username, f"VOD fault report: {title} ({media_type}) - {final_issue_type}")
 

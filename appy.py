@@ -3,6 +3,7 @@ import re
 import time
 import random
 import string
+import secrets
 import sqlite3
 from datetime import datetime
 from queue import Queue
@@ -522,6 +523,31 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Lets a portal_users account be linked to a specific Telegram chat,
+        # so the admin can message that individual person directly (renewal
+        # reminders, request updates, etc.) rather than everything going to
+        # the admin's own single alert chat.
+        try:
+            cursor.execute("ALTER TABLE portal_users ADD COLUMN telegram_chat_id TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
+        # One-time linking tokens: a user gets a t.me deep link containing
+        # one of these tokens; when they open it and message the bot, our
+        # webhook matches the token back to their username and saves their
+        # chat_id above. Telegram bots can't message someone who has never
+        # messaged them first, so this "click to start a chat" step is
+        # required - there's no way to skip straight to just a username.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                used INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Unique index on referral_friends to prevent duplicates
         try:
             cursor.execute('''
@@ -739,6 +765,110 @@ def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
     except Exception as e:
         print(f"TELEGRAM PHOTO PUSH ERROR (falling back to text): {e}", flush=True)
         return send_telegram_alert_direct(caption)
+
+
+# --- PER-USER TELEGRAM MESSAGING ---
+# The admin's existing TELEGRAM_CHAT_ID is a single fixed chat (the admin's
+# own alerts). This section is separate: it lets individual portal users
+# link their OWN Telegram account, so the admin can message that specific
+# person directly (renewal reminders, request updates, etc.).
+#
+# Telegram bots can never message someone who hasn't messaged the bot
+# first - there's no way around this, it's a platform-wide rule. So linking
+# works via a one-time t.me deep link: the user clicks it from the
+# dashboard, Telegram opens a chat with the bot and auto-sends "/start
+# <token>", and our webhook matches that token back to their username.
+
+TELEGRAM_BOT_USERNAME = None
+
+
+def fetch_telegram_bot_username():
+    """Ask Telegram who this bot is, once at startup, so we can build
+    t.me/<username>?start=... links without needing it set manually."""
+    global TELEGRAM_BOT_USERNAME
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if not bot_token:
+        return
+    try:
+        resp = requests.get(f"https://api.telegram.org/bot{bot_token}/getMe", timeout=8)
+        if resp.status_code == 200:
+            TELEGRAM_BOT_USERNAME = resp.json().get('result', {}).get('username')
+            print(f"TELEGRAM: Bot resolved as @{TELEGRAM_BOT_USERNAME}", flush=True)
+        else:
+            print(f"TELEGRAM: getMe failed with HTTP {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"TELEGRAM: getMe error - {type(e).__name__}", flush=True)
+
+
+def register_telegram_webhook():
+    """
+    One-time setup at startup: tells Telegram to POST incoming messages to
+    our /telegram_webhook route, so we can catch people starting a chat
+    with the bot via their personal linking token.
+
+    Requires PUBLIC_APP_URL to be set (your Render URL, e.g.
+    https://simplyrocksportal.onrender.com) - skipped harmlessly if not set.
+    """
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    public_url = os.environ.get('PUBLIC_APP_URL')
+    if not bot_token or not public_url:
+        print("TELEGRAM WEBHOOK: Skipped - TELEGRAM_BOT_TOKEN or PUBLIC_APP_URL not set.", flush=True)
+        return
+    try:
+        webhook_url = f"{public_url.rstrip('/')}/telegram_webhook"
+        resp = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/setWebhook",
+            data={"url": webhook_url},
+            timeout=8
+        )
+        print(f"TELEGRAM WEBHOOK: registered at {webhook_url} -> HTTP {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"TELEGRAM WEBHOOK REGISTRATION ERROR: {type(e).__name__}", flush=True)
+
+
+def send_telegram_message_raw(chat_id, text):
+    """Send a plain message to a specific Telegram chat_id (not the admin's
+    fixed alert chat - this is for messaging an individual linked user)."""
+    try:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        if not bot_token:
+            return False
+        resp = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            timeout=8
+        )
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"SEND_TELEGRAM_MESSAGE_RAW ERROR: {type(e).__name__}", flush=True)
+        return False
+
+
+def send_telegram_message_to_user(username, text):
+    """
+    Send a Telegram message to a specific portal user, IF they've linked
+    their Telegram. Returns (success, message) - message explains why it
+    failed (not linked, send error, etc.) so callers can show something
+    useful rather than just silently doing nothing.
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT telegram_chat_id FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                (username.lower(),)
+            )
+            row = cursor.fetchone()
+    except Exception as e:
+        print("SEND_TELEGRAM_MESSAGE_TO_USER DB ERROR:", e)
+        return False, "Could not look up this user's Telegram link."
+
+    if not row or not row['telegram_chat_id']:
+        return False, f"'{username}' hasn't linked their Telegram yet."
+
+    ok = send_telegram_message_raw(row['telegram_chat_id'], text)
+    return ok, ("Message sent." if ok else "Telegram rejected the message - it may need re-linking.")
 
 
 def verify_xtream_credentials(dns, username, password):
@@ -1459,6 +1589,13 @@ def dashboard():
         """, (username.lower(),))
         referral_history = cursor.fetchall()
 
+        cursor.execute(
+            "SELECT telegram_chat_id FROM portal_users WHERE LOWER(username) = LOWER(?)",
+            (username.lower(),)
+        )
+        row_tg = cursor.fetchone()
+        telegram_linked = bool(row_tg and row_tg['telegram_chat_id'])
+
     session['expiry_date'] = expiry_display
 
     return render_template(
@@ -1475,7 +1612,8 @@ def dashboard():
         new_friend_bonus=NEW_FRIEND_BONUS,
         friend_renewal_bonus=FRIEND_RENEWAL_BONUS,
         referral_history=referral_history,
-        paypal_client_id=PAYPAL_JS_CLIENT_ID
+        paypal_client_id=PAYPAL_JS_CLIENT_ID,
+        telegram_linked=telegram_linked
     )
 
 
@@ -2766,11 +2904,23 @@ def update_request_status_by_admin(req_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            cursor.execute('SELECT username, title FROM requests WHERE id = ?', (req_id,))
+            req_row = cursor.fetchone()
+
             cursor.execute('UPDATE requests SET status = ? WHERE id = ?', ('Completed', req_id))
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Request not found.'}), 404
             conn.commit()
+
+        if req_row:
+            send_telegram_message_to_user(
+                req_row['username'],
+                f"🎉 Good news! Your request for \"{req_row['title']}\" has been added to the system."
+            )
+
         return jsonify({'success': True})
     except Exception as e:
         print("UPDATE_REQUEST_STATUS ERROR:", e)
@@ -2783,11 +2933,23 @@ def admin_delete_request(req_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            cursor.execute('SELECT username, title FROM requests WHERE id = ?', (req_id,))
+            req_row = cursor.fetchone()
+
             cursor.execute('DELETE FROM requests WHERE id = ?', (req_id,))
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Request not found.'}), 404
             conn.commit()
+
+        if req_row:
+            send_telegram_message_to_user(
+                req_row['username'],
+                f"Update on your request: \"{req_row['title']}\" has been removed from the queue."
+            )
+
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_REQUEST ERROR:", e)
@@ -3586,6 +3748,126 @@ def admin_mark_spotify_order_upgraded(order_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/telegram_webhook', methods=['POST'])
+def telegram_webhook():
+    """
+    Telegram POSTs here whenever someone sends the bot a message. We only
+    care about "/start <token>" - that's what fires automatically when
+    someone opens their personal t.me linking link from the dashboard.
+    Everything else is just ignored (always replying 200 OK regardless,
+    since Telegram will retry deliveries that don't get an OK response).
+    """
+    try:
+        update = request.get_json(force=True, silent=True) or {}
+        message = update.get('message') or {}
+        text = (message.get('text') or '').strip()
+        chat = message.get('chat') or {}
+        chat_id = chat.get('id')
+
+        if not chat_id or not text.startswith('/start'):
+            return jsonify({'ok': True})
+
+        parts = text.split(maxsplit=1)
+        token = parts[1].strip() if len(parts) > 1 else ''
+
+        if not token:
+            send_telegram_message_raw(
+                chat_id,
+                "Please use the \"Link My Telegram\" button on your portal dashboard to get a personal link."
+            )
+            return jsonify({'ok': True})
+
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT username, used FROM telegram_link_tokens WHERE token = ?", (token,))
+            row = cursor.fetchone()
+
+            if not row:
+                send_telegram_message_raw(chat_id, "This link is invalid or has expired. Please generate a new one from the portal dashboard.")
+                return jsonify({'ok': True})
+            if row['used']:
+                send_telegram_message_raw(chat_id, "This link has already been used.")
+                return jsonify({'ok': True})
+
+            username = row['username']
+
+            cursor.execute(
+                "UPDATE portal_users SET telegram_chat_id = ? WHERE LOWER(username) = LOWER(?)",
+                (str(chat_id), username.lower())
+            )
+            cursor.execute("UPDATE telegram_link_tokens SET used = 1 WHERE token = ?", (token,))
+            conn.commit()
+
+        send_telegram_message_raw(
+            chat_id,
+            f"✅ Your Telegram is now linked to your portal account (<b>{username}</b>). "
+            f"You'll get updates here about your requests and renewals from now on."
+        )
+        log_activity(username, "Linked Telegram account")
+    except Exception as e:
+        print("TELEGRAM_WEBHOOK ERROR:", e)
+
+    return jsonify({'ok': True})
+
+
+@app.route('/get_telegram_link', methods=['POST'])
+def get_telegram_link():
+    """
+    Generate a one-time linking token + t.me deep link for the logged-in
+    user. Opening this link starts a chat with the bot and completes the
+    link automatically (see /telegram_webhook above).
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    if not TELEGRAM_BOT_USERNAME:
+        return jsonify({
+            'success': False,
+            'message': 'Telegram linking is not set up yet - contact the admin.'
+        }), 400
+
+    username = session.get('username')
+    token = secrets.token_urlsafe(16)
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO telegram_link_tokens (token, username) VALUES (?, ?)",
+                (token, username)
+            )
+            conn.commit()
+
+        link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
+        return jsonify({'success': True, 'link': link})
+    except Exception as e:
+        print("GET_TELEGRAM_LINK ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/notify_user_telegram', methods=['POST'])
+def admin_notify_user_telegram():
+    """Admin: send a custom Telegram message directly to a specific linked user."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    message_text = (data.get('message') or '').strip()
+
+    if not username or not message_text:
+        return jsonify({'success': False, 'message': 'Username and message are required.'}), 400
+
+    ok, result_message = send_telegram_message_to_user(username, message_text)
+
+    if ok:
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Sent Telegram message to {username}")
+
+    return jsonify({'success': ok, 'message': result_message})
+
+
 @app.route('/logout')
 def logout():
     username = session.get('username')
@@ -3650,6 +3932,12 @@ def auto_sync_loop():
 # so it also runs under gunicorn on Render, not just when run directly.
 _auto_sync_thread = Thread(target=auto_sync_loop, daemon=True)
 _auto_sync_thread.start()
+
+# Resolve the bot's own @username (needed to build t.me linking links) and
+# register the webhook so Telegram forwards incoming messages to us - both
+# needed for the per-user Telegram linking feature.
+fetch_telegram_bot_username()
+register_telegram_webhook()
 
 
 if __name__ == '__main__':

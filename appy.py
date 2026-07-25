@@ -3828,6 +3828,32 @@ def admin_mark_spotify_order_upgraded(order_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/admin/telegram_webhook_status')
+def admin_telegram_webhook_status():
+    """
+    Admin diagnostic: asks Telegram directly what it thinks the webhook
+    situation is, including the exact last error if deliveries have been
+    failing. Visit this in your browser while logged in as admin.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if not bot_token:
+        return jsonify({'success': False, 'message': 'TELEGRAM_BOT_TOKEN is not set.'}), 400
+
+    try:
+        resp = requests.get(f"https://api.telegram.org/bot{bot_token}/getWebhookInfo", timeout=8)
+        return jsonify({
+            'success': True,
+            'bot_username_resolved': TELEGRAM_BOT_USERNAME,
+            'public_app_url_env': os.environ.get('PUBLIC_APP_URL'),
+            'telegram_webhook_info': resp.json()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/telegram_webhook', methods=['POST'])
 def telegram_webhook():
     """
@@ -3924,6 +3950,32 @@ def get_telegram_link():
     except Exception as e:
         print("GET_TELEGRAM_LINK ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/check_telegram_link_status')
+def check_telegram_link_status():
+    """
+    Polled by the dashboard after generating a linking link, so the page
+    can detect linking completed and update itself automatically - without
+    this, the person would have to manually refresh the page to see it.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'linked': False}), 401
+
+    username = session.get('username')
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT telegram_chat_id FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                (username.lower(),)
+            )
+            row = cursor.fetchone()
+        return jsonify({'linked': bool(row and row['telegram_chat_id'])})
+    except Exception as e:
+        print("CHECK_TELEGRAM_LINK_STATUS ERROR:", e)
+        return jsonify({'linked': False}), 500
 
 
 @app.route('/admin/notify_user_telegram', methods=['POST'])

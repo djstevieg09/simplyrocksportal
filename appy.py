@@ -2719,7 +2719,7 @@ def build_client_expiration_list(max_days=31):
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT username, expiry_date, expiry_timestamp FROM portal_users")
+        cursor.execute("SELECT username, expiry_date, expiry_timestamp, telegram_chat_id FROM portal_users")
         all_users = cursor.fetchall()
 
     for user in all_users:
@@ -2740,7 +2740,8 @@ def build_client_expiration_list(max_days=31):
                 'username': uname,
                 'expiry_date': readable_date,
                 'days_remaining': days_left,
-                'status': 'Expired' if days_left < 0 else 'Active'
+                'status': 'Expired' if days_left < 0 else 'Active',
+                'telegram_linked': bool(user['telegram_chat_id'])
             })
 
     client_expiration_list.sort(key=lambda x: x['days_remaining'])
@@ -2962,11 +2963,23 @@ def delete_channel_report_by_admin(report_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            cursor.execute('SELECT username, channel_name FROM channel_reports WHERE id = ?', (report_id,))
+            report_row = cursor.fetchone()
+
             cursor.execute('DELETE FROM channel_reports WHERE id = ?', (report_id,))
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Report not found.'}), 404
             conn.commit()
+
+        if report_row:
+            send_telegram_message_to_user(
+                report_row['username'],
+                f"✅ Your channel fault report for \"{report_row['channel_name']}\" has been fixed."
+            )
+
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_CHANNEL_REPORT ERROR:", e)
@@ -2979,11 +2992,23 @@ def delete_vod_report_by_admin(report_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            cursor.execute('SELECT username, title FROM vod_reports WHERE id = ?', (report_id,))
+            report_row = cursor.fetchone()
+
             cursor.execute('DELETE FROM vod_reports WHERE id = ?', (report_id,))
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Report not found.'}), 404
             conn.commit()
+
+        if report_row:
+            send_telegram_message_to_user(
+                report_row['username'],
+                f"✅ Your VOD fault report for \"{report_row['title']}\" has been fixed."
+            )
+
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_VOD_REPORT ERROR:", e)
@@ -3020,6 +3045,11 @@ def adjust_user_credit():
 
         admin_user = session.get('username', 'admin')
         log_activity(admin_user, f"Manual wallet credit +£{amount_val:.2f} to {username}")
+
+        send_telegram_message_to_user(
+            username,
+            f"💰 £{amount_val:.2f} has been added to your referral wallet."
+        )
 
         return jsonify({'success': True, 'message': f"Credited £{amount_val:.2f} to {username}'s wallet."})
     except Exception as e:
@@ -3074,6 +3104,13 @@ def delete_portal_user(username):
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
+        # Notify BEFORE deleting - once the row is gone, there's no way to
+        # look up their linked telegram_chat_id anymore.
+        send_telegram_message_to_user(
+            username,
+            "⚠️ Your portal account has been removed by the admin."
+        )
+
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM portal_users WHERE LOWER(username) = LOWER(?)', (username,))
@@ -3117,6 +3154,13 @@ def reset_portal_user_password():
         admin_user = session.get('username', 'admin')
         log_activity(admin_user, f"Reset portal password for {username}")
 
+        # Deliberately does NOT send the actual new password over Telegram -
+        # only the admin panel shows it, for the admin to pass on securely.
+        send_telegram_message_to_user(
+            username,
+            "🔑 Your password has been reset by the admin. Contact them to get your new password."
+        )
+
         return jsonify({'success': True, 'new_password': new_plain})
     except Exception as e:
         print("RESET_PORTAL_PW ERROR:", e)
@@ -3155,6 +3199,11 @@ def amend_user_expiry():
 
         admin_user = session.get('username', 'admin')
         log_activity(admin_user, f"Adjusted expiry for {username} to {expiry_date_str}")
+
+        send_telegram_message_to_user(
+            username,
+            f"📅 Your account expiry has been updated to {expiry_date_str}."
+        )
 
         return jsonify({'success': True, 'message': f"Expiry for '{username}' set to {expiry_date_str}."})
     except Exception as e:
@@ -3582,13 +3631,26 @@ def complete_manual_renewal(payment_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     try:
         with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            cursor.execute('SELECT username FROM payments WHERE id = ?', (payment_id,))
+            payment_row = cursor.fetchone()
+
             cursor.execute('UPDATE payments SET status = ? WHERE id = ?', ('Completed', payment_id))
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Payment record not found.'}), 404
             conn.commit()
+
         admin_user = session.get('username', 'admin')
         log_activity(admin_user, f"Marked manual renewal payment {payment_id} as Completed")
+
+        if payment_row:
+            send_telegram_message_to_user(
+                payment_row['username'],
+                "✅ Your payment has been confirmed and processed."
+            )
+
         return jsonify({'success': True})
     except Exception as e:
         print("COMPLETE_MANUAL_RENEWAL ERROR:", e)
@@ -3617,6 +3679,11 @@ def admin_accept_renewal_job(job_id):
             admin_user,
             f"Accepted renewal job #{job_id}: {result['username']} extended from "
             f"{result['previous_expiry_date']} to {result['new_expiry_date']}"
+        )
+
+        send_telegram_message_to_user(
+            result['username'],
+            f"✅ Your line has been renewed! New expiry date: {result['new_expiry_date']}."
         )
 
         return jsonify({
@@ -3659,6 +3726,14 @@ def admin_accept_new_line_job(job_id):
             f"<b>Friend:</b> <code>{result['friend_username']}</code>\n"
             f"<b>Referrer:</b> <code>{result['referrer_username']}</code>\n"
             f"<b>Confirmed by:</b> <code>{admin_user}</code>"
+        )
+
+        # The friend's account was only just created this instant, so they
+        # haven't had any chance to link their Telegram yet - notify the
+        # referrer instead, since they're the one with an existing account.
+        send_telegram_message_to_user(
+            result['referrer_username'],
+            f"✅ Your friend's line for \"{result['friend_username']}\" is now set up and ready to use."
         )
 
         return jsonify({
@@ -3740,6 +3815,11 @@ def admin_mark_spotify_order_upgraded(order_id):
             f"<b>Portal User:</b> <code>{order['portal_username']}</code>\n"
             f"<b>Spotify User:</b> <code>{order['spotify_username']}</code>\n"
             f"<b>Confirmed by:</b> <code>{admin_user}</code>"
+        )
+
+        send_telegram_message_to_user(
+            order['portal_username'],
+            "🎵 Your Spotify account has been upgraded!"
         )
 
         return jsonify({'success': True, 'message': f"Order #{order_id} marked as upgraded."})

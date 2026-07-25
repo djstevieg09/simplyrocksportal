@@ -626,6 +626,15 @@
                             Username: <span id="rec-user" style="color:#ffffff;"></span><br>
                             Password: <span id="rec-pass" style="color:#ffffff;"></span>
                         </div>
+                        <p style="margin:10px 0 6px 0; color:#4ade80; font-weight:bold;">Setup instructions for your friend:</p>
+                        <textarea id="rec-instructions" readonly rows="6"
+                                  style="width:100%; box-sizing:border-box; background-color:#1e293b; color:#e5e7eb; border:1px solid #334155; border-radius:6px; padding:8px; font-family:monospace; font-size:11px; resize:vertical;"></textarea>
+                        <button type="button" onclick="copyReferralInstructions(this)" class="btn-secondary" style="margin-top:8px;">
+                            📋 Copy Instructions
+                        </button>
+                        <p style="margin:6px 0 0 0; color:#94a3b8; font-size:11px;">
+                            Copy this and send it to your friend however you like (text, WhatsApp, etc.) - it already has their username and password filled in.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -961,19 +970,40 @@
                         if (resData.success) {
                             document.getElementById('rec-user').innerText = resData.generated_user;
                             document.getElementById('rec-pass').innerText = resData.generated_pass;
+                            document.getElementById('rec-instructions').value = resData.setup_instructions || '';
                             receipt.style.display = 'block';
                             document.getElementById('ref-first-name').value = '';
                             document.getElementById('ref-last-name').value = '';
                             document.getElementById('ref-phone-number').value = '';
                             await fetchWalletBalance();
                             fetchReferralFriends();
-                            alert('Friend line created. Share the logins below.');
+                            alert('Friend line created. Share the logins and instructions below.');
                         } else {
                             alert('Payment received but line creation failed: ' + resData.message);
                         }
                     });
                 }
             }).render('#paypal-referral-container');
+        }
+
+        async function copyReferralInstructions(btn) {
+            const textarea = document.getElementById('rec-instructions');
+            const origText = btn.innerText;
+            try {
+                await navigator.clipboard.writeText(textarea.value);
+                btn.innerText = '✅ Copied!';
+            } catch (e) {
+                // Clipboard API can fail/be unavailable in some contexts -
+                // fall back to the classic select + execCommand approach.
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    btn.innerText = '✅ Copied!';
+                } catch (e2) {
+                    alert('Could not copy automatically - please select the text and copy it manually.');
+                }
+            }
+            setTimeout(() => { btn.innerText = origText; }, 2000);
         }
 
         function validateReferralFormInputs() {

@@ -129,6 +129,133 @@ SPOTIFY_PRICE = 45.00  # GBP
 FRIEND_RENEWAL_BONUS = 10.00  # GBP for referrer on renewal
 NEW_FRIEND_BONUS = 25.00  # GBP for new referral line
 REFERRAL_LINE_PRICE = 75.00  # GBP price of a new 1-year friend line
+
+# Setup instructions sent to the referrer after a new friend line is
+# created, with {username} and {password} filled in automatically at the
+# two points where the guide asks for login credentials. The referrer
+# copies this and passes it on to their friend however they like (text,
+# WhatsApp, etc.) - there's no direct email/SMS sending built in.
+REFERRAL_SETUP_INSTRUCTIONS_TEMPLATE = """🔵 AVATAR IPTV
+Firestick App Installation – Quick Guide
+Downloader Code: 1151848
+🎮 Firestick Remote Button Guide
+Select → Center circle button
+Back → ⬅ button
+Menu → ☰ (three lines)
+Home → 🏠 button
+
+
+Step 1: Enable Developer Options
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click About
+Highlight Fire TV Stick
+Press Select 7 times
+✅ Message appears: "You are now a developer"
+
+
+Step 2: Install Downloader App
+Press Home 🏠
+Select Find → Search
+Type Downloader
+Select the Downloader app (orange icon)
+Press Select on Download / Get
+Open Downloader once installed
+
+
+Step 3: Allow Apps from Unknown Sources (Downloader)
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click Developer Options
+Select Install Unknown Apps
+Choose Downloader
+Turn it ON
+
+
+Step 4: Allow Downloader Permissions
+Open Downloader
+Select Allow
+Click OK
+
+
+Step 5: Install Avatar App Store
+In Downloader, press Select on the URL box
+Enter the code:
+1151848
+Click Go
+Wait for the download to complete
+Select Install
+Click Done
+When prompted, select Delete
+Select Delete again
+
+
+Step 6: Allow Unknown Sources for Avatar App Store (blue background on icon)
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click Developer Options
+Select Install Unknown Apps
+Choose App Store (blue background)
+Turn it ON
+
+
+Step 7: Open the App Store
+Press Home 🏠
+Go to Settings
+Select Applications
+Click Manage Installed Applications
+Select App Store
+Click Open
+
+
+Step 8: Log In to Avatar IPTV App Store
+Select Login
+Enter the Username: {username}
+Enter the Password: {password}
+Press Select to continue
+✅ Login successful.
+
+
+Step 9: Download & Install TiviMate (Top Option)
+Inside the Avatar IPTV App Store, locate TiviMate
+Select the TOP TiviMate option
+Press Select on Download / Install
+Wait for installation to complete
+
+
+Step 10: Open Avatar IPTV (TiviMate Branded App)
+Press Home 🏠
+Go to Settings
+Select Applications
+Click Manage Installed Applications
+Find Avatar IPTV (TiviMate Branded App)
+Select Open
+
+
+Step 11: Add Playlist & Connect to Server
+When Avatar IPTV opens, select Add Playlist
+Choose Main Server
+Enter the Login Credentials:
+Username: {username}
+Password: {password}
+Click Next
+Wait for channels and VOD to load
+✅ Playlist successfully added.
+
+
+⭐ Optional: Move Avatar IPTV to Home Screen
+Press Home 🏠
+Select Apps
+Find Avatar IPTV
+Press Menu ☰
+Select Move to Front
+✅ Setup Complete
+
+
+🎉 Avatar IPTV is now fully installed, configured, and ready to stream on your Firestick."""
 CONNECTION_TIER_PRICES = {"1": 75.00, "2": 100.00, "3": 125.00, "4": 150.00}  # GBP
 
 
@@ -981,6 +1108,44 @@ def accept_renewal_job(job_id):
 # verify_xtream_credentials() / upsert_portal_user_from_panel()), there's
 # no longer any need for people to "sign up" separately - anyone with a
 # real, active line can just log straight in.
+
+
+@app.route('/forgot_password', methods=['POST'])
+def forgot_password():
+    """
+    Public endpoint (no login required, since the whole point is they can't
+    log in). Doesn't reset or look anything up automatically - it simply
+    pings the admin on Telegram with the username so they can manually look
+    up/reissue that person's password. There's no way to safely automate
+    this further anyway, since real login now goes straight to the panel -
+    only the admin can actually see or set someone's real panel password.
+    """
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+
+    if not username:
+        return jsonify({'success': False, 'message': 'Please enter your username.'}), 400
+    if len(username) > 100:
+        return jsonify({'success': False, 'message': 'Invalid username.'}), 400
+
+    try:
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    except RuntimeError:
+        ip = ''
+
+    send_telegram_alert_direct(
+        f"<b>🔑 PASSWORD RECOVERY REQUESTED</b>\n"
+        f"<b>Username:</b> <code>{username}</code>\n"
+        f"<b>IP:</b> <code>{ip or 'unknown'}</code>\n\n"
+        f"This person can't log in and needs their password reissued."
+    )
+
+    log_activity(username, "Requested password recovery")
+
+    return jsonify({
+        'success': True,
+        'message': "Request received. The admin has been notified and will be in touch with your password."
+    })
 
 
 @app.route('/', endpoint='login', methods=['GET', 'POST'])
@@ -2042,10 +2207,16 @@ def create_referral_line():
 
         log_activity(referrer, f"Created referral friend '{friend_username}' (order {order_id})")
 
+        setup_instructions = REFERRAL_SETUP_INSTRUCTIONS_TEMPLATE.format(
+            username=friend_username,
+            password=plain_password
+        )
+
         return jsonify({
             'success': True,
             'generated_user': friend_username,
-            'generated_pass': plain_password
+            'generated_pass': plain_password,
+            'setup_instructions': setup_instructions
         })
     except Exception as e:
         print("CREATE_REFERRAL_LINE ERROR:", e)

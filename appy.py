@@ -395,6 +395,28 @@ def init_db():
             )
         ''')
 
+        # new_line_jobs table - when a referrer pays to create a new friend
+        # line, the local portal account is NOT created immediately. It
+        # only gets created once the admin has actually set the real line
+        # up on the IPTV panel and clicks "Accept" here - same manual
+        # confirmation pattern as renewal_jobs.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS new_line_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_username TEXT NOT NULL,
+                friend_username TEXT NOT NULL,
+                friend_password TEXT NOT NULL,
+                first_name TEXT,
+                last_name TEXT,
+                phone TEXT,
+                order_id TEXT,
+                amount TEXT,
+                status TEXT DEFAULT 'Pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME
+            )
+        ''')
+
         # announcements table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS announcements (
@@ -1098,6 +1120,116 @@ def accept_renewal_job(job_id):
         'username': username,
         'previous_expiry_date': previous_readable,
         'new_expiry_date': new_readable
+    }
+
+
+# --- NEW LINE JOBS: MANUAL ACCOUNT CREATION QUEUE ---
+# When a referrer pays to create a friend's new line, the local portal
+# account isn't created right away - it's held as a pending job until the
+# admin has actually set the real line up on the IPTV panel and clicks
+# Accept, same manual-confirmation pattern as renewal_jobs.
+
+def _clean_name_part(value):
+    """Lowercase, letters/numbers only - used to build the username."""
+    return re.sub(r'[^a-z0-9]', '', (value or '').lower())
+
+
+def friend_username_is_taken(username):
+    """Checks both real accounts and other still-pending jobs, so two
+    referrals for people with the same name can't collide."""
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM portal_users WHERE LOWER(username) = LOWER(?)",
+            (username.lower(),)
+        )
+        if cursor.fetchone():
+            return True
+        cursor.execute(
+            "SELECT 1 FROM new_line_jobs WHERE LOWER(friend_username) = LOWER(?) AND status = 'Pending'",
+            (username.lower(),)
+        )
+        return cursor.fetchone() is not None
+
+
+def generate_friend_username(first_name, last_name):
+    """Builds a "first-last" username, adding a numeric suffix only if
+    that exact name is already taken (e.g. two different "John Smith"s)."""
+    first_clean = _clean_name_part(first_name) or "user"
+    last_clean = _clean_name_part(last_name) or "friend"
+    base = f"{first_clean}-{last_clean}"
+
+    candidate = base
+    suffix = 2
+    while friend_username_is_taken(candidate):
+        candidate = f"{base}{suffix}"
+        suffix += 1
+    return candidate
+
+
+def generate_friend_password():
+    """8 characters, lowercase letters and numbers only."""
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+
+def accept_new_line_job(job_id):
+    """
+    Accept a pending new-line job: this is where the local portal_users
+    account actually gets created for the first time (using the username/
+    password that were generated and shown to the referrer at request
+    time), plus the referral_friends tracking row. Returns
+    (success, message_or_data).
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM new_line_jobs WHERE id = ?", (job_id,))
+        job = cursor.fetchone()
+        if not job:
+            return False, "New line job not found."
+        if job['status'] == 'Completed':
+            return False, "This job has already been completed."
+
+        friend_username = job['friend_username']
+        friend_password = job['friend_password']
+        referrer = job['referrer_username']
+
+        # Re-check uniqueness right before creating, in the unlikely event
+        # something else claimed this username between request and accept.
+        cursor.execute(
+            "SELECT 1 FROM portal_users WHERE LOWER(username) = LOWER(?)",
+            (friend_username.lower(),)
+        )
+        if cursor.fetchone():
+            return False, f"Username '{friend_username}' is already in use - can't create the account."
+
+        expiry_ts = int(time.time()) + 365 * 86400
+        expiry_date = datetime.fromtimestamp(expiry_ts).strftime('%Y-%m-%d')
+        hashed = generate_password_hash(friend_password)
+
+        cursor.execute('''
+            INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
+            VALUES (?, ?, ?, ?)
+        ''', (friend_username, hashed, expiry_date, expiry_ts))
+
+        cursor.execute('''
+            INSERT INTO referral_friends (referrer_username, friend_username, friend_password, expiry_timestamp)
+            VALUES (?, ?, ?, ?)
+        ''', (referrer, friend_username, friend_password, expiry_ts))
+
+        cursor.execute('''
+            UPDATE new_line_jobs
+            SET status = 'Completed', completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (job_id,))
+
+        conn.commit()
+
+    return True, {
+        'friend_username': friend_username,
+        'referrer_username': referrer,
+        'expiry_date': expiry_date
     }
 
 
@@ -2124,9 +2256,11 @@ def buy_spotify():
 def create_referral_line():
     """
     Create a new friend line + reward referrer.
-    Now REQUIRES and verifies a real PayPal order server-side before creating
-    the line - previously this route created a paid IPTV line for free with
-    no payment check at all.
+    Requires and verifies a real PayPal order server-side before doing
+    anything. The local portal account is NOT created here anymore - it's
+    held as a pending job (new_line_jobs) until the admin has actually set
+    the real line up on the panel and clicks Accept. This matches the same
+    manual-confirmation pattern already used for renewal jobs.
     """
     if not session.get('logged_in'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
@@ -2151,27 +2285,20 @@ def create_referral_line():
         return jsonify({'success': False, 'message': 'Payment could not be verified.'}), 400
 
     try:
-        base = re.sub(r'[^a-zA-Z0-9]', '', f"{first_name}{last_name}")[:10] or "friend"
-        suffix = ''.join(random.choices(string.digits, k=3))
-        friend_username = f"{base}{suffix}".lower()
-        plain_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-        hashed = generate_password_hash(plain_password)
-
-        expiry_ts = int(time.time()) + 365 * 86400
-        expiry_date = datetime.fromtimestamp(expiry_ts).strftime('%Y-%m-%d')
+        # Username: "first-last" (lowercase, letters/numbers only), with a
+        # numeric suffix only if that exact name is already taken.
+        friend_username = generate_friend_username(first_name, last_name)
+        # Password: 8 characters, lowercase letters and numbers only.
+        plain_password = generate_friend_password()
 
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
 
             cursor.execute('''
-                INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (friend_username, hashed, expiry_date, expiry_ts))
-
-            cursor.execute('''
-                INSERT INTO referral_friends (referrer_username, friend_username, friend_password, expiry_timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (referrer, friend_username, plain_password, expiry_ts))
+                INSERT INTO new_line_jobs
+                    (referrer_username, friend_username, friend_password, first_name, last_name, phone, order_id, amount, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
+            ''', (referrer, friend_username, plain_password, first_name, last_name, phone, order_id, f"{REFERRAL_LINE_PRICE:.2f}"))
 
             cursor.execute('''
                 INSERT INTO referral_wallets (username, earned_balance, spent_balance)
@@ -2196,16 +2323,18 @@ def create_referral_line():
             conn.commit()
 
         send_telegram_alert_direct(
-            f"<b>👤 NEW FRIEND LINE CREATED</b>\n"
+            f"<b>🆕 NEW FRIEND LINE - NEEDS SETUP</b>\n"
             f"<b>Referrer:</b> <code>{referrer}</code>\n"
-            f"<b>Friend:</b> <code>{friend_username}</code>\n"
+            f"<b>Friend:</b> <code>{first_name} {last_name}</code>\n"
+            f"<b>Username to create:</b> <code>{friend_username}</code>\n"
+            f"<b>Password to create:</b> <code>{plain_password}</code>\n"
             f"<b>Phone:</b> <code>{phone}</code>\n"
-            f"<b>Expiry (portal):</b> {expiry_date}\n"
             f"<b>Order ID:</b> <code>{order_id}</code>\n"
-            f"<b>Referrer Wallet Bonus:</b> £{NEW_FRIEND_BONUS:.2f}"
+            f"<b>Referrer Wallet Bonus:</b> £{NEW_FRIEND_BONUS:.2f}\n\n"
+            f"⚠️ Create this line on the real panel, then Accept the job in the admin panel."
         )
 
-        log_activity(referrer, f"Created referral friend '{friend_username}' (order {order_id})")
+        log_activity(referrer, f"Requested new friend line '{friend_username}' (order {order_id}) - pending admin setup")
 
         setup_instructions = REFERRAL_SETUP_INSTRUCTIONS_TEMPLATE.format(
             username=friend_username,
@@ -2533,6 +2662,21 @@ def admin_panel():
         """)
         recent_completed_renewal_jobs = cursor.fetchall()
 
+        cursor.execute("""
+            SELECT * FROM new_line_jobs
+            WHERE status = 'Pending'
+            ORDER BY created_at ASC
+        """)
+        pending_new_line_jobs = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT * FROM new_line_jobs
+            WHERE status = 'Completed'
+            ORDER BY completed_at DESC
+            LIMIT 25
+        """)
+        recent_completed_new_line_jobs = cursor.fetchall()
+
         cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
         spotify_orders = cursor.fetchall()
 
@@ -2556,6 +2700,8 @@ def admin_panel():
         vod_library_count=vod_library_count,
         pending_renewal_jobs=pending_renewal_jobs,
         recent_completed_renewal_jobs=recent_completed_renewal_jobs,
+        pending_new_line_jobs=pending_new_line_jobs,
+        recent_completed_new_line_jobs=recent_completed_new_line_jobs,
         client_expiration_list=client_expiration_list,
         spotify_orders=spotify_orders,
         latest_announcement=latest_announcement,
@@ -3320,6 +3466,45 @@ def admin_accept_renewal_job(job_id):
         })
     except Exception as e:
         print("ADMIN_ACCEPT_RENEWAL_JOB ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/accept_new_line_job/<int:job_id>', methods=['POST'])
+def admin_accept_new_line_job(job_id):
+    """
+    Admin: accept a pending new-line job. This is the actual "I've created
+    this line on the real panel" confirmation - only now does the local
+    portal account actually get created, using the username/password that
+    were generated and shown to the referrer when they first paid.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        success, result = accept_new_line_job(job_id)
+        if not success:
+            return jsonify({'success': False, 'message': result}), 400
+
+        admin_user = session.get('username', 'admin')
+        log_activity(
+            admin_user,
+            f"Accepted new line job #{job_id}: created portal account for "
+            f"'{result['friend_username']}' (referred by {result['referrer_username']})"
+        )
+
+        send_telegram_alert_direct(
+            f"<b>✅ NEW FRIEND LINE SET UP</b>\n"
+            f"<b>Friend:</b> <code>{result['friend_username']}</code>\n"
+            f"<b>Referrer:</b> <code>{result['referrer_username']}</code>\n"
+            f"<b>Confirmed by:</b> <code>{admin_user}</code>"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Portal account created for '{result['friend_username']}'."
+        })
+    except Exception as e:
+        print("ADMIN_ACCEPT_NEW_LINE_JOB ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

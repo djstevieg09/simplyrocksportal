@@ -364,6 +364,18 @@
                     </a>
                 </div>
 
+                <!-- Telegram linking -->
+                <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
+                    <h2 style="color:#60a5fa;">Telegram Notifications</h2>
+                    {% if telegram_linked %}
+                        <p style="color:#4ade80;">✅ Your Telegram is linked. You'll get updates here about your requests and renewals.</p>
+                    {% else %}
+                        <p>Link your Telegram so we can message you directly about your requests, renewals, and account.</p>
+                        <button onclick="getTelegramLink(this)" class="btn-primary" style="width:100%;">🔗 Link My Telegram</button>
+                        <div id="telegram-link-result" style="margin-top:10px; display:none;"></div>
+                    {% endif %}
+                </div>
+
                 <!-- Friends referred / managed -->
                 <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
                     <h2>Friends You Referred</h2>
@@ -1226,6 +1238,39 @@
                 }
             } catch (e) {
                 alert('Server error while removing managed friend.');
+            }
+        }
+
+        // --- Telegram linking ---
+        async function getTelegramLink(btn) {
+            btn.disabled = true;
+            const orig = btn.innerText;
+            btn.innerText = 'Generating link...';
+            try {
+                const resp = await fetch('/get_telegram_link', { method: 'POST' });
+                const data = await resp.json();
+                const resultDiv = document.getElementById('telegram-link-result');
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <a href="${data.link}" target="_blank" rel="noopener noreferrer" class="btn-secondary"
+                           style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
+                            Open Telegram to Finish Linking
+                        </a>
+                        <p style="font-size:11px; color:#94a3b8; margin-top:6px;">
+                            This opens Telegram and starts a chat with our bot - once you send the message it opens with, you're linked.
+                        </p>
+                    `;
+                    resultDiv.style.display = 'block';
+                    btn.style.display = 'none';
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            } catch (e) {
+                alert('Server error generating Telegram link.');
+                btn.disabled = false;
+                btn.innerText = orig;
             }
         }
 

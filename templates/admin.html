@@ -389,7 +389,7 @@
                     {% if client_expiration_list %}
                         {% for client in client_expiration_list %}
                         <tr>
-                            <td><strong>👤 {{ client.username }}</strong></td>
+                            <td><strong>👤 {{ client.username }}</strong> {% if client.telegram_linked %}<span title="Telegram linked" style="color:#38bdf8;">✅</span>{% endif %}</td>
                             <td>{{ client.expiry_date }}</td>
                             <td><span class="badge badge-done">{{ client.status }}</span></td>
                             <td>
@@ -672,7 +672,7 @@
                         {% if portal_users %}
                             {% for user in portal_users %}
                             <tr id="portal-user-row-{{ user.username }}">
-                                <td><strong>👤 {{ user.username }}</strong></td>
+                                <td><strong>👤 {{ user.username }}</strong> {% if user.telegram_chat_id %}<span title="Telegram linked" style="color:#38bdf8;">✅</span>{% endif %}</td>
                                 <td style="font-family:monospace; color:#94a3b8;"><code>****</code></td>
                                 <td>
                                     <span id="current-expiry-display-{{ user.username }}" class="badge-chip badge-chip-yellow">
@@ -1078,7 +1078,7 @@
                     : `<span class="badge-chip badge-chip-yellow">⏳ ${client.days_remaining} days</span>`;
                 return `
                     <tr>
-                        <td><strong>👤 ${client.username}</strong></td>
+                        <td><strong>👤 ${client.username}</strong> ${client.telegram_linked ? '<span title="Telegram linked" style="color:#38bdf8;">✅</span>' : ''}</td>
                         <td>${client.expiry_date}</td>
                         <td><span class="badge badge-done">${client.status}</span></td>
                         <td>${daysChip}</td>

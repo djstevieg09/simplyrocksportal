@@ -87,7 +87,22 @@
         .login-btn:hover {
             background-color: #1d4ed8;
         }
-        .error-box, .info-box {
+        .secondary-btn {
+            background-color: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            padding: 10px;
+            width: 100%;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        .secondary-btn:hover {
+            background-color: #3f4a5f;
+        }
+        .error-box, .info-box, .success-box {
             border-radius: 6px;
             font-size: 13px;
             padding: 10px;
@@ -103,6 +118,27 @@
             background-color: rgba(59, 130, 246, 0.12);
             border: 1px solid rgba(59, 130, 246, 0.6);
             color: #bfdbfe;
+        }
+        .success-box {
+            background-color: rgba(22, 163, 74, 0.15);
+            border: 1px solid #22c55e;
+            color: #bbf7d0;
+        }
+        .link-row {
+            text-align: center;
+            margin-top: 10px;
+        }
+        .link-row button {
+            border: none;
+            background: none;
+            color: #60a5fa;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: underline;
+            padding: 0;
+        }
+        #forgot-password-form {
+            display: none;
         }
     </style>
 </head>
@@ -143,7 +179,77 @@
 
             <button type="submit" class="login-btn">Sign In to Dashboard</button>
         </form>
+
+        <div class="link-row" id="forgot-password-link-row">
+            <button type="button" onclick="showForgotPasswordForm()">Forgotten your password?</button>
+        </div>
+
+        <!-- Forgot password form -->
+        <div id="forgot-password-form">
+            <div class="info-box" style="margin-top:12px;">
+                Enter your username below. The admin will be notified and will get your password back to you.
+            </div>
+            <div id="forgot-password-feedback" style="display:none;"></div>
+            <div class="form-group">
+                <label for="forgot-username">IPTV Username</label>
+                <input type="text" id="forgot-username" placeholder="Enter your username..." autocomplete="off">
+            </div>
+            <button type="button" class="login-btn" onclick="submitForgotPassword()">Notify Admin</button>
+            <div class="link-row">
+                <button type="button" onclick="hideForgotPasswordForm()">Back to Login</button>
+            </div>
+        </div>
     </div>
+
+    <script>
+        function showForgotPasswordForm() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('forgot-password-link-row').style.display = 'none';
+            document.getElementById('forgot-password-form').style.display = 'block';
+        }
+
+        function hideForgotPasswordForm() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('forgot-password-link-row').style.display = 'block';
+            document.getElementById('forgot-password-form').style.display = 'none';
+            document.getElementById('forgot-password-feedback').style.display = 'none';
+        }
+
+        async function submitForgotPassword() {
+            const username = document.getElementById('forgot-username').value.trim();
+            const feedback = document.getElementById('forgot-password-feedback');
+
+            if (!username) {
+                feedback.className = 'error-box';
+                feedback.innerText = '❌ Please enter your username.';
+                feedback.style.display = 'block';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/forgot_password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username })
+                });
+                const data = await resp.json();
+
+                if (data.success) {
+                    feedback.className = 'success-box';
+                    feedback.innerText = '✅ ' + data.message;
+                    document.getElementById('forgot-username').value = '';
+                } else {
+                    feedback.className = 'error-box';
+                    feedback.innerText = '❌ ' + (data.message || 'Something went wrong.');
+                }
+                feedback.style.display = 'block';
+            } catch (e) {
+                feedback.className = 'error-box';
+                feedback.innerText = '❌ Could not contact server. Please try again.';
+                feedback.style.display = 'block';
+            }
+        }
+    </script>
 
 </body>
 </html>

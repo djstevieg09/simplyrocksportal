@@ -382,6 +382,7 @@
                         <th>Expiry Date</th>
                         <th>Status</th>
                         <th>Days Left</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody id="expiration-matrix-body">
@@ -402,11 +403,16 @@
                                     </span>
                                 {% endif %}
                             </td>
+                            <td>
+                                <button class="btn btn-blue btn-small" onclick="notifyUserTelegram('{{ client.username }}', {{ client.days_remaining }})">
+                                    💬 Notify User
+                                </button>
+                            </td>
                         </tr>
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="4" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
+                        <td colspan="5" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
                             No clients expiring within the next 31 days.
                         </td>
                     </tr>
@@ -1033,13 +1039,33 @@
         }
 
         // --- Expiration sync ---
+        function notifyUserTelegram(username, daysRemaining) {
+            const defaultMessage = (daysRemaining !== undefined && daysRemaining !== null)
+                ? `Hi ${username}, your subscription expires in ${daysRemaining} day(s) - please renew to avoid interruption.`
+                : `Hi ${username},`;
+            const message = prompt(`Message to send to ${username} via Telegram:`, defaultMessage);
+            if (!message) return;
+            fetch('/admin/notify_user_telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username, message: message })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout while sending message."));
+        }
+
         function renderExpirationMatrixRows(clients) {
             const tbody = document.getElementById('expiration-matrix-body');
             if (!tbody) return;
             if (!clients || !clients.length) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="4" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
+                        <td colspan="5" style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">
                             No clients expiring within the next 31 days.
                         </td>
                     </tr>`;
@@ -1056,6 +1082,11 @@
                         <td>${client.expiry_date}</td>
                         <td><span class="badge badge-done">${client.status}</span></td>
                         <td>${daysChip}</td>
+                        <td>
+                            <button class="btn btn-blue btn-small" onclick="notifyUserTelegram('${client.username}', ${client.days_remaining})">
+                                💬 Notify User
+                            </button>
+                        </td>
                     </tr>`;
             }).join('');
         }

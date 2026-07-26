@@ -509,6 +509,17 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Traces a vod_library entry back to its real panel ID (stream_id
+        # for movies, series_id for TV shows), so a season/episode-specific
+        # request can later be checked against the panel's actual episode
+        # list for that exact show - only ever looked up on demand for a
+        # specific pending request, never bulk-fetched for the whole catalog.
+        try:
+            cursor.execute("ALTER TABLE vod_library ADD COLUMN external_id TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Channel logos, pulled from the panel's stream_icon field when
         # syncing, so channel reports can show a logo the same way movie/TV
         # requests show a poster.
@@ -3605,6 +3616,7 @@ def perform_vod_library_sync():
                 if not title:
                     continue
                 norm = normalize_title(title)
+                stream_id = item.get('stream_id')
 
                 cursor.execute(
                     "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'movie'",
@@ -3613,12 +3625,13 @@ def perform_vod_library_sync():
                 existed = cursor.fetchone() is not None
 
                 cursor.execute('''
-                    INSERT INTO vod_library (title, normalized_title, media_type, year)
-                    VALUES (?, ?, 'movie', ?)
+                    INSERT INTO vod_library (title, normalized_title, media_type, year, external_id)
+                    VALUES (?, ?, 'movie', ?, ?)
                     ON CONFLICT(normalized_title, media_type) DO UPDATE SET
                         title = excluded.title,
-                        year = excluded.year
-                ''', (title, norm, year))
+                        year = excluded.year,
+                        external_id = excluded.external_id
+                ''', (title, norm, year, str(stream_id) if stream_id is not None else None))
 
                 if existed:
                     movies_updated += 1
@@ -3639,6 +3652,7 @@ def perform_vod_library_sync():
                 if not title:
                     continue
                 norm = normalize_title(title)
+                series_id = item.get('series_id')
 
                 cursor.execute(
                     "SELECT id FROM vod_library WHERE normalized_title = ? AND media_type = 'tv'",
@@ -3647,12 +3661,13 @@ def perform_vod_library_sync():
                 existed = cursor.fetchone() is not None
 
                 cursor.execute('''
-                    INSERT INTO vod_library (title, normalized_title, media_type, year)
-                    VALUES (?, ?, 'tv', ?)
+                    INSERT INTO vod_library (title, normalized_title, media_type, year, external_id)
+                    VALUES (?, ?, 'tv', ?, ?)
                     ON CONFLICT(normalized_title, media_type) DO UPDATE SET
                         title = excluded.title,
-                        year = excluded.year
-                ''', (title, norm, year))
+                        year = excluded.year,
+                        external_id = excluded.external_id
+                ''', (title, norm, year, str(series_id) if series_id is not None else None))
 
                 if existed:
                     series_updated += 1
@@ -3660,12 +3675,127 @@ def perform_vod_library_sync():
                     series_added += 1
             conn.commit()
 
+    # Cross-reference pending media requests against what's now on the
+    # system, auto-completing and notifying anyone whose request just got
+    # fulfilled by this sync.
+    requests_auto_matched = auto_match_pending_requests()
+
     return {
         'movies_added': movies_added,
         'movies_updated': movies_updated,
         'series_added': series_added,
         'series_updated': series_updated,
+        'requests_auto_matched': requests_auto_matched,
     }
+
+
+def series_episode_is_available(series_id, season_number, episode_number=None):
+    """
+    Targeted lookup against the panel's actual episode list for ONE
+    specific show (via get_series_info) - only ever called for a specific
+    pending request that needs checking, never for the whole catalog.
+    Returns True if the given season (and episode, if specified) is
+    actually present on the panel.
+    """
+    if not series_id:
+        return False
+    try:
+        info = fetch_xtream_api('get_series_info', {'series_id': series_id})
+    except Exception as e:
+        print(f"SERIES_EPISODE_IS_AVAILABLE ERROR: {type(e).__name__}")
+        return False
+
+    if not isinstance(info, dict):
+        return False
+
+    episodes_by_season = info.get('episodes') or {}
+    season_key = str(season_number)
+    if season_key not in episodes_by_season:
+        return False
+
+    if episode_number is None:
+        # Whole season requested - the season existing at all is enough.
+        return True
+
+    for ep in episodes_by_season[season_key]:
+        try:
+            if int(ep.get('episode_num')) == int(episode_number):
+                return True
+        except (TypeError, ValueError):
+            continue
+
+    return False
+
+
+def auto_match_pending_requests():
+    """
+    After a VOD library sync, cross-reference still-pending media requests
+    against what's now on the system - if a match is found, the request is
+    marked Completed and the requester is notified via Telegram, exactly
+    like clicking "Mark Added" manually.
+
+    Movies and "entire series" TV requests are matched just by the title
+    existing in the catalog. A request for a SPECIFIC season/episode gets a
+    real, targeted check against the panel's actual episode list for that
+    exact show (series_episode_is_available) - so requesting "just season
+    3" only auto-resolves once season 3 specifically is actually there,
+    not just because the show exists at all.
+    """
+    matched_count = 0
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT normalized_title, media_type, external_id FROM vod_library")
+            library_rows = cursor.fetchall()
+            movie_titles = {r['normalized_title'] for r in library_rows if r['media_type'] == 'movie'}
+            tv_by_title = {
+                r['normalized_title']: r['external_id']
+                for r in library_rows if r['media_type'] == 'tv'
+            }
+
+            cursor.execute("SELECT * FROM requests WHERE status = 'Pending'")
+            pending_requests = cursor.fetchall()
+
+            for req in pending_requests:
+                norm = normalize_title(req['title'])
+                media_type = (req['media_type'] or '').lower()
+                is_matched = False
+
+                if media_type == 'movie':
+                    is_matched = norm in movie_titles
+                elif media_type == 'tv':
+                    if norm not in tv_by_title:
+                        is_matched = False
+                    elif not req['season_number']:
+                        # Whole series requested - title existing is enough.
+                        is_matched = True
+                    else:
+                        # Specific season/episode - do the real, targeted check.
+                        series_id = tv_by_title[norm]
+                        is_matched = series_episode_is_available(
+                            series_id, req['season_number'], req['episode_number']
+                        )
+
+                if is_matched:
+                    cursor.execute("UPDATE requests SET status = 'Completed' WHERE id = ?", (req['id'],))
+                    matched_count += 1
+
+                    send_telegram_message_to_user(
+                        req['username'],
+                        f"🎉 Good news! Your request for \"{req['title']}\" has been added to the system."
+                    )
+                    log_activity(
+                        req['username'],
+                        f"Auto-matched request '{req['title']}' as added during library sync"
+                    )
+
+            conn.commit()
+    except Exception as e:
+        print("AUTO_MATCH_PENDING_REQUESTS ERROR:", e)
+
+    return matched_count
 
 
 def perform_live_channels_sync():
@@ -3740,7 +3870,8 @@ def admin_sync_vod_library_from_panel():
             admin_user,
             f"Synced VOD library from IPTV panel: "
             f"{stats['movies_added']} new movies ({stats['movies_updated']} refreshed), "
-            f"{stats['series_added']} new series ({stats['series_updated']} refreshed)"
+            f"{stats['series_added']} new series ({stats['series_updated']} refreshed), "
+            f"{stats['requests_auto_matched']} pending request(s) auto-matched"
         )
 
         return jsonify({
@@ -3748,7 +3879,8 @@ def admin_sync_vod_library_from_panel():
             'message': (
                 f"Synced from your panel: {stats['movies_added']} new movies "
                 f"({stats['movies_updated']} already catalogued, refreshed), "
-                f"{stats['series_added']} new series ({stats['series_updated']} already catalogued, refreshed)."
+                f"{stats['series_added']} new series ({stats['series_updated']} already catalogued, refreshed). "
+                f"{stats['requests_auto_matched']} pending request(s) auto-matched and marked added."
             )
         })
     except RuntimeError as e:
@@ -4226,13 +4358,15 @@ def auto_sync_loop():
                 print(
                     f"AUTO SYNC: VOD library done - "
                     f"{vod_stats['movies_added']} new movies ({vod_stats['movies_updated']} refreshed), "
-                    f"{vod_stats['series_added']} new series ({vod_stats['series_updated']} refreshed).",
+                    f"{vod_stats['series_added']} new series ({vod_stats['series_updated']} refreshed), "
+                    f"{vod_stats['requests_auto_matched']} request(s) auto-matched.",
                     flush=True
                 )
                 log_activity(
                     "System (auto-sync)",
                     f"Automatic VOD library sync: {vod_stats['movies_added']} new movies, "
-                    f"{vod_stats['series_added']} new series"
+                    f"{vod_stats['series_added']} new series, "
+                    f"{vod_stats['requests_auto_matched']} requests auto-matched"
                 )
             except Exception as e:
                 print(f"AUTO SYNC: VOD library sync failed - {type(e).__name__}: {e}", flush=True)

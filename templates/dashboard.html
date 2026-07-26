@@ -243,7 +243,7 @@
         .announcement-track {
             display: inline-block;
             white-space: nowrap;
-            animation: scroll-announcement 45s linear infinite;
+            animation: scroll-announcement 90s linear infinite;
             color: #fff7ed;
             font-size: 13px;
         }
@@ -278,7 +278,7 @@
         <div class="announcement-banner">
             <span class="announcement-label">Announcement</span>
             <span class="announcement-track">
-                {{ announcement }} &nbsp; • &nbsp; {{ announcement }} &nbsp; • &nbsp; {{ announcement }}
+                {{ announcement }} &nbsp; • &nbsp; {{ announcement }}
             </span>
         </div>
     </div>
@@ -1242,6 +1242,8 @@
         }
 
         // --- Telegram linking ---
+        let telegramLinkPollTimer = null;
+
         async function getTelegramLink(btn) {
             btn.disabled = true;
             const orig = btn.innerText;
@@ -1257,11 +1259,17 @@
                             Open Telegram to Finish Linking
                         </a>
                         <p style="font-size:11px; color:#94a3b8; margin-top:6px;">
-                            This opens Telegram and starts a chat with our bot - once you send the message it opens with, you're linked.
+                            This opens Telegram and starts a chat with our bot. Tap <b>Start</b> when it opens -
+                            that's the only thing Telegram itself requires. This page will update on its own
+                            once that's done, no need to refresh.
+                        </p>
+                        <p id="telegram-waiting-status" style="font-size:11px; color:#60a5fa; margin-top:4px;">
+                            ⏳ Waiting for you to finish linking in Telegram...
                         </p>
                     `;
                     resultDiv.style.display = 'block';
                     btn.style.display = 'none';
+                    startTelegramLinkPolling();
                 } else {
                     alert('Error: ' + data.message);
                     btn.disabled = false;
@@ -1272,6 +1280,29 @@
                 btn.disabled = false;
                 btn.innerText = orig;
             }
+        }
+
+        function startTelegramLinkPolling() {
+            if (telegramLinkPollTimer) clearInterval(telegramLinkPollTimer);
+            telegramLinkPollTimer = setInterval(async () => {
+                try {
+                    const resp = await fetch('/check_telegram_link_status');
+                    const data = await resp.json();
+                    if (data.linked) {
+                        clearInterval(telegramLinkPollTimer);
+                        const resultDiv = document.getElementById('telegram-link-result');
+                        if (resultDiv) {
+                            resultDiv.innerHTML = `
+                                <p style="color:#4ade80; margin:0;">
+                                    ✅ Your Telegram is linked. You'll get updates here about your requests and renewals.
+                                </p>
+                            `;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore transient errors - it'll just try again on the next tick.
+                }
+            }, 2000);
         }
 
         // --- TMDB media search for requests ---
@@ -1325,7 +1356,7 @@
                                 <h4>${title}</h4>
                                 <p>${year} • MOVIE</p>
                                 ${alreadyAvailableBadge}
-                                <button onclick="submitMovieRequest('${cacheKey}', this)" class="req-btn">Request This</button>
+                                ${item.already_available ? '' : `<button onclick="submitMovieRequest('${cacheKey}', this)" class="req-btn">Request This</button>`}
                             </div>
                         `;
                     } else {
@@ -1533,7 +1564,19 @@
                         row.style.fontSize = '12px';
                         row.style.cursor = 'pointer';
                         row.style.borderBottom = '1px solid #334155';
-                        row.innerHTML = `<strong>${ch.name}</strong><br><span style="font-size:11px;color:#9ca3af;">ID: ${ch.stream_id}</span>`;
+                        row.style.display = 'flex';
+                        row.style.alignItems = 'center';
+                        row.style.gap = '8px';
+                        const logoImg = ch.logo_url
+                            ? `<img src="${ch.logo_url}" style="width:28px; height:28px; object-fit:contain; border-radius:4px; background-color:#0f172a;" onerror="this.style.display='none';">`
+                            : `<div style="width:28px; height:28px; border-radius:4px; background-color:#334155; flex-shrink:0;"></div>`;
+                        row.innerHTML = `
+                            ${logoImg}
+                            <div>
+                                <strong>${ch.name}</strong><br>
+                                <span style="font-size:11px;color:#9ca3af;">ID: ${ch.stream_id}</span>
+                            </div>
+                        `;
                         row.onclick = () => {
                             selectChannelForReport(ch.name, ch.stream_id);
                         };

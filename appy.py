@@ -3171,6 +3171,80 @@ def adjust_user_credit():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/admin/bulk_credit_all_users', methods=['POST'])
+def bulk_credit_all_users():
+    """
+    Admin: credit every registered portal user's wallet by the same amount
+    in one go (e.g. a promotional credit or apology credit) - separate from
+    the single-user credit tool above since crediting everyone at once is a
+    much bigger action and deserves its own explicit confirmation.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    amount_str = (data.get('amount') or '').strip()
+
+    if not amount_str:
+        return jsonify({'success': False, 'message': 'Amount is required.'}), 400
+
+    try:
+        amount_val = float(amount_str)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid amount value.'}), 400
+
+    if amount_val <= 0:
+        return jsonify({'success': False, 'message': 'Amount must be greater than zero.'}), 400
+
+    secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or '').lower()
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT username FROM portal_users")
+            all_usernames = [row['username'] for row in cursor.fetchall() if row['username']]
+
+        credited_usernames = []
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            for uname in all_usernames:
+                if secure_admin_username and uname.lower() == secure_admin_username:
+                    continue
+                cursor.execute('''
+                    INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                    VALUES (?, ?, 0.0)
+                    ON CONFLICT(username) DO UPDATE SET
+                        earned_balance = earned_balance + ?
+                ''', (uname, amount_val, amount_val))
+                credited_usernames.append(uname)
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Bulk wallet credit +£{amount_val:.2f} to {len(credited_usernames)} user(s)")
+
+        for uname in credited_usernames:
+            send_telegram_message_to_user(
+                uname,
+                f"💰 £{amount_val:.2f} has been added to your referral wallet."
+            )
+
+        send_telegram_alert_direct(
+            f"<b>💰 BULK WALLET CREDIT ISSUED</b>\n"
+            f"<b>Amount:</b> £{amount_val:.2f} per user\n"
+            f"<b>Users credited:</b> {len(credited_usernames)}\n"
+            f"<b>Issued by:</b> <code>{admin_user}</code>"
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Credited £{amount_val:.2f} to {len(credited_usernames)} user(s)."
+        })
+    except Exception as e:
+        print("BULK_CREDIT_ALL_USERS ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/admin/create_portal_user', methods=['POST'])
 def create_portal_user():
     if not is_admin():

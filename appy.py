@@ -2701,6 +2701,101 @@ def submit_vod_report():
 
 # --- ADMIN PANEL & HELPERS ---
 
+def build_admin_todo_list():
+    """
+    Pulls every outstanding actionable item across the whole admin panel -
+    pending renewal jobs, new line jobs, media requests, fault reports,
+    Spotify orders awaiting upgrade confirmation, and payments awaiting
+    manual completion - into one combined, time-sorted list, so nothing
+    needs hunting for across separate cards.
+    """
+    todo_items = []
+
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM renewal_jobs WHERE status = 'Pending'")
+        for row in cursor.fetchall():
+            scope = "friend line" if row['renewal_type'] == 'friend' else "own line"
+            detail = f"{row['connections']} connection(s) - £{row['amount']}"
+            if row['renewal_type'] == 'friend':
+                detail += f" - referred by {row['referrer_username']}"
+            todo_items.append({
+                'kind': 'renewal_job', 'id': row['id'],
+                'label': f"Renewal - {row['username']} ({scope})",
+                'detail': detail,
+                'timestamp': row['created_at']
+            })
+
+        cursor.execute("SELECT * FROM new_line_jobs WHERE status = 'Pending'")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'new_line_job', 'id': row['id'],
+                'label': f"New Line - {row['first_name']} {row['last_name']} ({row['friend_username']})",
+                'detail': f"Referred by {row['referrer_username']} - phone {row['phone']}",
+                'timestamp': row['created_at']
+            })
+
+        cursor.execute("SELECT * FROM requests WHERE status = 'Pending'")
+        for row in cursor.fetchall():
+            scope = ""
+            if row['season_number'] and row['episode_number']:
+                scope = f" S{row['season_number']}E{row['episode_number']}"
+            elif row['season_number']:
+                scope = f" S{row['season_number']}"
+            todo_items.append({
+                'kind': 'request', 'id': row['id'],
+                'label': f"Media Request - {row['title']}{scope}",
+                'detail': f"{row['media_type'].upper()} - requested by {row['username']}",
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM channel_reports")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'channel_report', 'id': row['id'],
+                'label': f"Channel Fault - {row['channel_name']}",
+                'detail': f"{row['issue_type']} - reported by {row['username']}",
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM vod_reports")
+        for row in cursor.fetchall():
+            scope = ""
+            if row['season_number'] and row['episode_number']:
+                scope = f" S{row['season_number']}E{row['episode_number']}"
+            elif row['season_number']:
+                scope = f" S{row['season_number']}"
+            todo_items.append({
+                'kind': 'vod_report', 'id': row['id'],
+                'label': f"VOD Fault - {row['title']}{scope}",
+                'detail': f"{row['issue_type']} - reported by {row['username']}",
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM spotify_orders WHERE status != 'Upgraded'")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'spotify_order', 'id': row['id'],
+                'label': f"Spotify Upgrade - {row['spotify_username']}",
+                'detail': f"Portal user: {row['portal_username']} - £{row['amount']:.2f}",
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM payments WHERE status = 'Pending Manual'")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'payment', 'id': row['id'],
+                'label': f"Payment Confirmation - {row['username']}",
+                'detail': f"Order {row['order_id']} - £{row['amount']}",
+                'timestamp': row['timestamp']
+            })
+
+    todo_items.sort(key=lambda x: x['timestamp'] or '')
+    return todo_items
+
+
 def build_client_expiration_list(max_days=31):
     """
     Build the list of portal users expiring within `max_days` days, sourced
@@ -2754,6 +2849,7 @@ def admin_panel():
         return "<h3>Access Denied</h3>", 403
 
     client_expiration_list = build_client_expiration_list()
+    admin_todo_list = build_admin_todo_list()
 
     with sqlite3.connect(DB_FILE) as conn:
         conn.row_factory = sqlite3.Row
@@ -2842,6 +2938,7 @@ def admin_panel():
         pending_new_line_jobs=pending_new_line_jobs,
         recent_completed_new_line_jobs=recent_completed_new_line_jobs,
         client_expiration_list=client_expiration_list,
+        admin_todo_list=admin_todo_list,
         spotify_orders=spotify_orders,
         latest_announcement=latest_announcement,
         activity_rows=activity_rows

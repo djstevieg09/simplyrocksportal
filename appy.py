@@ -2545,6 +2545,7 @@ def submit_channel_report():
     ch_name = data.get('channel_name', '').strip()
     ch_id = data.get('channel_id', '').strip()
     issue = data.get('issue_type', '').strip()
+    logo_url = (data.get('logo_url') or '').strip()
     username = session.get('username')
 
     if not ch_name or not ch_id or not issue:
@@ -2559,13 +2560,17 @@ def submit_channel_report():
             ''', (username, ch_name, ch_id, issue))
             conn.commit()
 
-        send_telegram_alert_direct(
+        report_caption = (
             f"<b>📺 LIVE TV STREAM FAULT TICKET</b>\n"
             f"<b>User:</b> <code>{username}</code>\n"
             f"<b>Channel:</b> <b>{ch_name}</b>\n"
             f"<b>Stream ID:</b> <code>{ch_id}</code>\n"
             f"<b>Issue:</b> {issue}"
         )
+        if logo_url:
+            send_telegram_photo_with_overlay(logo_url, "REPORT", report_caption)
+        else:
+            send_telegram_alert_direct(report_caption)
 
         log_activity(username, f"Channel fault report: {ch_name} (ID {ch_id}) - {issue}")
 

@@ -186,6 +186,64 @@
 
     <div class="wrapper">
 
+        <!-- Consolidated To-Do List -->
+        <div class="card" style="border:2px solid rgba(250,204,21,0.6);">
+            <div class="section-header-row">
+                <h2 style="color:#facc15;">📋 To-Do List</h2>
+                <span class="pill-info">{{ admin_todo_list|length if admin_todo_list else 0 }} item(s) need action</span>
+            </div>
+            <p class="muted">
+                Everything across the whole panel that needs a click from you, in one place - oldest first.
+            </p>
+            <div style="max-height:420px; overflow-y:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Details</th>
+                            <th>When</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if admin_todo_list %}
+                            {% for item in admin_todo_list %}
+                            <tr>
+                                <td style="white-space:nowrap;"><strong>{{ item.label }}</strong></td>
+                                <td style="font-size:11px; color:#9ca3af;">{{ item.detail }}</td>
+                                <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ item.timestamp }}</td>
+                                <td style="white-space:nowrap;">
+                                    {% if item.kind == 'renewal_job' %}
+                                        <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ item.id }})">✓ Accept</button>
+                                    {% elif item.kind == 'new_line_job' %}
+                                        <button class="btn btn-success btn-small" onclick="acceptNewLineJob({{ item.id }})">✓ Accept</button>
+                                    {% elif item.kind == 'request' %}
+                                        <button class="btn btn-success btn-small" onclick="markRequestCompleted({{ item.id }})">Mark Added</button>
+                                        <button class="btn btn-danger btn-small" onclick="deleteRequest({{ item.id }})">Remove</button>
+                                    {% elif item.kind == 'channel_report' %}
+                                        <button class="btn btn-success btn-small" onclick="clearChannelReport({{ item.id }})">Fixed ✓</button>
+                                    {% elif item.kind == 'vod_report' %}
+                                        <button class="btn btn-success btn-small" onclick="clearVodReport({{ item.id }})">Fixed ✓</button>
+                                    {% elif item.kind == 'spotify_order' %}
+                                        <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ item.id }})">Mark Upgraded</button>
+                                    {% elif item.kind == 'payment' %}
+                                        <button class="btn btn-success btn-small" onclick="markLineAsCompleted({{ item.id }})">Mark Done</button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#64748b; padding:20px; font-size:13px;">
+                                🎉 Nothing outstanding - you're all caught up.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Announcements -->
         <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
             <div class="section-header-row">
@@ -1127,10 +1185,7 @@
             }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('request-badge-cell-' + id).innerHTML =
-                        '<span class="badge badge-done">Completed</span>';
-                    document.getElementById('request-actions-cell-' + id).innerHTML =
-                        '<span style="color:#64748b;font-size:11px;">Processed</span>';
+                    window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -1145,7 +1200,7 @@
             }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('row-' + id).remove();
+                    window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -1611,12 +1666,7 @@
             }).then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    const cell = document.getElementById('status-cell-' + paymentId);
-                    if (cell) {
-                        cell.innerHTML = '<span class="badge badge-done">✅ COMPLETED</span>';
-                    } else {
-                        window.location.reload();
-                    }
+                    window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
                 }

@@ -509,6 +509,15 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Channel logos, pulled from the panel's stream_icon field when
+        # syncing, so channel reports can show a logo the same way movie/TV
+        # requests show a poster.
+        try:
+            cursor.execute("ALTER TABLE live_channels ADD COLUMN logo_url TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Same season/episode granularity for VOD fault reports, so people
         # can report an issue with one specific episode instead of only
         # ever reporting against the whole show.
@@ -2496,7 +2505,7 @@ def create_referral_line():
 def search_channels():
     """
     Simple live channel search used for the dropdown on dashboard.
-    Expects ?q= query, returns list of {name, stream_id}.
+    Expects ?q= query, returns list of {name, stream_id, logo_url}.
     """
     if not session.get('logged_in'):
         return jsonify([]), 401
@@ -2511,14 +2520,17 @@ def search_channels():
             cursor = conn.cursor()
             like = f"%{q}%"
             cursor.execute("""
-                SELECT name, stream_id
+                SELECT name, stream_id, logo_url
                 FROM live_channels
                 WHERE name LIKE ?
                 ORDER BY name ASC
                 LIMIT 50
             """, (like,))
             rows = cursor.fetchall()
-        return jsonify([{'name': r['name'], 'stream_id': r['stream_id']} for r in rows])
+        return jsonify([
+            {'name': r['name'], 'stream_id': r['stream_id'], 'logo_url': r['logo_url'] or ''}
+            for r in rows
+        ])
     except Exception as e:
         print("SEARCH_CHANNELS ERROR:", e)
         return jsonify([]), 500
@@ -3315,6 +3327,7 @@ def add_live_channel():
     data = request.json or {}
     name = (data.get('name') or '').strip()
     stream_id = (data.get('stream_id') or '').strip()
+    logo_url = (data.get('logo_url') or '').strip()
     if not name or not stream_id:
         return jsonify({'success': False, 'message': 'Name and stream_id are required.'}), 400
 
@@ -3322,11 +3335,12 @@ def add_live_channel():
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO live_channels (stream_id, name)
-                VALUES (?, ?)
+                INSERT INTO live_channels (stream_id, name, logo_url)
+                VALUES (?, ?, ?)
                 ON CONFLICT(stream_id) DO UPDATE SET
-                    name = excluded.name
-            ''', (stream_id, name))
+                    name = excluded.name,
+                    logo_url = excluded.logo_url
+            ''', (stream_id, name, logo_url or None))
             conn.commit()
         return jsonify({'success': True, 'message': 'Channel saved.'})
     except Exception as e:
@@ -3596,14 +3610,15 @@ def perform_live_channels_sync():
         for item in live_streams:
             name = (item.get('name') or '').strip()
             raw_stream_id = item.get('stream_id')
+            logo_url = (item.get('stream_icon') or '').strip()
             if not name or raw_stream_id is None:
                 continue
 
             cursor.execute('''
-                INSERT INTO live_channels (stream_id, name)
-                VALUES (?, ?)
-                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name
-            ''', (str(raw_stream_id), name))
+                INSERT INTO live_channels (stream_id, name, logo_url)
+                VALUES (?, ?, ?)
+                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name, logo_url = excluded.logo_url
+            ''', (str(raw_stream_id), name, logo_url or None))
             channel_count += 1
 
         conn.commit()

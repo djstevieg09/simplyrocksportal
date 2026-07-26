@@ -645,6 +645,18 @@
             <label class="section-title">Credit Amount (£):</label>
             <input type="number" id="admin-credit-amount" class="form-field" placeholder="e.g. 25.00">
             <button class="btn btn-success" style="width:100%;" onclick="submitManualAdminCredit(this)">Save Credit</button>
+
+            <div style="border-top:1px solid #334155; margin:14px 0; padding-top:12px;">
+                <h3 style="font-size:13px; margin:0 0 8px 0; color:#facc15;">⚠️ Credit ALL Registered Users</h3>
+                <p style="font-size:11px; color:#94a3b8; margin-bottom:8px;">
+                    Adds the same amount to every registered user's wallet at once - e.g. a promotional
+                    or apology credit. This cannot be undone with one click, so double-check the amount.
+                </p>
+                <label class="section-title">Amount Per User (£):</label>
+                <input type="number" id="admin-bulk-credit-amount" class="form-field" placeholder="e.g. 5.00">
+                <button class="btn btn-danger" style="width:100%;" onclick="submitBulkCreditAllUsers(this)">Credit All Users</button>
+            </div>
+
             <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Active Wallets</h3>
             <table>
                 <thead>
@@ -1254,6 +1266,43 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_username: targetUser, amount: injectAmount })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Connection timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        function submitBulkCreditAllUsers(btn) {
+            const amount = document.getElementById('admin-bulk-credit-amount').value.trim();
+            if (!amount || parseFloat(amount) <= 0) {
+                alert("Please enter a valid credit amount.");
+                return;
+            }
+            if (!confirm(`This will add £${amount} to EVERY registered user's wallet. This cannot be undone with one click. Continue?`)) {
+                return;
+            }
+            if (!confirm(`Are you absolutely sure? Confirm again to credit £${amount} to all users.`)) {
+                return;
+            }
+
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Crediting all users...";
+            fetch('/admin/bulk_credit_all_users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: amount })
             }).then(r => r.json())
             .then(data => {
                 if (data.success) {

@@ -228,6 +228,9 @@
                                         <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ item.id }})">Mark Upgraded</button>
                                     {% elif item.kind == 'payment' %}
                                         <button class="btn btn-success btn-small" onclick="markLineAsCompleted({{ item.id }})">Mark Done</button>
+                                    {% elif item.kind == 'expiry_reminder' %}
+                                        <button class="btn btn-blue btn-small" onclick="notifyUserTelegram('{{ item.id }}')">💬 Notify</button>
+                                        <button class="btn btn-success btn-small" onclick="dismissExpiryReminder('{{ item.id }}')">✓ Done</button>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -242,6 +245,17 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- Message a specific user -->
+        <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+            <h2 style="color:#60a5fa;">💬 Message a User</h2>
+            <p class="muted">Send a Telegram message directly to any user who has linked their Telegram.</p>
+            <label class="section-title">Username:</label>
+            <input type="text" id="direct-message-username" class="form-field" placeholder="e.g. john-smith">
+            <label class="section-title">Message:</label>
+            <textarea id="direct-message-text" class="form-field" rows="3" placeholder="Type your message..."></textarea>
+            <button class="btn btn-blue" style="width:100%;" onclick="submitDirectMessage(this)">Send Message</button>
         </div>
 
         <!-- Announcements -->
@@ -263,168 +277,6 @@
             <label class="section-title">New Announcement:</label>
             <textarea id="announcement-text" class="form-field" rows="3" placeholder="Type new announcement message..."></textarea>
             <button class="btn btn-blue" style="width:100%;" onclick="saveAnnouncement(this)">Save Announcement</button>
-        </div>
-
-        <!-- Renewal Jobs: manual line extension queue -->
-        <div class="card" style="border:1px solid rgba(234,179,8,0.5);">
-            <div class="section-header-row">
-                <h2 style="color:#facc15;">Renewal Jobs - Needs Manual Line Extension</h2>
-                <span class="pill-info">{{ pending_renewal_jobs|length if pending_renewal_jobs else 0 }} pending</span>
-            </div>
-            <p class="muted">
-                Every paid renewal - your own or a referred friend's - lands here. Once you've
-                actually extended the line on your real IPTV panel, click Accept: it adds 365 days
-                to whatever the account's expiry already was (matching how the panel itself renews
-                a line) and updates their expiry here automatically.
-            </p>
-            <div style="overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Account To Extend</th>
-                            <th>Type</th>
-                            <th>Connections</th>
-                            <th>Amount Paid</th>
-                            <th>Requested</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if pending_renewal_jobs %}
-                            {% for job in pending_renewal_jobs %}
-                            <tr id="renewal-job-row-{{ job.id }}">
-                                <td style="white-space:nowrap;"><strong>👤 {{ job.username }}</strong></td>
-                                <td style="white-space:nowrap;">
-                                    {% if job.renewal_type == 'friend' %}
-                                        <span class="badge-chip badge-chip-yellow">Friend Line</span>
-                                        <div style="font-size:10px; color:#9ca3af; margin-top:2px;">via {{ job.referrer_username }}</div>
-                                    {% else %}
-                                        <span class="badge-chip badge-chip-gray">Own Line</span>
-                                    {% endif %}
-                                </td>
-                                <td style="white-space:nowrap;">{{ job.connections }}</td>
-                                <td style="white-space:nowrap;">£{{ job.amount }}</td>
-                                <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.created_at }}</td>
-                                <td style="white-space:nowrap;">
-                                    <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ job.id }})">
-                                        ✓ Accept (+365 days)
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                        <tr>
-                            <td colspan="6" style="text-align:center; color:#64748b; padding:16px; font-size:13px;">
-                                No renewals waiting on manual extension.
-                            </td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if recent_completed_renewal_jobs %}
-            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Recently Completed</h3>
-            <div style="max-height:180px; overflow-y:auto; overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Account</th>
-                            <th>Previous Expiry</th>
-                            <th>New Expiry</th>
-                            <th>Completed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for job in recent_completed_renewal_jobs %}
-                        <tr>
-                            <td style="white-space:nowrap;"><strong>{{ job.username }}</strong></td>
-                            <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.previous_expiry_date }}</td>
-                            <td style="font-size:11px; color:#4ade80; white-space:nowrap;">{{ job.new_expiry_date }}</td>
-                            <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.completed_at }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- New Line Jobs: manual account creation queue -->
-        <div class="card" style="border:1px solid rgba(34,197,94,0.5);">
-            <div class="section-header-row">
-                <h2 style="color:#4ade80;">New Line Jobs - Needs Setup On Panel</h2>
-                <span class="pill-info">{{ pending_new_line_jobs|length if pending_new_line_jobs else 0 }} pending</span>
-            </div>
-            <p class="muted">
-                A referrer has paid for a new friend line, but the portal account has NOT been
-                created yet. Set the line up on your real IPTV panel using the username/password
-                shown below, then click Accept - only then does the portal account get created.
-            </p>
-            <div style="overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Friend</th>
-                            <th>Username To Create</th>
-                            <th>Password To Create</th>
-                            <th>Phone</th>
-                            <th>Referrer</th>
-                            <th>Requested</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if pending_new_line_jobs %}
-                            {% for job in pending_new_line_jobs %}
-                            <tr id="new-line-job-row-{{ job.id }}">
-                                <td style="white-space:nowrap;"><strong>{{ job.first_name }} {{ job.last_name }}</strong></td>
-                                <td style="white-space:nowrap; font-family:monospace;">{{ job.friend_username }}</td>
-                                <td style="white-space:nowrap; font-family:monospace;">{{ job.friend_password }}</td>
-                                <td style="white-space:nowrap;">{{ job.phone }}</td>
-                                <td style="white-space:nowrap;">{{ job.referrer_username }}</td>
-                                <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.created_at }}</td>
-                                <td style="white-space:nowrap;">
-                                    <button class="btn btn-success btn-small" onclick="acceptNewLineJob({{ job.id }})">
-                                        ✓ Accept
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                        <tr>
-                            <td colspan="7" style="text-align:center; color:#64748b; padding:16px; font-size:13px;">
-                                No new lines waiting on setup.
-                            </td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if recent_completed_new_line_jobs %}
-            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Recently Completed</h3>
-            <div style="max-height:180px; overflow-y:auto; overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Friend</th>
-                            <th>Referrer</th>
-                            <th>Completed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for job in recent_completed_new_line_jobs %}
-                        <tr>
-                            <td style="white-space:nowrap;"><strong>{{ job.friend_username }}</strong></td>
-                            <td style="white-space:nowrap;">{{ job.referrer_username }}</td>
-                            <td style="font-size:11px; color:#9ca3af; white-space:nowrap;">{{ job.completed_at }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
         </div>
 
         <!-- Expiration matrix -->
@@ -482,6 +334,7 @@
         <!-- Requests queue -->
         <div class="card">
             <h2>Media Requests Queue</h2>
+            <p class="muted">Completed requests are automatically removed 30 days after being marked added.</p>
             <table>
                 <thead>
                     <tr>
@@ -506,6 +359,9 @@
                                 {% elif req.season_number %}
                                     <div style="font-size:11px; color:#60a5fa;">Season {{ req.season_number }} (entire season)</div>
                                 {% endif %}
+                                {% if req.requested_from_supplier_at %}
+                                    <div style="font-size:10px; color:#f59e0b;">📦 Ordered {{ req.requested_from_supplier_at }}</div>
+                                {% endif %}
                             </div>
                         </td>
                         <td style="text-transform:capitalize;">{{ req.media_type }}</td>
@@ -519,6 +375,9 @@
                             <div style="display:flex; gap:6px; flex-wrap:wrap;">
                                 {% if req.status == 'Pending' %}
                                 <button class="btn btn-success btn-small" onclick="markRequestCompleted({{ req.id }})">Mark Added</button>
+                                {% if not req.requested_from_supplier_at %}
+                                <button class="btn btn-blue btn-small" onclick="markRequestOrdered({{ req.id }}, this)">📦 Ordered</button>
+                                {% endif %}
                                 {% endif %}
                                 <button class="btn btn-danger btn-small" onclick="deleteRequest({{ req.id }})">Remove</button>
                             </div>
@@ -658,28 +517,32 @@
             </div>
 
             <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Active Wallets</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Username</th>
-                        <th>Balance</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if wallets %}
-                        {% for wallet in wallets %}
+            <input type="text" id="wallet-search-input" class="form-field" placeholder="Search by username..."
+                   oninput="searchWallets(this.value)">
+            <div style="max-height:340px; overflow-y:auto;">
+                <table>
+                    <thead>
                         <tr>
-                            <td><strong>👤 {{ wallet.username }}</strong></td>
-                            <td><strong style="color:#4ade80;">£{{ "%.2f"|format(wallet.active_credit) }}</strong></td>
+                            <th>Username</th>
+                            <th>Balance</th>
                         </tr>
-                        {% endfor %}
-                    {% else %}
-                    <tr>
-                        <td colspan="2" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No active wallet balances.</td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody id="wallets-table-body">
+                        {% if wallets %}
+                            {% for wallet in wallets %}
+                            <tr>
+                                <td><strong>👤 {{ wallet.username }}</strong></td>
+                                <td><strong style="color:#4ade80;">£{{ "%.2f"|format(wallet.active_credit) }}</strong></td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="2" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No active wallet balances.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Reassign Referral Ownership -->
@@ -773,59 +636,6 @@
             </div>
         </div>
 
-        <!-- Live channels management -->
-        <div class="card" style="border:1px solid rgba(239,68,68,0.4);">
-            <h2 style="color:#f87171;">Live Channels Registry</h2>
-            <p style="font-size:12px; color:#94a3b8;">
-                Pulled directly from your IPTV panel (auto-refreshes every 3 days) - this is what
-                users search against when reporting a channel fault. You can also add/remove
-                individual channels manually below.
-            </p>
-            <button class="btn btn-blue" style="width:100%; margin-bottom:10px;" onclick="triggerLiveChannelsSync(this)">
-                🔄 Sync Channels From Panel
-            </button>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
-                <div>
-                    <label class="section-title">Channel Name</label>
-                    <input type="text" id="add-chan-name" class="form-field" placeholder="e.g. Sky Sports Main Event HD">
-                </div>
-                <div>
-                    <label class="section-title">Stream ID</label>
-                    <input type="text" id="add-chan-stream-id" class="form-field" placeholder="e.g. 54020">
-                </div>
-            </div>
-            <button class="btn btn-danger" style="width:100%;" onclick="submitNewLiveChannelEntry(this)">Register Channel</button>
-            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Registered Channels</h3>
-            <div style="max-height:200px; overflow-y:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Channel</th>
-                            <th>Stream ID</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if live_channels %}
-                            {% for ch in live_channels %}
-                            <tr id="chan-row-{{ ch.stream_id }}">
-                                <td><strong>📺 {{ ch.name }}</strong></td>
-                                <td style="font-family:monospace; color:#9ca3af;"><code>{{ ch.stream_id }}</code></td>
-                                <td>
-                                    <button class="btn btn-danger btn-small" onclick="deleteChannel('{{ ch.stream_id }}')">Remove</button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                        <tr>
-                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No live channels saved.</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
         <!-- VOD Library: what's already on the system -->
         <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
             <div class="section-header-row">
@@ -833,63 +643,32 @@
                 <span class="pill-info">{{ vod_library_count or 0 }} title(s) catalogued</span>
             </div>
             <p class="muted">
-                Pull the real movie and series list straight from your IPTV panel (the same
-                data TiviMate/IPTV Smarters download when you log in), or paste titles in
-                manually below. Either way, the portal automatically flags matching search
-                results as "Already Available" when people go to request something.
+                Pulled directly from your IPTV panel (auto-refreshes every 3 days). Search below to
+                check whether something is already on the system.
             </p>
             <button class="btn btn-blue" style="width:100%; margin-bottom:10px;" onclick="triggerVodLibrarySync(this)">
                 🔄 Sync From IPTV Panel
             </button>
 
             <label class="section-title">Search Catalog:</label>
-            <input type="text" id="vod-library-search" class="form-field" placeholder="Type to search what's already catalogued..."
+            <input type="text" id="vod-library-search" class="form-field" placeholder="Type a title to check if it's on the system..."
                    oninput="searchVodLibrary(this.value)">
 
-            <div style="border-top:1px solid #334155; margin:10px 0; padding-top:10px;">
-                <label class="section-title">Manual Bulk Import - Paste Titles (one per line):</label>
-                <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
-                    <select id="vod-library-import-type" class="form-field" style="margin-bottom:0; max-width:160px;">
-                        <option value="movie">Movies</option>
-                        <option value="tv">TV Shows</option>
-                    </select>
-                    <span class="muted">Optional: end a line with a year, e.g. "Gladiator (2000)"</span>
-                </div>
-                <textarea id="vod-library-import-text" class="form-field" rows="5"
-                          placeholder="Gladiator (2000)&#10;The Dark Knight (2008)&#10;Inception"></textarea>
-                <button class="btn btn-success" style="width:100%;" onclick="submitVodLibraryImport(this)">Import List</button>
-            </div>
-
-            <h3 style="font-size:13px; margin-top:14px; border-top:1px solid #334155; padding-top:8px;">Catalogued Titles</h3>
-            <div id="vod-library-results" style="max-height:260px; overflow-y:auto;">
+            <div id="vod-library-results" style="max-height:260px; overflow-y:auto; margin-top:8px;">
                 <table>
                     <thead>
                         <tr>
                             <th>Title</th>
                             <th>Type</th>
                             <th>Year</th>
-                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="vod-library-table-body">
-                        {% if vod_library %}
-                            {% for entry in vod_library %}
-                            <tr id="vod-lib-row-{{ entry.id }}">
-                                <td><strong>{{ entry.title }}</strong></td>
-                                <td style="text-transform:uppercase; font-size:11px;">{{ entry.media_type }}</td>
-                                <td>{{ entry.year or '-' }}</td>
-                                <td>
-                                    <button class="btn btn-danger btn-small" onclick="deleteVodLibraryEntry({{ entry.id }})">Remove</button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
                         <tr>
-                            <td colspan="4" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
-                                No titles catalogued yet - paste a list above to get started.
+                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
+                                Start typing above to search.
                             </td>
                         </tr>
-                        {% endif %}
                     </tbody>
                 </table>
             </div>
@@ -1127,6 +906,102 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => alert("Server timeout while sending message."));
+        }
+
+        function dismissExpiryReminder(username) {
+            if (!confirm(`Dismiss the renewal reminder for ${username}? It'll reappear automatically if their expiry hasn't actually changed.`)) return;
+            fetch('/admin/dismiss_expiry_reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => alert("Server timeout while dismissing reminder."));
+        }
+
+        function submitDirectMessage(btn) {
+            const username = document.getElementById('direct-message-username').value.trim();
+            const message = document.getElementById('direct-message-text').value.trim();
+            if (!username || !message) {
+                alert("Username and message are both required.");
+                return;
+            }
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Sending...";
+            fetch('/admin/notify_user_telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username, message: message })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('direct-message-text').value = '';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+                btn.disabled = false;
+                btn.innerText = orig;
+            }).catch(() => {
+                alert("Server timeout while sending message.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        function markRequestOrdered(reqId, btn) {
+            if (!confirm("Mark this as ordered from your supplier? This starts the 14-day follow-up reminder.")) return;
+            const orig = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "Saving...";
+            fetch('/admin/mark_request_ordered/' + reqId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            }).catch(() => {
+                alert("Server timeout.");
+                btn.disabled = false;
+                btn.innerText = orig;
+            });
+        }
+
+        let walletSearchTimeout = null;
+        function searchWallets(query) {
+            if (walletSearchTimeout) clearTimeout(walletSearchTimeout);
+            walletSearchTimeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/admin/search_wallets?q=${encodeURIComponent(query.trim())}`);
+                    const data = await resp.json();
+                    const tbody = document.getElementById('wallets-table-body');
+                    if (!tbody) return;
+                    if (!data.length) {
+                        tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No matching wallets found.</td></tr>`;
+                        return;
+                    }
+                    tbody.innerHTML = data.map(w => `
+                        <tr>
+                            <td><strong>👤 ${w.username}</strong></td>
+                            <td><strong style="color:#4ade80;">£${w.active_credit.toFixed(2)}</strong></td>
+                        </tr>
+                    `).join('');
+                } catch (e) {
+                    console.log("Wallet search error:", e);
+                }
+            }, 250);
         }
 
         function renderExpirationMatrixRows(clients) {
@@ -1463,83 +1338,45 @@
             if (!entries || !entries.length) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="4" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
+                        <td colspan="3" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
                             No matching titles found.
                         </td>
                     </tr>`;
                 return;
             }
             tbody.innerHTML = entries.map(entry => `
-                <tr id="vod-lib-row-${entry.id}">
+                <tr>
                     <td><strong>${entry.title}</strong></td>
                     <td style="text-transform:uppercase; font-size:11px;">${entry.media_type}</td>
                     <td>${entry.year || '-'}</td>
-                    <td>
-                        <button class="btn btn-danger btn-small" onclick="deleteVodLibraryEntry(${entry.id})">Remove</button>
-                    </td>
                 </tr>
             `).join('');
         }
 
         function searchVodLibrary(query) {
+            const tbody = document.getElementById('vod-library-table-body');
+            const trimmed = query.trim();
+            if (!trimmed) {
+                if (tbody) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="3" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">
+                                Start typing above to search.
+                            </td>
+                        </tr>`;
+                }
+                return;
+            }
             if (vodLibrarySearchTimeout) clearTimeout(vodLibrarySearchTimeout);
             vodLibrarySearchTimeout = setTimeout(async () => {
                 try {
-                    const resp = await fetch(`/admin/search_vod_library?q=${encodeURIComponent(query.trim())}`);
+                    const resp = await fetch(`/admin/search_vod_library?q=${encodeURIComponent(trimmed)}`);
                     const data = await resp.json();
                     renderVodLibraryRows(data);
                 } catch (e) {
                     console.log("VOD library search error:", e);
                 }
             }, 250);
-        }
-
-        function submitVodLibraryImport(btn) {
-            const mediaType = document.getElementById('vod-library-import-type').value;
-            const titlesText = document.getElementById('vod-library-import-text').value.trim();
-            if (!titlesText) {
-                alert("Paste at least one title to import.");
-                return;
-            }
-            const orig = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = "Importing...";
-            fetch('/admin/import_vod_library', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ media_type: mediaType, titles_text: titlesText })
-            }).then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    document.getElementById('vod-library-import-text').value = '';
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + data.message);
-                    btn.disabled = false;
-                    btn.innerText = orig;
-                }
-            }).catch(() => {
-                alert("Connection timeout.");
-                btn.disabled = false;
-                btn.innerText = orig;
-            });
-        }
-
-        function deleteVodLibraryEntry(id) {
-            if (!confirm("Remove this title from the catalog?")) return;
-            fetch('/admin/delete_vod_library_entry/' + id, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    const row = document.getElementById('vod-lib-row-' + id);
-                    if (row) row.remove();
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            }).catch(() => window.location.reload());
         }
 
         function triggerVodLibrarySync(btn) {
@@ -1569,81 +1406,6 @@
                 btn.disabled = false;
                 btn.innerText = orig;
             });
-        }
-
-        function triggerLiveChannelsSync(btn) {
-            if (!confirm("Pull the current live channel list from your IPTV panel? "
-                       + "This will replace the existing channel list with what's really on your panel.")) return;
-
-            const orig = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = "Syncing...";
-
-            fetch('/admin/sync_live_channels_from_panel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    window.location.reload();
-                } else {
-                    alert('Sync failed: ' + data.message);
-                    btn.disabled = false;
-                    btn.innerText = orig;
-                }
-            }).catch(() => {
-                alert("Connection timeout or error while syncing channels.");
-                btn.disabled = false;
-                btn.innerText = orig;
-            });
-        }
-
-        // --- Channels ---
-        function submitNewLiveChannelEntry(btn) {
-            const chanNameVal = document.getElementById('add-chan-name').value.trim();
-            const streamIdVal = document.getElementById('add-chan-stream-id').value.trim();
-            if (!chanNameVal || !streamIdVal) {
-                alert("Channel name and Stream ID are required.");
-                return;
-            }
-            const orig = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = "Saving...";
-            fetch('/admin/add_live_channel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: chanNameVal, stream_id: streamIdVal })
-            }).then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + data.message);
-                    btn.disabled = false;
-                    btn.innerText = orig;
-                }
-            }).catch(() => {
-                alert("Connection timeout.");
-                btn.disabled = false;
-                btn.innerText = orig;
-            });
-        }
-
-        function deleteChannel(streamId) {
-            if (!confirm("Remove channel " + streamId + " from registry?")) return;
-            fetch('/admin/delete_live_channel/' + encodeURIComponent(streamId), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            }).then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('chan-row-' + streamId).remove();
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            }).catch(() => window.location.reload());
         }
 
         // --- Spotify password reveal/hide ---

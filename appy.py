@@ -1703,7 +1703,6 @@ def login():
 
 # --- DASHBOARD & MEDIA SEARCH ---
 
-@app.route('/dashboard')
 def get_user_reported_issues(username):
     """
     Combine a user's channel fault reports, VOD fault reports, and app
@@ -1752,6 +1751,7 @@ def get_user_reported_issues(username):
     return issues
 
 
+@app.route('/dashboard')
 def dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))

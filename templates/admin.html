@@ -224,6 +224,8 @@
                                         <button class="btn btn-success btn-small" onclick="clearChannelReport({{ item.id }})">Fixed ✓</button>
                                     {% elif item.kind == 'vod_report' %}
                                         <button class="btn btn-success btn-small" onclick="clearVodReport({{ item.id }})">Fixed ✓</button>
+                                    {% elif item.kind == 'app_report' %}
+                                        <button class="btn btn-success btn-small" onclick="clearAppReport({{ item.id }})">Resolved ✓</button>
                                     {% elif item.kind == 'spotify_order' %}
                                         <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ item.id }})">Mark Upgraded</button>
                                     {% elif item.kind == 'payment' %}
@@ -486,6 +488,46 @@
                     <tr>
                         <td colspan="6" style="text-align:center; color:#64748b; padding:18px; font-size:13px;">
                             No VOD fault tickets.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- App issue reports -->
+        <div class="card" style="border:1px solid rgba(168,85,247,0.4);">
+            <h2 style="color:#c084fc;">📱 App Issue Reports</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>App</th>
+                        <th>User</th>
+                        <th>Issue</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if app_reports %}
+                        {% for report in app_reports %}
+                        <tr id="app-report-row-{{ report.id }}">
+                            <td>
+                                <strong>{{ report.app_name }}</strong>
+                                {% if report.app_name in ['Purple Player', 'Sky Q'] %}
+                                    <span class="badge-chip badge-chip-yellow" style="border-color:rgba(239,68,68,0.6); color:#fecaca;">Legacy</span>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ report.username }}</strong></td>
+                            <td><span class="badge-chip badge-chip-yellow">{{ report.issue_type }}</span></td>
+                            <td>
+                                <button class="btn btn-success btn-small" onclick="clearAppReport({{ report.id }})">Resolved ✓</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="4" style="text-align:center; color:#64748b; padding:18px; font-size:13px;">
+                            No app issue reports.
                         </td>
                     </tr>
                     {% endif %}
@@ -1120,6 +1162,23 @@
             .then(data => {
                 if (data.success) {
                     document.getElementById('vod-report-row-' + id).remove();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            }).catch(() => window.location.reload());
+        }
+
+        function clearAppReport(id) {
+            if (!confirm("Mark this app issue as resolved?")) return;
+            fetch('/delete_app_report_by_admin/' + id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const row = document.getElementById('app-report-row-' + id);
+                    if (row) row.remove();
+                    else window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
                 }

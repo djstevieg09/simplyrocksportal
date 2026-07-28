@@ -263,6 +263,28 @@
 </head>
 <body>
 
+    {% if not telegram_linked %}
+    <div id="telegram-link-modal-overlay" style="position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px;">
+        <div style="background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:28px 24px; max-width:420px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+            <div style="font-size:42px; margin-bottom:6px;">🔔</div>
+            <h2 style="color:#60a5fa; margin:0 0 10px 0; font-size:19px;">Link Your Telegram</h2>
+            <p style="color:#cbd5e1; font-size:13px; line-height:1.6; margin-bottom:18px;">
+                <strong>This is important.</strong> Linking your Telegram means we can message you the moment
+                your requests are added, your line is renewed, or there's an update on your account -
+                so you're never left waiting or wondering what's happening. It only takes a few seconds.
+            </p>
+            <div id="telegram-modal-link-result" style="display:none; margin-bottom:12px;"></div>
+            <button id="telegram-modal-link-btn" onclick="getTelegramLinkFromModal(this)" class="btn-primary" style="width:100%; margin-bottom:10px; box-sizing:border-box;">
+                🔗 Link My Telegram Now
+            </button>
+            <button type="button" onclick="dismissTelegramModal()"
+                    style="background:none; border:none; color:#94a3b8; font-size:12px; text-decoration:underline; cursor:pointer; padding:4px;">
+                Remind me later
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
     {% if show_warning and days_left is not none %}
     <div style="background: linear-gradient(90deg, #b45309, #d97706); color: #ffffff; padding: 10px 14px; text-align: center; font-size: 13px; font-weight: bold;">
         Your IPTV subscription expires in <span style="background-color: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">{{ days_left }} days</span>.
@@ -449,6 +471,38 @@
                                    class="form-field" style="border-color:#eab308;">
                         </div>
                         <button onclick="submitVodFaultTicket(this)" class="btn-secondary">Submit VOD Report Ticket</button>
+                    </div>
+                </div>
+
+                <!-- App issue report -->
+                <div class="card" style="border:1px solid rgba(168,85,247,0.4);">
+                    <h2 style="color:#c084fc;">📱 Report an App Issue</h2>
+                    <p>Having trouble with your IPTV app itself (not a specific movie or channel)? Let us know.</p>
+                    <label class="section-title">Which App Are You Using?</label>
+                    <select id="app-report-app-select" class="form-field" onchange="handleAppSelectChange(this)">
+                        <option value="">Select an app...</option>
+                        <option value="TiviMate">TiviMate</option>
+                        <option value="Sky Glass">Sky Glass</option>
+                        <option value="Purple Player">Purple Player (Legacy)</option>
+                        <option value="Sky Q">Sky Q (Legacy)</option>
+                    </select>
+
+                    <div id="app-report-options" style="display:none; border-top:1px solid #334155; padding-top:10px; margin-top:10px;">
+                        <label class="section-title">Issue Type:</label>
+                        <select id="app-issue-type" onchange="toggleAppOtherTextInput(this.value)" class="form-field">
+                            <option value="Playlist Not Loading">📋 Playlist Not Loading</option>
+                            <option value="Nothing Coming Through / No Channels">📺 Nothing Coming Through / No Channels</option>
+                            <option value="App Crashing / Won't Open">💥 App Crashing / Won't Open</option>
+                            <option value="Buffering / Freezing">⏳ Buffering / Freezing</option>
+                            <option value="Login / Authentication Error">🔒 Login / Authentication Error</option>
+                            <option value="Other">📝 Other</option>
+                        </select>
+                        <div id="app-custom-notes-wrapper" style="display:none; margin-bottom:10px;">
+                            <label class="section-title" style="color:#facc15;">Custom Details:</label>
+                            <input type="text" id="app-custom-issue-text" maxlength="100"
+                                   placeholder="Describe the issue..." class="form-field" style="border-color:#eab308;">
+                        </div>
+                        <button onclick="submitAppReport(this)" class="btn-secondary">Submit App Report</button>
                     </div>
                 </div>
             </div>
@@ -1291,19 +1345,55 @@
                     const data = await resp.json();
                     if (data.linked) {
                         clearInterval(telegramLinkPollTimer);
-                        const resultDiv = document.getElementById('telegram-link-result');
-                        if (resultDiv) {
-                            resultDiv.innerHTML = `
-                                <p style="color:#4ade80; margin:0;">
-                                    ✅ Your Telegram is linked. You'll get updates here about your requests and renewals.
-                                </p>
-                            `;
-                        }
+                        // Reload so every part of the page (the modal, the
+                        // card, everything) correctly reflects the linked
+                        // state in one go, instead of patching multiple
+                        // pieces of UI by hand.
+                        window.location.reload();
                     }
                 } catch (e) {
                     // Ignore transient errors - it'll just try again on the next tick.
                 }
             }, 2000);
+        }
+
+        // --- Telegram linking modal (shown on every load until linked) ---
+        function dismissTelegramModal() {
+            const overlay = document.getElementById('telegram-link-modal-overlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function getTelegramLinkFromModal(btn) {
+            btn.disabled = true;
+            const orig = btn.innerText;
+            btn.innerText = 'Generating link...';
+            try {
+                const resp = await fetch('/get_telegram_link', { method: 'POST' });
+                const data = await resp.json();
+                const resultDiv = document.getElementById('telegram-modal-link-result');
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <a href="${data.link}" target="_blank" rel="noopener noreferrer" class="btn-secondary"
+                           style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
+                            Open Telegram to Finish Linking
+                        </a>
+                        <p style="font-size:11px; color:#94a3b8; margin-top:8px;">
+                            Tap <b>Start</b> when Telegram opens. This closes automatically once you're linked.
+                        </p>
+                    `;
+                    resultDiv.style.display = 'block';
+                    btn.style.display = 'none';
+                    startTelegramLinkPolling();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerText = orig;
+                }
+            } catch (e) {
+                alert('Server error generating Telegram link.');
+                btn.disabled = false;
+                btn.innerText = orig;
+            }
         }
 
         // --- TMDB media search for requests ---
@@ -1777,6 +1867,87 @@
                 wrap.style.display = 'block';
             } else {
                 wrap.style.display = 'none';
+            }
+        }
+
+        // --- App issue report ---
+        const LEGACY_APPS = ['Purple Player', 'Sky Q'];
+
+        function handleAppSelectChange(selectEl) {
+            const value = selectEl.value;
+            const optionsDiv = document.getElementById('app-report-options');
+
+            if (!value) {
+                optionsDiv.style.display = 'none';
+                return;
+            }
+
+            if (LEGACY_APPS.includes(value)) {
+                const wantsInstructions = confirm(
+                    "This app is no longer supported, would you like the install instructions for the new apps?"
+                );
+                if (wantsInstructions) {
+                    requestNewAppInstructions();
+                }
+            }
+
+            optionsDiv.style.display = 'block';
+        }
+
+        async function requestNewAppInstructions() {
+            try {
+                const resp = await fetch('/request_new_app_instructions', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                } else {
+                    alert('❌ ' + data.message);
+                }
+            } catch (e) {
+                alert('Server error while sending instructions.');
+            }
+        }
+
+        function toggleAppOtherTextInput(value) {
+            const wrap = document.getElementById('app-custom-notes-wrapper');
+            wrap.style.display = (value === 'Other') ? 'block' : 'none';
+        }
+
+        async function submitAppReport(btn) {
+            const appName = document.getElementById('app-report-app-select').value;
+            const issueType = document.getElementById('app-issue-type').value;
+            const customNotes = document.getElementById('app-custom-issue-text').value.trim();
+            if (!appName || !issueType) {
+                alert('Please select an app and issue type.');
+                return;
+            }
+            const origText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+            try {
+                const resp = await fetch('/submit_app_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        app_name: appName,
+                        issue_type: issueType,
+                        issue_notes: customNotes
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('App issue reported. Thank you.');
+                    document.getElementById('app-report-app-select').value = '';
+                    document.getElementById('app-report-options').style.display = 'none';
+                    document.getElementById('app-custom-issue-text').value = '';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) {
+                alert('Server error while submitting app report.');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = origText;
             }
         }
 

@@ -257,6 +257,130 @@ Select Move to Front
 
 
 🎉 Avatar IPTV is now fully installed, configured, and ready to stream on your Firestick."""
+
+# Same guide as above, but for an EXISTING user switching off a legacy app
+# (Purple Player, Sky Q) - we don't have their real panel password stored
+# anywhere retrievable, so this points them to use the same login details
+# they already know, rather than injecting specific values.
+LEGACY_APP_SWITCH_INSTRUCTIONS_TEMPLATE = """🔵 AVATAR IPTV
+Firestick App Installation – Quick Guide
+Downloader Code: 1151848
+🎮 Firestick Remote Button Guide
+Select → Center circle button
+Back → ⬅ button
+Menu → ☰ (three lines)
+Home → 🏠 button
+
+
+Step 1: Enable Developer Options
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click About
+Highlight Fire TV Stick
+Press Select 7 times
+✅ Message appears: "You are now a developer"
+
+
+Step 2: Install Downloader App
+Press Home 🏠
+Select Find → Search
+Type Downloader
+Select the Downloader app (orange icon)
+Press Select on Download / Get
+Open Downloader once installed
+
+
+Step 3: Allow Apps from Unknown Sources (Downloader)
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click Developer Options
+Select Install Unknown Apps
+Choose Downloader
+Turn it ON
+
+
+Step 4: Allow Downloader Permissions
+Open Downloader
+Select Allow
+Click OK
+
+
+Step 5: Install Avatar App Store
+In Downloader, press Select on the URL box
+Enter the code:
+1151848
+Click Go
+Wait for the download to complete
+Select Install
+Click Done
+When prompted, select Delete
+Select Delete again
+
+
+Step 6: Allow Unknown Sources for Avatar App Store (blue background on icon)
+Press Home 🏠
+Go to Settings
+Select My Fire TV
+Click Developer Options
+Select Install Unknown Apps
+Choose App Store (blue background)
+Turn it ON
+
+
+Step 7: Open the App Store
+Press Home 🏠
+Go to Settings
+Select Applications
+Click Manage Installed Applications
+Select App Store
+Click Open
+
+
+Step 8: Log In to Avatar IPTV App Store
+Select Login
+Enter your EXISTING username and password (the same ones you already use)
+Press Select to continue
+✅ Login successful.
+
+
+Step 9: Download & Install TiviMate (Top Option)
+Inside the Avatar IPTV App Store, locate TiviMate
+Select the TOP TiviMate option
+Press Select on Download / Install
+Wait for installation to complete
+
+
+Step 10: Open Avatar IPTV (TiviMate Branded App)
+Press Home 🏠
+Go to Settings
+Select Applications
+Click Manage Installed Applications
+Find Avatar IPTV (TiviMate Branded App)
+Select Open
+
+
+Step 11: Add Playlist & Connect to Server
+When Avatar IPTV opens, select Add Playlist
+Choose Main Server
+Enter your EXISTING username and password (the same ones you already use)
+Click Next
+Wait for channels and VOD to load
+✅ Playlist successfully added.
+
+
+⭐ Optional: Move Avatar IPTV to Home Screen
+Press Home 🏠
+Select Apps
+Find Avatar IPTV
+Press Menu ☰
+Select Move to Front
+✅ Setup Complete
+
+
+🎉 Avatar IPTV is now fully installed and ready to stream on your Firestick. Your login details are exactly the same as before - nothing else has changed on your account."""
+
 CONNECTION_TIER_PRICES = {"1": 75.00, "2": 100.00, "3": 125.00, "4": 150.00}  # GBP
 
 
@@ -333,6 +457,19 @@ def init_db():
                 title TEXT NOT NULL,
                 media_type TEXT NOT NULL,
                 issue_type TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # app_reports table - issues with the player app itself (TiviMate,
+        # Sky Glass, etc.) rather than a specific piece of content.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS app_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                issue_type TEXT NOT NULL,
+                issue_notes TEXT DEFAULT '',
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -2764,6 +2901,81 @@ def submit_vod_report():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+# --- PLAYER APP ISSUES (TiviMate, Sky Glass, etc.) ---
+
+LEGACY_APPS = {"Purple Player", "Sky Q"}
+
+
+@app.route('/submit_app_report', methods=['POST'])
+def submit_app_report():
+    """User: report an issue with the player app itself (not a specific
+    piece of content) - playlist not loading, nothing showing, crashes, etc."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    username = session.get('username')
+    app_name = (data.get('app_name') or '').strip()
+    issue_type = (data.get('issue_type') or '').strip()
+    issue_notes = (data.get('issue_notes') or '').strip()
+
+    if not app_name or not issue_type:
+        return jsonify({'success': False, 'message': 'Please select an app and issue type.'}), 400
+
+    final_issue_type = issue_type
+    if issue_type.lower() == 'other' and issue_notes:
+        final_issue_type = f"Other: {issue_notes[:100]}"
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO app_reports (username, app_name, issue_type, issue_notes)
+                VALUES (?, ?, ?, ?)
+            ''', (username, app_name, final_issue_type, issue_notes[:255]))
+            conn.commit()
+
+        legacy_flag = " ⚠️ LEGACY APP" if app_name in LEGACY_APPS else ""
+        send_telegram_alert_direct(
+            f"<b>📱 APP ISSUE REPORTED</b>{legacy_flag}\n"
+            f"<b>User:</b> <code>{username}</code>\n"
+            f"<b>App:</b> {app_name}\n"
+            f"<b>Issue:</b> {final_issue_type}"
+        )
+
+        log_activity(username, f"App issue reported: {app_name} - {final_issue_type}")
+
+        return jsonify({'success': True, 'message': 'App issue reported. Thank you.'})
+    except Exception as e:
+        print("SUBMIT_APP_REPORT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/request_new_app_instructions', methods=['POST'])
+def request_new_app_instructions():
+    """
+    User: asked "yes" to getting install instructions for the supported
+    app after selecting a legacy one. Sends the setup guide to their
+    linked Telegram - uses their own existing login details rather than
+    generating new ones, since this is an existing account.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    username = session.get('username')
+
+    ok, result_message = send_telegram_message_to_user(username, LEGACY_APP_SWITCH_INSTRUCTIONS_TEMPLATE)
+
+    if ok:
+        log_activity(username, "Requested new app setup instructions")
+        return jsonify({'success': True, 'message': 'Setup instructions sent to your Telegram!'})
+    else:
+        return jsonify({
+            'success': False,
+            'message': "Couldn't send - you'll need to link your Telegram first (see the Telegram Notifications card above)."
+        }), 400
+
+
 # --- ADMIN PANEL & HELPERS ---
 
 def build_admin_todo_list():
@@ -2852,6 +3064,15 @@ def build_admin_todo_list():
             todo_items.append({
                 'kind': 'vod_report', 'id': row['id'],
                 'label': f"VOD Fault - {row['title']}{scope}",
+                'detail': f"{row['issue_type']} - reported by {row['username']}",
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM app_reports")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'app_report', 'id': row['id'],
+                'label': f"App Issue - {row['app_name']}",
                 'detail': f"{row['issue_type']} - reported by {row['username']}",
                 'timestamp': row['timestamp']
             })
@@ -2978,6 +3199,9 @@ def admin_panel():
         cursor.execute("SELECT id, username, title, media_type, issue_type, season_number, episode_number FROM vod_reports ORDER BY timestamp DESC")
         all_vod_reports = cursor.fetchall()
 
+        cursor.execute("SELECT * FROM app_reports ORDER BY timestamp DESC")
+        all_app_reports = cursor.fetchall()
+
         # Only the top 10 by balance load by default - the search box
         # covers finding anyone else.
         cursor.execute("""
@@ -3011,6 +3235,7 @@ def admin_panel():
         payment_logs=all_payments,
         channel_reports=all_reports,
         vod_reports=all_vod_reports,
+        app_reports=all_app_reports,
         wallets=all_wallets,
         portal_users=all_portal_users,
         vod_library_count=vod_library_count,
@@ -3215,6 +3440,35 @@ def delete_vod_report_by_admin(report_id):
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_VOD_REPORT ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/delete_app_report_by_admin/<int:report_id>', methods=['POST'])
+def delete_app_report_by_admin(report_id):
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT username, app_name FROM app_reports WHERE id = ?', (report_id,))
+            report_row = cursor.fetchone()
+
+            cursor.execute('DELETE FROM app_reports WHERE id = ?', (report_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Report not found.'}), 404
+            conn.commit()
+
+        if report_row:
+            send_telegram_message_to_user(
+                report_row['username'],
+                f"✅ Your app issue report ({report_row['app_name']}) has been resolved."
+            )
+
+        return jsonify({'success': True})
+    except Exception as e:
+        print("DELETE_APP_REPORT ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

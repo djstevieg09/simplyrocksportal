@@ -329,86 +329,6 @@
         <div class="grid">
             <!-- LEFT COLUMN -->
             <div>
-                <!-- Media search & requests -->
-                <div class="card">
-                    <h2>Request a Movie or TV Show</h2>
-                    <div class="search-box">
-                        <input type="text" id="search-input" placeholder="Type title here (e.g. Friends)...">
-                        <button onclick="searchMedia()">Search</button>
-                    </div>
-                    <div id="results" class="results-grid"></div>
-                </div>
-
-                <!-- Previous requests -->
-                <div class="card">
-                    <h2>Your Previous Requests</h2>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 60%;">Title</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for req in requests %}
-                            <tr id="row-{{ req.id }}">
-                                <td style="display:flex; align-items:center; gap:8px;">
-                                    <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;"
-                                         onerror="this.onerror=null; this.src='https://placehold.co';">
-                                    <div>
-                                        <span style="font-size: 13px;">{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
-                                        {% if req.season_number and req.episode_number %}
-                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }}, Episode {{ req.episode_number }}</div>
-                                        {% elif req.season_number %}
-                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }} (entire season)</div>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                                <td style="text-transform: capitalize;">{{ req.media_type }}</td>
-                                <td><span class="status-badge">{{ req.status }}</span></td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No requests submitted yet.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Sky Glass app download -->
-                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
-                    <h2 style="color:#60a5fa;">Download the Sky Glass App</h2>
-                    <p>Get the app directly on your phone to watch on the go.</p>
-                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
-                        📲 Download Sky Glass App
-                    </a>
-                </div>
-
-                <!-- Telegram linking -->
-                <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
-                    <h2 style="color:#60a5fa;">Telegram Notifications</h2>
-                    {% if telegram_linked %}
-                        <p style="color:#4ade80;">✅ Your Telegram is linked. You'll get updates here about your requests and renewals.</p>
-                    {% else %}
-                        <p>Link your Telegram so we can message you directly about your requests, renewals, and account.</p>
-                        <button onclick="getTelegramLink(this)" class="btn-primary" style="width:100%;">🔗 Link My Telegram</button>
-                        <div id="telegram-link-result" style="margin-top:10px; display:none;"></div>
-                    {% endif %}
-                </div>
-
-                <!-- Friends referred / managed -->
-                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
-                    <h2>Friends You Referred</h2>
-                    <p>
-                        Renew your friends’ lines and earn
-                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
-                        wallet credit per renewal.
-                    </p>
-                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
-                </div>
-
                 <!-- Channel fault report -->
                 <div class="card">
                     <h2>Report a Channel Issue</h2>
@@ -505,6 +425,87 @@
                         <button onclick="submitAppReport(this)" class="btn-secondary">Submit App Report</button>
                     </div>
                 </div>
+
+                <!-- Media search & requests -->
+                <div class="card">
+                    <h2>Request a Movie or TV Show</h2>
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="Type title here (e.g. Friends)...">
+                        <button onclick="searchMedia()">Search</button>
+                    </div>
+                    <div id="results" class="results-grid"></div>
+                </div>
+
+                <!-- Previous requests -->
+                <div class="card">
+                    <h2>Your Previous Requests</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 60%;">Title</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for req in requests %}
+                            <tr id="row-{{ req.id }}">
+                                <td style="display:flex; align-items:center; gap:8px;">
+                                    <img src="{{ req.poster }}" style="width: 32px; height: 48px; object-fit: cover; border-radius: 4px;"
+                                         onerror="this.onerror=null; this.src='https://placehold.co';">
+                                    <div>
+                                        <span style="font-size: 13px;">{{ req.title }} {% if req.year %}({{ req.year }}){% endif %}</span>
+                                        {% if req.season_number and req.episode_number %}
+                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }}, Episode {{ req.episode_number }}</div>
+                                        {% elif req.season_number %}
+                                            <div style="font-size:11px; color:#93c5fd;">Season {{ req.season_number }} (entire season)</div>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td style="text-transform: capitalize;">{{ req.media_type }}</td>
+                                <td><span class="status-badge">{{ req.status }}</span></td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No requests submitted yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Sky Glass app download -->
+                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
+                    <h2 style="color:#60a5fa;">Download the Sky Glass App</h2>
+                    <p>Get the app directly on your phone to watch on the go.</p>
+                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
+                        📲 Download Sky Glass App
+                    </a>
+                </div>
+
+                <!-- Telegram linking -->
+                <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
+                    <h2 style="color:#60a5fa;">Telegram Notifications</h2>
+                    {% if telegram_linked %}
+                        <p style="color:#4ade80;">✅ Your Telegram is linked. You'll get updates here about your requests and renewals.</p>
+                    {% else %}
+                        <p>Link your Telegram so we can message you directly about your requests, renewals, and account.</p>
+                        <button onclick="getTelegramLink(this)" class="btn-primary" style="width:100%;">🔗 Link My Telegram</button>
+                        <div id="telegram-link-result" style="margin-top:10px; display:none;"></div>
+                    {% endif %}
+                </div>
+
+                <!-- Friends referred / managed -->
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Friends You Referred</h2>
+                    <p>
+                        Renew your friends’ lines and earn
+                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
+                        wallet credit per renewal.
+                    </p>
+                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
+                </div>
+
             </div>
 
             <!-- RIGHT COLUMN -->
@@ -1883,28 +1884,29 @@
             }
 
             if (LEGACY_APPS.includes(value)) {
-                const wantsInstructions = confirm(
-                    "This app is no longer supported, would you like the install instructions for the new apps?"
-                );
-                if (wantsInstructions) {
-                    requestNewAppInstructions();
-                }
+                // Legacy app - don't let them file a report against it,
+                // just send the new-app instructions straight to their
+                // Telegram and tell them to check there.
+                selectEl.value = '';
+                optionsDiv.style.display = 'none';
+                requestNewAppInstructions(value);
+                return;
             }
 
             optionsDiv.style.display = 'block';
         }
 
-        async function requestNewAppInstructions() {
+        async function requestNewAppInstructions(appName) {
             try {
                 const resp = await fetch('/request_new_app_instructions', { method: 'POST' });
                 const data = await resp.json();
                 if (data.success) {
-                    alert('✅ ' + data.message);
+                    alert(`⚠️ ${appName} is no longer supported. We've sent the setup instructions for the new app to your Telegram - please check there!`);
                 } else {
-                    alert('❌ ' + data.message);
+                    alert(`⚠️ ${appName} is no longer supported. ${data.message}`);
                 }
             } catch (e) {
-                alert('Server error while sending instructions.');
+                alert(`⚠️ ${appName} is no longer supported, but there was a server error sending your instructions. Please try again.`);
             }
         }
 

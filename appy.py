@@ -520,6 +520,31 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Lets the admin dismiss an "expiry reminder" to-do item once they've
+        # handled it (manually or via payment) without it reappearing until
+        # the account's expiry actually changes again.
+        try:
+            cursor.execute("ALTER TABLE portal_users ADD COLUMN expiry_reminder_dismissed_for INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
+        # completed_at powers the 30-day auto-cleanup of old completed
+        # requests. requested_from_supplier_at is a manual "I've placed the
+        # order" timestamp the admin sets, which starts the 14-day
+        # follow-up reminder clock (rather than starting it from the
+        # moment the user originally asked).
+        try:
+            cursor.execute("ALTER TABLE requests ADD COLUMN completed_at DATETIME")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+        try:
+            cursor.execute("ALTER TABLE requests ADD COLUMN requested_from_supplier_at DATETIME")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Channel logos, pulled from the panel's stream_icon field when
         # syncing, so channel reports can show a logo the same way movie/TV
         # requests show a poster.
@@ -1452,6 +1477,18 @@ def login():
             session['is_admin'] = True
             session['expiry_date'] = "Reseller Control"
             log_activity(username, "Admin login")
+
+            # Keep the live channel list fresh automatically every time the
+            # admin logs in, instead of requiring a manual sync button.
+            # Runs in the background so it never delays the login itself.
+            def _background_channel_sync():
+                try:
+                    stats = perform_live_channels_sync()
+                    print(f"ADMIN LOGIN SYNC: {stats['channel_count']} channels synced.", flush=True)
+                except Exception as e:
+                    print(f"ADMIN LOGIN SYNC ERROR: {type(e).__name__}: {e}", flush=True)
+            Thread(target=_background_channel_sync, daemon=True).start()
+
             return redirect('/admin')
 
     success, user_info = verify_xtream_credentials(DEFAULT_DNS, username, password)
@@ -2772,10 +2809,27 @@ def build_admin_todo_list():
                 scope = f" S{row['season_number']}E{row['episode_number']}"
             elif row['season_number']:
                 scope = f" S{row['season_number']}"
+
+            label_prefix = "Media Request"
+            detail = f"{row['media_type'].upper()} - requested by {row['username']}"
+
+            # If this was marked as ordered from the supplier more than 14
+            # days ago and it's STILL pending, flag it clearly as overdue
+            # for a follow-up rather than just a normal new request.
+            if row['requested_from_supplier_at']:
+                try:
+                    ordered_dt = datetime.strptime(row['requested_from_supplier_at'][:19], '%Y-%m-%d %H:%M:%S')
+                    days_since_ordered = (datetime.now() - ordered_dt).days
+                    if days_since_ordered >= 14:
+                        label_prefix = f"⏰ FOLLOW UP ({days_since_ordered}d)"
+                        detail += f" - ordered from supplier {row['requested_from_supplier_at']}"
+                except (ValueError, TypeError):
+                    pass
+
             todo_items.append({
                 'kind': 'request', 'id': row['id'],
-                'label': f"Media Request - {row['title']}{scope}",
-                'detail': f"{row['media_type'].upper()} - requested by {row['username']}",
+                'label': f"{label_prefix} - {row['title']}{scope}",
+                'detail': detail,
                 'timestamp': row['timestamp']
             })
 
@@ -2818,6 +2872,35 @@ def build_admin_todo_list():
                 'label': f"Payment Confirmation - {row['username']}",
                 'detail': f"Order {row['order_id']} - £{row['amount']}",
                 'timestamp': row['timestamp']
+            })
+
+        # Expiry reminders: anyone expiring within 7 days gets a reminder
+        # to contact them, unless the admin already dismissed it for their
+        # CURRENT expiry date (dismissing becomes stale automatically once
+        # they actually renew, since expiry_timestamp changes).
+        secure_admin_username = (os.environ.get('PORTAL_ADMIN_USER') or '').lower()
+        current_ts = int(time.time())
+        cursor.execute("SELECT username, expiry_date, expiry_timestamp, expiry_reminder_dismissed_for FROM portal_users")
+        for row in cursor.fetchall():
+            uname = row['username']
+            exp_ts = row['expiry_timestamp'] or 0
+            if not uname or exp_ts <= 0:
+                continue
+            if secure_admin_username and uname.lower() == secure_admin_username:
+                continue
+
+            days_left = int((exp_ts - current_ts) / 86400)
+            if days_left > 7:
+                continue
+            if row['expiry_reminder_dismissed_for'] == exp_ts:
+                continue
+
+            urgency = "EXPIRED" if days_left < 0 else f"{days_left}d left"
+            todo_items.append({
+                'kind': 'expiry_reminder', 'id': uname,
+                'label': f"Renewal Reminder - {uname} ({urgency})",
+                'detail': f"Expires {row['expiry_date']} - contact them to renew",
+                'timestamp': row['expiry_date']
             })
 
     todo_items.sort(key=lambda x: x['timestamp'] or '')
@@ -2895,50 +2978,22 @@ def admin_panel():
         cursor.execute("SELECT id, username, title, media_type, issue_type, season_number, episode_number FROM vod_reports ORDER BY timestamp DESC")
         all_vod_reports = cursor.fetchall()
 
-        cursor.execute("SELECT username, (earned_balance - spent_balance) AS active_credit FROM referral_wallets WHERE (earned_balance - spent_balance) > 0 ORDER BY active_credit DESC")
+        # Only the top 10 by balance load by default - the search box
+        # covers finding anyone else.
+        cursor.execute("""
+            SELECT username, (earned_balance - spent_balance) AS active_credit
+            FROM referral_wallets
+            WHERE (earned_balance - spent_balance) > 0
+            ORDER BY active_credit DESC
+            LIMIT 10
+        """)
         all_wallets = cursor.fetchall()
 
         cursor.execute("SELECT * FROM portal_users ORDER BY created_at DESC")
         all_portal_users = cursor.fetchall()
 
-        cursor.execute("SELECT * FROM live_channels ORDER BY name ASC")
-        all_live_channels = cursor.fetchall()
-
-        cursor.execute("SELECT id, title, media_type, year, added_at FROM vod_library ORDER BY added_at DESC LIMIT 200")
-        all_vod_library = cursor.fetchall()
-
         cursor.execute("SELECT COUNT(*) FROM vod_library")
         vod_library_count = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT * FROM renewal_jobs
-            WHERE status = 'Pending'
-            ORDER BY created_at ASC
-        """)
-        pending_renewal_jobs = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT * FROM renewal_jobs
-            WHERE status = 'Completed'
-            ORDER BY completed_at DESC
-            LIMIT 25
-        """)
-        recent_completed_renewal_jobs = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT * FROM new_line_jobs
-            WHERE status = 'Pending'
-            ORDER BY created_at ASC
-        """)
-        pending_new_line_jobs = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT * FROM new_line_jobs
-            WHERE status = 'Completed'
-            ORDER BY completed_at DESC
-            LIMIT 25
-        """)
-        recent_completed_new_line_jobs = cursor.fetchall()
 
         cursor.execute("SELECT * FROM spotify_orders ORDER BY timestamp DESC")
         spotify_orders = cursor.fetchall()
@@ -2958,13 +3013,7 @@ def admin_panel():
         vod_reports=all_vod_reports,
         wallets=all_wallets,
         portal_users=all_portal_users,
-        live_channels=all_live_channels,
-        vod_library=all_vod_library,
         vod_library_count=vod_library_count,
-        pending_renewal_jobs=pending_renewal_jobs,
-        recent_completed_renewal_jobs=recent_completed_renewal_jobs,
-        pending_new_line_jobs=pending_new_line_jobs,
-        recent_completed_new_line_jobs=recent_completed_new_line_jobs,
         client_expiration_list=client_expiration_list,
         admin_todo_list=admin_todo_list,
         spotify_orders=spotify_orders,
@@ -3036,7 +3085,10 @@ def update_request_status_by_admin(req_id):
             cursor.execute('SELECT username, title FROM requests WHERE id = ?', (req_id,))
             req_row = cursor.fetchone()
 
-            cursor.execute('UPDATE requests SET status = ? WHERE id = ?', ('Completed', req_id))
+            cursor.execute(
+                "UPDATE requests SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ('Completed', req_id)
+            )
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': 'Request not found.'}), 404
             conn.commit()
@@ -3079,6 +3131,32 @@ def admin_delete_request(req_id):
         return jsonify({'success': True})
     except Exception as e:
         print("DELETE_REQUEST ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/mark_request_ordered/<int:req_id>', methods=['POST'])
+def admin_mark_request_ordered(req_id):
+    """
+    Admin: mark that this request has actually been ordered from your
+    content supplier. This starts the 14-day follow-up reminder clock in
+    the To-Do list, rather than counting from the moment the user
+    originally asked for it.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE requests SET requested_from_supplier_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (req_id,)
+            )
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'Request not found.'}), 404
+            conn.commit()
+        return jsonify({'success': True, 'message': 'Marked as ordered from supplier.'})
+    except Exception as e:
+        print("ADMIN_MARK_REQUEST_ORDERED ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -3463,32 +3541,27 @@ def delete_live_channel(stream_id):
 @app.route('/admin/search_vod_library')
 def admin_search_vod_library():
     """Search the local VOD library catalog - used by the admin panel to
-    check whether something is already on the system."""
+    check whether something is already on the system. Search-only: an
+    empty query returns nothing rather than a default browse-all list."""
     if not is_admin():
         return jsonify([]), 403
 
     q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify([])
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            if q:
-                like = f"%{q}%"
-                cursor.execute("""
-                    SELECT id, title, media_type, year, added_at
-                    FROM vod_library
-                    WHERE title LIKE ?
-                    ORDER BY title ASC
-                    LIMIT 200
-                """, (like,))
-            else:
-                cursor.execute("""
-                    SELECT id, title, media_type, year, added_at
-                    FROM vod_library
-                    ORDER BY added_at DESC
-                    LIMIT 200
-                """)
+            like = f"%{q}%"
+            cursor.execute("""
+                SELECT id, title, media_type, year, added_at
+                FROM vod_library
+                WHERE title LIKE ?
+                ORDER BY title ASC
+                LIMIT 200
+            """, (like,))
             rows = cursor.fetchall()
         return jsonify([dict(r) for r in rows])
     except Exception as e:
@@ -3779,7 +3852,10 @@ def auto_match_pending_requests():
                         )
 
                 if is_matched:
-                    cursor.execute("UPDATE requests SET status = 'Completed' WHERE id = ?", (req['id'],))
+                    cursor.execute(
+                        "UPDATE requests SET status = 'Completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (req['id'],)
+                    )
                     matched_count += 1
 
                     send_telegram_message_to_user(
@@ -3796,6 +3872,31 @@ def auto_match_pending_requests():
         print("AUTO_MATCH_PENDING_REQUESTS ERROR:", e)
 
     return matched_count
+
+
+def cleanup_old_completed_requests(retention_days=30):
+    """
+    Deletes media requests that were marked Completed more than
+    `retention_days` days ago, so the Media Requests Queue doesn't grow
+    forever with old fulfilled requests. Only ever touches Completed
+    requests with a recorded completed_at - pending requests are never
+    touched by this regardless of age.
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                DELETE FROM requests
+                WHERE status = 'Completed'
+                  AND completed_at IS NOT NULL
+                  AND completed_at < datetime('now', '-{int(retention_days)} days')
+            """)
+            deleted = cursor.rowcount
+            conn.commit()
+        return deleted
+    except Exception as e:
+        print("CLEANUP_OLD_COMPLETED_REQUESTS ERROR:", e)
+        return 0
 
 
 def perform_live_channels_sync():
@@ -4323,6 +4424,85 @@ def admin_notify_user_telegram():
     return jsonify({'success': ok, 'message': result_message})
 
 
+@app.route('/admin/dismiss_expiry_reminder', methods=['POST'])
+def admin_dismiss_expiry_reminder():
+    """
+    Admin: dismiss the renewal-reminder to-do item for a specific user
+    (payment received, handled manually, etc.). This becomes stale again
+    automatically the next time their expiry actually changes, so it isn't
+    a permanent "never remind me again" - just "handled for now".
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({'success': False, 'message': 'Username required.'}), 400
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT expiry_timestamp FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                (username.lower(),)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'User not found.'}), 404
+
+            cursor.execute(
+                "UPDATE portal_users SET expiry_reminder_dismissed_for = ? WHERE LOWER(username) = LOWER(?)",
+                (row['expiry_timestamp'], username.lower())
+            )
+            conn.commit()
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Dismissed renewal reminder for {username}")
+
+        return jsonify({'success': True, 'message': f"Reminder dismissed for {username}."})
+    except Exception as e:
+        print("ADMIN_DISMISS_EXPIRY_REMINDER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/search_wallets')
+def admin_search_wallets():
+    """Search active referral wallets by username - used by the Wallet Manager search box."""
+    if not is_admin():
+        return jsonify([]), 403
+
+    q = (request.args.get('q') or '').strip()
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if q:
+                like = f"%{q}%"
+                cursor.execute("""
+                    SELECT username, (earned_balance - spent_balance) AS active_credit
+                    FROM referral_wallets
+                    WHERE (earned_balance - spent_balance) > 0 AND username LIKE ?
+                    ORDER BY active_credit DESC
+                    LIMIT 50
+                """, (like,))
+            else:
+                cursor.execute("""
+                    SELECT username, (earned_balance - spent_balance) AS active_credit
+                    FROM referral_wallets
+                    WHERE (earned_balance - spent_balance) > 0
+                    ORDER BY active_credit DESC
+                    LIMIT 10
+                """)
+            rows = cursor.fetchall()
+        return jsonify([{'username': r['username'], 'active_credit': r['active_credit']} for r in rows])
+    except Exception as e:
+        print("ADMIN_SEARCH_WALLETS ERROR:", e)
+        return jsonify([]), 500
+
+
 @app.route('/logout')
 def logout():
     username = session.get('username')
@@ -4381,6 +4561,15 @@ def auto_sync_loop():
                 )
             except Exception as e:
                 print(f"AUTO SYNC: Live channel sync failed - {type(e).__name__}: {e}", flush=True)
+
+        # Cleanup doesn't depend on the reseller panel, so it always runs
+        # even if RESELLER_USER/RESELLER_PASS aren't configured.
+        try:
+            deleted_count = cleanup_old_completed_requests()
+            if deleted_count:
+                print(f"AUTO SYNC: Cleaned up {deleted_count} old completed request(s).", flush=True)
+        except Exception as e:
+            print(f"AUTO SYNC: Request cleanup failed - {type(e).__name__}: {e}", flush=True)
 
         time.sleep(AUTO_SYNC_INTERVAL_SECONDS)
 

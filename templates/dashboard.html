@@ -474,6 +474,39 @@
                     </table>
                 </div>
 
+                <!-- My reported issues -->
+                <div class="card">
+                    <h2>My Reported Issues</h2>
+                    <p style="font-size:12px; color:#94a3b8; margin-top:-6px;">
+                        Channel, VOD, and app issues you've reported. Once fixed, they'll disappear from this list.
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 55%;">Item</th>
+                                <th>Issue</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for issue in my_reported_issues %}
+                            <tr>
+                                <td style="font-size:13px;">
+                                    {% if issue.kind == 'channel' %}📺{% elif issue.kind == 'vod' %}🎬{% else %}📱{% endif %}
+                                    {{ issue.label }}
+                                </td>
+                                <td style="font-size:12px; color:#9ca3af;">{{ issue.detail }}</td>
+                                <td><span class="status-badge">Pending</span></td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No issues reported.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
                 <!-- Sky Glass app download -->
                 <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
                     <h2 style="color:#60a5fa;">Download the Sky Glass App</h2>
@@ -643,8 +676,8 @@
                 <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
                     <h2 style="color:#60a5fa;">Spotify Subscription (£45)</h2>
                     <p>Upgrade your Spotify account to our premium package.</p>
-                    <label class="section-title">Spotify Username:</label>
-                    <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email or username">
+                    <label class="section-title">Spotify Email:</label>
+                    <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email">
                     <label class="section-title">Spotify Password:</label>
                     <input type="password" id="spotify-password" class="form-field" placeholder="Spotify password">
                     <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">

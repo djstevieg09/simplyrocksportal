@@ -1704,6 +1704,54 @@ def login():
 # --- DASHBOARD & MEDIA SEARCH ---
 
 @app.route('/dashboard')
+def get_user_reported_issues(username):
+    """
+    Combine a user's channel fault reports, VOD fault reports, and app
+    issue reports into a single list, newest first. There's no separate
+    "status" to track here - once the admin resolves a report, the row is
+    deleted, so it naturally disappears from this list too.
+    """
+    issues = []
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM channel_reports WHERE username = ? ORDER BY timestamp DESC", (username,))
+        for row in cursor.fetchall():
+            issues.append({
+                'kind': 'channel',
+                'label': row['channel_name'],
+                'detail': row['issue_type'],
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM vod_reports WHERE username = ? ORDER BY timestamp DESC", (username,))
+        for row in cursor.fetchall():
+            scope = ""
+            if row['season_number'] and row['episode_number']:
+                scope = f" S{row['season_number']}E{row['episode_number']}"
+            elif row['season_number']:
+                scope = f" S{row['season_number']}"
+            issues.append({
+                'kind': 'vod',
+                'label': f"{row['title']}{scope}",
+                'detail': row['issue_type'],
+                'timestamp': row['timestamp']
+            })
+
+        cursor.execute("SELECT * FROM app_reports WHERE username = ? ORDER BY timestamp DESC", (username,))
+        for row in cursor.fetchall():
+            issues.append({
+                'kind': 'app',
+                'label': row['app_name'],
+                'detail': row['issue_type'],
+                'timestamp': row['timestamp']
+            })
+
+    issues.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+    return issues
+
+
 def dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
@@ -1790,6 +1838,8 @@ def dashboard():
         row_tg = cursor.fetchone()
         telegram_linked = bool(row_tg and row_tg['telegram_chat_id'])
 
+    my_reported_issues = get_user_reported_issues(username)
+
     session['expiry_date'] = expiry_display
 
     return render_template(
@@ -1807,7 +1857,8 @@ def dashboard():
         friend_renewal_bonus=FRIEND_RENEWAL_BONUS,
         referral_history=referral_history,
         paypal_client_id=PAYPAL_JS_CLIENT_ID,
-        telegram_linked=telegram_linked
+        telegram_linked=telegram_linked,
+        my_reported_issues=my_reported_issues
     )
 
 

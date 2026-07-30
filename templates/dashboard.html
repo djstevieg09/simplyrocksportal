@@ -1407,10 +1407,14 @@
             const stepsDiv = document.getElementById('add-home-modal-steps');
             if (isIosDevice()) {
                 stepsDiv.innerHTML = `
-                    <p style="margin:0 0 8px 0;">On iPhone/iPad, Apple requires this to be done manually from Safari:</p>
-                    <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (square with an arrow ↑) in Safari's toolbar</p>
-                    <p style="margin:0 0 6px 0;">2️⃣ Scroll down and tap <b>"Add to Home Screen"</b></p>
-                    <p style="margin:0;">3️⃣ Tap <b>"Add"</b> in the top right</p>
+                    <p style="margin:0 0 8px 0;">This only works in <b>Safari</b> - if you're using Chrome or another
+                    browser on iPhone, please open this page in Safari first and try again.</p>
+                    <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (square with an arrow ↑) at the
+                    bottom of Safari's screen</p>
+                    <p style="margin:0 0 6px 0;">2️⃣ <b>"Add to Home Screen" is usually further down the list</b> -
+                    not in the top row of icons. Scroll/swipe down until you see it</p>
+                    <p style="margin:0 0 6px 0;">3️⃣ Tap <b>"Add to Home Screen"</b></p>
+                    <p style="margin:0;">4️⃣ Tap <b>"Add"</b> in the top right</p>
                 `;
             } else {
                 stepsDiv.innerHTML = `

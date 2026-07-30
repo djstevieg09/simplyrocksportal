@@ -2402,6 +2402,125 @@ def ios_player_epg():
         return jsonify([])
 
 
+@app.route('/ios_player/vod_categories')
+def ios_player_vod_categories():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+    try:
+        cats = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_vod_categories')
+        if not isinstance(cats, list):
+            cats = []
+        return jsonify([{'category_id': c.get('category_id'), 'category_name': c.get('category_name')} for c in cats])
+    except Exception as e:
+        print("IOS_PLAYER_VOD_CATEGORIES ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/vod_streams')
+def ios_player_vod_streams():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    category_id = request.args.get('category_id', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+    try:
+        extra = {'category_id': category_id} if category_id else None
+        streams = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_vod_streams', extra)
+        if not isinstance(streams, list):
+            streams = []
+        return jsonify([{
+            'stream_id': s.get('stream_id'),
+            'name': s.get('name'),
+            'stream_icon': s.get('stream_icon'),
+            'container_extension': s.get('container_extension', 'mp4'),
+            'rating': s.get('rating', '')
+        } for s in streams])
+    except Exception as e:
+        print("IOS_PLAYER_VOD_STREAMS ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/series_categories')
+def ios_player_series_categories():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+    try:
+        cats = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_series_categories')
+        if not isinstance(cats, list):
+            cats = []
+        return jsonify([{'category_id': c.get('category_id'), 'category_name': c.get('category_name')} for c in cats])
+    except Exception as e:
+        print("IOS_PLAYER_SERIES_CATEGORIES ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/series_list')
+def ios_player_series_list():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    category_id = request.args.get('category_id', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+    try:
+        extra = {'category_id': category_id} if category_id else None
+        series = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_series', extra)
+        if not isinstance(series, list):
+            series = []
+        return jsonify([{
+            'series_id': s.get('series_id'),
+            'name': s.get('name'),
+            'cover': s.get('cover'),
+            'rating': s.get('rating', '')
+        } for s in series])
+    except Exception as e:
+        print("IOS_PLAYER_SERIES_LIST ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/series_info')
+def ios_player_series_info():
+    """Returns season/episode breakdown for one series."""
+    if not session.get('logged_in'):
+        return jsonify({}), 401
+    token = request.args.get('token', '')
+    series_id = request.args.get('series_id', '')
+    sess = _get_player_session(token)
+    if not sess or not series_id:
+        return jsonify({}), 401
+    try:
+        info = fetch_xtream_api_as_user(
+            DEFAULT_DNS, sess['username'], sess['password'],
+            'get_series_info', {'series_id': series_id}
+        )
+        if not isinstance(info, dict):
+            return jsonify({})
+        episodes_by_season = info.get('episodes') or {}
+        seasons = {}
+        for season_num, ep_list in episodes_by_season.items():
+            seasons[season_num] = [{
+                'id': ep.get('id'),
+                'episode_num': ep.get('episode_num'),
+                'title': ep.get('title', f"Episode {ep.get('episode_num')}"),
+                'container_extension': ep.get('container_extension', 'mp4')
+            } for ep in ep_list]
+        return jsonify({'seasons': seasons})
+    except Exception as e:
+        print("IOS_PLAYER_SERIES_INFO ERROR:", type(e).__name__)
+        return jsonify({}), 500
+
+
 @app.route('/ios_player/manifest/<int:stream_id>.m3u8')
 def ios_player_manifest(stream_id):
     """

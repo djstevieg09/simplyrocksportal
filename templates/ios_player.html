@@ -309,31 +309,32 @@
 
             if (hls) { hls.destroy(); hls = null; }
 
-            // Check the manifest directly first, so we can show the REAL
-            // server error (wrong password, panel unreachable, bad stream
-            // id, etc.) instead of a generic "can't play" failure with no
-            // explanation.
-            try {
-                const checkResp = await fetch(manifestUrl);
-                if (!checkResp.ok) {
-                    const bodyText = await checkResp.text();
-                    showPlayerError(`Stream error (HTTP ${checkResp.status}): ${bodyText.slice(0, 200)}`);
-                    return;
-                }
-            } catch (e) {
-                showPlayerError('Could not reach the server to load this stream.');
-                return;
-            }
+            // NOTE: we deliberately only fetch the manifest ONCE per play
+            // attempt now (previously there was an extra "pre-check" fetch
+            // here too, which meant every channel click asked the panel for
+            // TWO separate streaming sessions back-to-back - some panels
+            // only allow one active session per line, so that could cause
+            // the second session to conflict with/invalidate the first).
 
             if (window.Hls && Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(manifestUrl);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-                hls.on(Hls.Events.ERROR, (event, data) => {
+                hls.on(Hls.Events.ERROR, async (event, data) => {
                     console.error('HLS error:', data);
                     if (data.fatal) {
-                        showPlayerError(`Playback error: ${data.type} - ${data.details}`);
+                        // Only re-fetch (once, after the real failure) to
+                        // show the server's actual error text for diagnosis.
+                        let detail = `${data.type} - ${data.details}`;
+                        try {
+                            const diagResp = await fetch(manifestUrl);
+                            if (!diagResp.ok) {
+                                const bodyText = await diagResp.text();
+                                detail = `HTTP ${diagResp.status}: ${bodyText.slice(0, 200)}`;
+                            }
+                        } catch (e) {}
+                        showPlayerError(`Playback error: ${detail}`);
                     }
                 });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

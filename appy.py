@@ -5,13 +5,15 @@ import random
 import string
 import secrets
 import json
+import base64
+import urllib.parse
 import sqlite3
 from datetime import datetime
 from queue import Queue
 from threading import Thread
 
 import requests
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet, InvalidToken
 from io import BytesIO
@@ -1493,6 +1495,50 @@ def fetch_xtream_api(action, extra_params=None, timeout=60):
     return resp.json()
 
 
+# --- iOS WEB PLAYER (basic live TV player, installable to home screen) ---
+# Streams have to be played using the VIEWER'S OWN Xtream login (stream URLs
+# have the username/password baked directly into them - there's no way
+# around that). We never store anyone's real panel password, so the player
+# asks for it once per session and keeps it ONLY in this in-memory dict,
+# never written to the database or logs. Sessions expire automatically.
+
+_ios_player_sessions = {}  # token -> {'username', 'password', 'created_at'}
+IOS_PLAYER_SESSION_LIFETIME_SECONDS = 4 * 60 * 60  # 4 hours
+
+
+def _cleanup_expired_player_sessions():
+    now = time.time()
+    expired = [
+        tok for tok, data in _ios_player_sessions.items()
+        if now - data['created_at'] > IOS_PLAYER_SESSION_LIFETIME_SECONDS
+    ]
+    for tok in expired:
+        _ios_player_sessions.pop(tok, None)
+
+
+def fetch_xtream_api_as_user(dns, username, password, action, extra_params=None, timeout=20):
+    """
+    Same idea as fetch_xtream_api(), but authenticates as a specific portal
+    user's own line (their real DNS login) instead of the reseller account -
+    used for the web player, which needs to see exactly the channels/EPG
+    that user's own line actually has access to.
+    """
+    url = f"{dns.rstrip('/')}/player_api.php"
+    params = {'username': username, 'password': password, 'action': action}
+    if extra_params:
+        params.update(extra_params)
+
+    try:
+        resp = requests.get(url, params=params, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=timeout)
+    except requests.exceptions.RequestException:
+        raise RuntimeError("Could not connect to the IPTV panel.") from None
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Panel returned HTTP {resp.status_code}.")
+
+    return resp.json()
+
+
 def parse_xtream_title(raw_name):
     """
     Xtream panel entries are often messy - things like
@@ -2159,6 +2205,234 @@ def dashboard():
         paypal_client_id=PAYPAL_JS_CLIENT_ID,
         telegram_linked=telegram_linked,
         my_reported_issues=my_reported_issues
+    )
+
+
+# --- iOS WEB PLAYER ROUTES ---
+
+@app.route('/ios_player')
+def ios_player_page():
+    """The player page itself - basic bouquet/channel browser + video player."""
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return render_template('ios_player.html', username=session.get('username'))
+
+
+@app.route('/ios_player/authenticate', methods=['POST'])
+def ios_player_authenticate():
+    """
+    Verifies the logged-in user's real panel password (re-entered here,
+    never stored) and creates a short-lived in-memory session token used
+    for the rest of the player's API calls.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    password = (data.get('password') or '').strip()
+    username = session.get('username')
+
+    if not password:
+        return jsonify({'success': False, 'message': 'Please enter your password.'}), 400
+
+    ok, user_info = verify_xtream_credentials(DEFAULT_DNS, username, password)
+    if not ok:
+        return jsonify({'success': False, 'message': 'Incorrect password.'}), 401
+
+    _cleanup_expired_player_sessions()
+    token = secrets.token_urlsafe(24)
+    _ios_player_sessions[token] = {
+        'username': username,
+        'password': password,
+        'created_at': time.time()
+    }
+
+    return jsonify({'success': True, 'token': token})
+
+
+def _get_player_session(token):
+    """Looks up a player session token, returning None if missing/expired."""
+    data = _ios_player_sessions.get(token)
+    if not data:
+        return None
+    if time.time() - data['created_at'] > IOS_PLAYER_SESSION_LIFETIME_SECONDS:
+        _ios_player_sessions.pop(token, None)
+        return None
+    return data
+
+
+@app.route('/ios_player/bouquets')
+def ios_player_bouquets():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+
+    try:
+        categories = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_live_categories')
+        if not isinstance(categories, list):
+            categories = []
+        return jsonify([
+            {'category_id': c.get('category_id'), 'category_name': c.get('category_name')}
+            for c in categories
+        ])
+    except Exception as e:
+        print("IOS_PLAYER_BOUQUETS ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/channels')
+def ios_player_channels():
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    category_id = request.args.get('category_id', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return jsonify({'expired': True}), 401
+
+    try:
+        extra = {'category_id': category_id} if category_id else None
+        streams = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_live_streams', extra)
+        if not isinstance(streams, list):
+            streams = []
+        return jsonify([
+            {
+                'stream_id': s.get('stream_id'),
+                'name': s.get('name'),
+                'stream_icon': s.get('stream_icon'),
+                'epg_channel_id': s.get('epg_channel_id')
+            }
+            for s in streams
+        ])
+    except Exception as e:
+        print("IOS_PLAYER_CHANNELS ERROR:", type(e).__name__)
+        return jsonify([]), 500
+
+
+@app.route('/ios_player/epg')
+def ios_player_epg():
+    """Basic Now/Next EPG for one channel - Xtream returns titles base64-encoded."""
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    token = request.args.get('token', '')
+    stream_id = request.args.get('stream_id', '')
+    sess = _get_player_session(token)
+    if not sess or not stream_id:
+        return jsonify([]), 401
+
+    try:
+        result = fetch_xtream_api_as_user(
+            DEFAULT_DNS, sess['username'], sess['password'],
+            'get_short_epg', {'stream_id': stream_id, 'limit': 3}
+        )
+        listings = (result or {}).get('epg_listings') or []
+        parsed = []
+        for item in listings[:3]:
+            try:
+                title = base64.b64decode(item.get('title', '')).decode('utf-8', errors='replace')
+            except Exception:
+                title = item.get('title', '')
+            parsed.append({
+                'title': title,
+                'start': item.get('start'),
+                'end': item.get('end')
+            })
+        return jsonify(parsed)
+    except Exception as e:
+        print("IOS_PLAYER_EPG ERROR:", type(e).__name__)
+        return jsonify([])
+
+
+@app.route('/ios_player/manifest/<int:stream_id>.m3u8')
+def ios_player_manifest(stream_id):
+    """
+    Fetches the real HLS manifest from the panel (over plain HTTP) and
+    rewrites every line referencing another file to route back through our
+    own HTTPS segment proxy - this is what makes playback actually work
+    despite the panel not offering HTTPS, since browsers block a secure
+    page from loading insecure (HTTP) media directly.
+    """
+    if not session.get('logged_in'):
+        return "Unauthorized", 401
+    token = request.args.get('token', '')
+    sess = _get_player_session(token)
+    if not sess:
+        return "Session expired - please re-enter your password.", 401
+
+    upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
+
+    try:
+        resp = requests.get(upstream_url, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=15)
+    except requests.exceptions.RequestException:
+        return "Could not reach the streaming server.", 502
+
+    if resp.status_code != 200:
+        return f"Streaming server returned HTTP {resp.status_code}.", 502
+
+    rewritten = _rewrite_hls_manifest(resp.text, upstream_url, token)
+    return Response(rewritten, mimetype='application/vnd.apple.mpegurl')
+
+
+def _rewrite_hls_manifest(manifest_text, base_url, token):
+    """Rewrites every non-comment line in an HLS manifest (segment URLs, or
+    nested sub-playlist URLs for adaptive streams) to go through our own
+    /ios_player/segment proxy, resolving relative URLs against base_url."""
+    rewritten_lines = []
+    for line in manifest_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            rewritten_lines.append(line)
+            continue
+        absolute_url = urllib.parse.urljoin(base_url, stripped)
+        proxied = f"/ios_player/segment?token={urllib.parse.quote(token)}&u={urllib.parse.quote(absolute_url, safe='')}"
+        rewritten_lines.append(proxied)
+    return '\n'.join(rewritten_lines)
+
+
+@app.route('/ios_player/segment')
+def ios_player_segment():
+    """
+    Proxies one manifest/segment file from the panel. If what comes back is
+    itself another HLS manifest (adaptive bitrate streams reference a
+    sub-playlist), it gets rewritten recursively the same way; otherwise
+    it's streamed straight through as video data.
+    """
+    if not session.get('logged_in'):
+        return "Unauthorized", 401
+    token = request.args.get('token', '')
+    upstream_url = request.args.get('u', '')
+    sess = _get_player_session(token)
+    if not sess or not upstream_url:
+        return "Session expired.", 401
+
+    try:
+        upstream_resp = requests.get(
+            upstream_url, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=20, stream=True
+        )
+    except requests.exceptions.RequestException:
+        return "Could not reach the streaming server.", 502
+
+    if upstream_resp.status_code != 200:
+        return f"Streaming server returned HTTP {upstream_resp.status_code}.", 502
+
+    content_type = upstream_resp.headers.get('Content-Type', '')
+    is_manifest = 'mpegurl' in content_type.lower() or upstream_url.lower().endswith('.m3u8')
+
+    if is_manifest:
+        rewritten = _rewrite_hls_manifest(upstream_resp.text, upstream_url, token)
+        return Response(rewritten, mimetype='application/vnd.apple.mpegurl')
+
+    def _stream_passthrough():
+        for chunk in upstream_resp.iter_content(chunk_size=65536):
+            if chunk:
+                yield chunk
+
+    return Response(
+        stream_with_context(_stream_passthrough()),
+        mimetype=content_type or 'video/mp2t'
     )
 
 

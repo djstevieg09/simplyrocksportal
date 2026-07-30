@@ -116,6 +116,20 @@ TELEGRAM_GROUP_ISSUE_REPLY_TEXT = (
 
 _group_autoreply_last_sent = {}  # chat_id -> unix timestamp, in-memory only
 
+# Fuller, more browser-realistic header set for the iOS player's streaming
+# proxy - some Cloudflare-fronted origins check for a complete, plausible
+# header set (not just User-Agent) before allowing a request through.
+IOS_PLAYER_STREAM_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    ),
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'identity',
+    'Connection': 'keep-alive',
+}
+
 # Xtream default password for sync
 XTREAM_DEFAULT_PASSWORD = os.environ.get('XTREAM_DEFAULT_PASSWORD', '')
 
@@ -2398,10 +2412,9 @@ def ios_player_manifest(stream_id):
         return "Session expired - please re-enter your password.", 401
 
     upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
-    fetch_headers = {'User-Agent': XTREAM_USER_AGENT}
 
     try:
-        resp = sess['http_session'].get(upstream_url, headers=fetch_headers, timeout=15)
+        resp = sess['http_session'].get(upstream_url, headers=IOS_PLAYER_STREAM_HEADERS, timeout=15)
     except requests.exceptions.RequestException as e:
         print(f"IOS_PLAYER_MANIFEST NETWORK ERROR: {type(e).__name__}", flush=True)
         return "Could not reach the streaming server.", 502
@@ -2450,7 +2463,7 @@ def ios_player_segment():
         upstream_resp = sess['http_session'].get(
             upstream_url,
             headers={
-                'User-Agent': XTREAM_USER_AGENT,
+                **IOS_PLAYER_STREAM_HEADERS,
                 # Many nginx-based HLS delivery setups reject plain,
                 # non-range GET requests to .ts segments as an anti-scraping
                 # measure - real players almost always request with a Range

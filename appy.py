@@ -4917,15 +4917,15 @@ def handle_group_message_autoreply(message):
         print(f"GROUP AUTOREPLY: skipped - cooldown active ({seconds_since_last:.0f}s since last reply, needs {TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS}s)", flush=True)
         return
 
-    _group_autoreply_last_sent[chat_id] = now
-
     try:
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         if not bot_token:
             print("GROUP AUTOREPLY: skipped - TELEGRAM_BOT_TOKEN not set", flush=True)
             return
+
+        send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         resp = requests.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            send_url,
             json={
                 "chat_id": chat_id,
                 "text": TELEGRAM_GROUP_AUTOREPLY_TEXT,
@@ -4933,7 +4933,26 @@ def handle_group_message_autoreply(message):
             },
             timeout=8
         )
-        print(f"GROUP AUTOREPLY: sendMessage -> HTTP {resp.status_code}: {resp.text[:300]}", flush=True)
+        print(f"GROUP AUTOREPLY: sendMessage (in-thread) -> HTTP {resp.status_code}: {resp.text[:300]}", flush=True)
+
+        if resp.status_code == 200:
+            # Only start the cooldown once a reply has actually gone out -
+            # a failed attempt (e.g. a closed topic) shouldn't block a
+            # genuine retry from happening within the cooldown window.
+            _group_autoreply_last_sent[chat_id] = now
+        else:
+            # Replying in-thread failed (e.g. TOPIC_CLOSED if this group
+            # has Topics/forum mode enabled and that specific topic is
+            # locked) - fall back to a plain message with no threading
+            # rather than losing the reply entirely.
+            fallback_resp = requests.post(
+                send_url,
+                json={"chat_id": chat_id, "text": TELEGRAM_GROUP_AUTOREPLY_TEXT},
+                timeout=8
+            )
+            print(f"GROUP AUTOREPLY: sendMessage (fallback, no thread) -> HTTP {fallback_resp.status_code}: {fallback_resp.text[:300]}", flush=True)
+            if fallback_resp.status_code == 200:
+                _group_autoreply_last_sent[chat_id] = now
     except Exception as e:
         print(f"GROUP_AUTOREPLY ERROR: {type(e).__name__}: {e}", flush=True)
 

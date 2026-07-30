@@ -2244,7 +2244,14 @@ def ios_player_authenticate():
     _ios_player_sessions[token] = {
         'username': username,
         'password': password,
-        'created_at': time.time()
+        'created_at': time.time(),
+        # A persistent HTTP session (not to be confused with the Flask
+        # session) - many panels gate HLS segment delivery behind a cookie
+        # set when the manifest is first requested. Using one shared
+        # requests.Session() across the manifest AND every segment fetch
+        # for this viewing session preserves that cookie, instead of every
+        # request looking like a fresh, unauthenticated connection.
+        'http_session': requests.Session()
     }
 
     return jsonify({'success': True, 'token': token})
@@ -2363,13 +2370,16 @@ def ios_player_manifest(stream_id):
         return "Session expired - please re-enter your password.", 401
 
     upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
+    fetch_headers = {'User-Agent': XTREAM_USER_AGENT, 'Referer': DEFAULT_DNS}
 
     try:
-        resp = requests.get(upstream_url, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=15)
-    except requests.exceptions.RequestException:
+        resp = sess['http_session'].get(upstream_url, headers=fetch_headers, timeout=15)
+    except requests.exceptions.RequestException as e:
+        print(f"IOS_PLAYER_MANIFEST NETWORK ERROR: {type(e).__name__}", flush=True)
         return "Could not reach the streaming server.", 502
 
     if resp.status_code != 200:
+        print(f"IOS_PLAYER_MANIFEST UPSTREAM ERROR: HTTP {resp.status_code} - body starts: {resp.text[:200]!r}", flush=True)
         return f"Streaming server returned HTTP {resp.status_code}.", 502
 
     rewritten = _rewrite_hls_manifest(resp.text, upstream_url, token)
@@ -2409,13 +2419,26 @@ def ios_player_segment():
         return "Session expired.", 401
 
     try:
-        upstream_resp = requests.get(
-            upstream_url, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=20, stream=True
+        upstream_resp = sess['http_session'].get(
+            upstream_url,
+            headers={'User-Agent': XTREAM_USER_AGENT, 'Referer': DEFAULT_DNS},
+            timeout=20,
+            stream=True
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"IOS_PLAYER_SEGMENT NETWORK ERROR: {type(e).__name__}", flush=True)
         return "Could not reach the streaming server.", 502
 
     if upstream_resp.status_code != 200:
+        # Read a little of the body for logging (safe - segment URLs don't
+        # carry the account password, only the manifest ones do, and this
+        # is a server-side log line, never sent to the browser).
+        preview = ''
+        try:
+            preview = next(upstream_resp.iter_content(200), b'').decode('utf-8', errors='replace')
+        except Exception:
+            pass
+        print(f"IOS_PLAYER_SEGMENT UPSTREAM ERROR: HTTP {upstream_resp.status_code} for {upstream_url} - body starts: {preview!r}", flush=True)
         return f"Streaming server returned HTTP {upstream_resp.status_code}.", 502
 
     content_type = upstream_resp.headers.get('Content-Type', '')

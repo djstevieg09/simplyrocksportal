@@ -2254,10 +2254,17 @@ def admin_check_outbound_ip_stability():
 
 @app.route('/ios_player')
 def ios_player_page():
-    """The player page itself - basic bouquet/channel browser + video player."""
+    """
+    The player page itself - basic bouquet/channel browser, handing off to
+    VLC for actual playback (see the big comment in ios_player.html for
+    why: Cloudflare blocks our server's own datacenter IP from fetching
+    video segments directly, confirmed via real testing, so playback has
+    to happen from the VIEWER'S own device/IP instead - same as any other
+    player app already does).
+    """
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template('ios_player.html', username=session.get('username'))
+    return render_template('ios_player.html', username=session.get('username'), dns=DEFAULT_DNS.rstrip('/'))
 
 
 @app.route('/ios_player/authenticate', methods=['POST'])

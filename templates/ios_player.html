@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>IPTV Player</title>
-
-    <!-- Add to Home Screen support - separate from the main portal's icon -->
     <link rel="manifest" href="/static/player-manifest.json">
     <meta name="theme-color" content="#0f172a">
     <link rel="apple-touch-icon" href="/static/player-apple-touch-icon.png">
@@ -14,445 +12,439 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="IPTV Player">
-
     <style>
         :root { color-scheme: dark; }
-        body {
-            background-color: #0f172a;
-            color: #ffffff;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        nav {
-            background-color: #1e293b;
-            padding: 12px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 20;
-        }
-        nav h1 { color: #60a5fa; margin: 0; font-size: 16px; }
-        nav a { color: #94a3b8; text-decoration: none; font-size: 12px; }
-        .wrapper { max-width: 900px; margin: 0 auto; padding: 12px; box-sizing: border-box; }
+        * { box-sizing: border-box; }
+        body { background-color:#0f172a; color:#ffffff; font-family:Arial,sans-serif; margin:0; padding:0; }
+        nav { background-color:#1e293b; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:20; }
+        nav h1 { color:#60a5fa; margin:0; font-size:16px; }
+        nav a { color:#94a3b8; text-decoration:none; font-size:12px; }
+        .wrapper { max-width:900px; margin:0 auto; padding:12px; }
+        .card { background-color:#1e293b; border-radius:10px; padding:14px; margin-bottom:12px; }
+        .form-field { width:100%; padding:10px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#ffffff; font-size:14px; margin-bottom:8px; }
+        .btn-primary { width:100%; background:linear-gradient(90deg,#2563eb,#38bdf8); color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; display:block; text-align:center; }
+        .btn-secondary { width:100%; background-color:#334155; color:#e2e8f0; border:1px solid #475569; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; }
+        select { width:100%; padding:10px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#ffffff; font-size:14px; margin-bottom:10px; }
 
-        .card {
-            background-color: #1e293b;
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 12px;
-        }
-        .form-field {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 10px;
-            background-color: #334155;
-            border: 1px solid #475569;
-            border-radius: 6px;
-            color: #ffffff;
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
-        .btn-primary {
-            width: 100%;
-            background: linear-gradient(90deg, #2563eb, #38bdf8);
-            color: white;
-            border: none;
-            padding: 11px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 14px;
-            cursor: pointer;
-            box-sizing: border-box;
-        }
-        .btn-secondary {
-            width: 100%;
-            background-color: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
-            padding: 10px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 13px;
-            cursor: pointer;
-            box-sizing: border-box;
-        }
+        /* Tabs */
+        .tabs { display:flex; gap:4px; margin-bottom:12px; background-color:#1e293b; border-radius:10px; padding:4px; }
+        .tab-btn { flex:1; padding:10px 4px; background:none; border:none; color:#94a3b8; font-size:13px; font-weight:bold; cursor:pointer; border-radius:7px; }
+        .tab-btn.active { background-color:#2563eb; color:#ffffff; }
 
-        video {
-            width: 100%;
-            background-color: #000;
-            border-radius: 8px;
-            display: block;
-        }
+        /* Grid */
+        .media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; max-height:450px; overflow-y:auto; }
+        .media-tile { background-color:#334155; border-radius:8px; padding:6px; text-align:center; cursor:pointer; border:2px solid transparent; }
+        .media-tile.active { border-color:#38bdf8; }
+        .media-tile:active { opacity:0.75; }
+        .media-tile img { width:100%; height:70px; object-fit:cover; border-radius:4px; margin-bottom:4px; background-color:#0f172a; }
+        .media-tile .tile-logo { width:100%; height:44px; object-fit:contain; border-radius:4px; margin-bottom:4px; background-color:#0f172a; }
+        .media-tile span { font-size:11px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-        select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 10px;
-            background-color: #334155;
-            border: 1px solid #475569;
-            border-radius: 6px;
-            color: #ffffff;
-            font-size: 14px;
-            margin-bottom: 10px;
-        }
+        /* Episode list */
+        .ep-list { max-height:300px; overflow-y:auto; }
+        .ep-row { display:flex; justify-content:space-between; align-items:center; padding:8px; background-color:#334155; border-radius:6px; margin-bottom:6px; cursor:pointer; }
+        .ep-row:active { opacity:0.75; }
+        .ep-row span { font-size:13px; }
+        .ep-row .play-btn { background-color:#2563eb; color:white; border:none; padding:6px 12px; border-radius:5px; font-size:12px; cursor:pointer; white-space:nowrap; }
 
-        .channel-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 8px;
-            max-height: 420px;
-            overflow-y: auto;
-        }
-        .channel-tile {
-            background-color: #334155;
-            border-radius: 8px;
-            padding: 8px;
-            text-align: center;
-            cursor: pointer;
-            border: 2px solid transparent;
-        }
-        .channel-tile.active { border-color: #38bdf8; }
-        .channel-tile img {
-            width: 100%;
-            height: 50px;
-            object-fit: contain;
-            margin-bottom: 4px;
-            background-color: #0f172a;
-            border-radius: 4px;
-        }
-        .channel-tile span {
-            font-size: 11px;
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+        .epg-line { font-size:12px; color:#cbd5e1; margin:2px 0; }
+        .epg-line b { color:#38bdf8; }
+        .muted { font-size:11px; color:#94a3b8; margin:0; }
 
-        .epg-line { font-size: 12px; color: #cbd5e1; margin: 2px 0; }
-        .epg-line b { color: #38bdf8; }
-
-        #add-home-modal-overlay {
-            display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8);
-            z-index:1000; align-items:center; justify-content:center; padding:16px;
-        }
-        #add-home-modal-overlay .box {
-            background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px;
-            padding:24px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);
-        }
+        #add-home-modal-overlay { display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px; }
+        #add-home-modal-overlay .box { background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; }
     </style>
 </head>
 <body>
 
-    <nav>
-        <h1>📺 IPTV Player</h1>
-        <a href="/dashboard">← Back to Portal</a>
-    </nav>
+<nav>
+    <h1>📺 IPTV Player</h1>
+    <a href="/dashboard">← Portal</a>
+</nav>
 
-    <div class="wrapper">
+<div class="wrapper">
 
-        <!-- Password gate: needed once per session to talk to the panel as this user -->
-        <div class="card" id="auth-card">
-            <h3 style="margin-top:0; font-size:14px; color:#60a5fa;">Enter your IPTV password to load your channels</h3>
-            <p style="font-size:12px; color:#94a3b8; margin-top:-4px;">
-                Same password you use in TiviMate etc. This isn't saved anywhere - just used to load your channels for this session.
-            </p>
-            <input type="password" id="player-password" class="form-field" placeholder="Your IPTV password">
-            <button class="btn-primary" onclick="authenticatePlayer(this)">Load My Channels</button>
-            <p id="auth-error" style="color:#f87171; font-size:12px; display:none; margin-bottom:0;"></p>
+    <!-- Auth gate -->
+    <div class="card" id="auth-card">
+        <h3 style="margin-top:0; font-size:14px; color:#60a5fa;">Enter your IPTV password</h3>
+        <p class="muted" style="margin-bottom:10px;">Same password as TiviMate — not saved, used for this session only.</p>
+        <input type="password" id="player-password" class="form-field" placeholder="Your IPTV password">
+        <button class="btn-primary" onclick="authenticatePlayer(this)">Load Content</button>
+        <p id="auth-error" style="color:#f87171; font-size:12px; display:none; margin:6px 0 0 0;"></p>
+    </div>
+
+    <!-- Add to Home Screen -->
+    <div class="card" id="add-home-card" style="display:none;">
+        <button type="button" onclick="handleAddToHomeScreen()" class="btn-secondary">📲 Add IPTV Player to Home Screen</button>
+    </div>
+
+    <!-- Now playing info -->
+    <div class="card" id="player-card" style="display:none;">
+        <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 6px 0;"></p>
+        <div id="epg-info"></div>
+        <div id="get-vlc-prompt" style="display:none; margin-top:10px; padding:10px; background-color:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.4); border-radius:8px; text-align:center;">
+            <p style="font-size:12px; color:#fecaca; margin:0 0 8px 0;">Doesn't look like VLC is installed.</p>
+            <a id="get-vlc-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="display:block; text-decoration:none;">⬇️ Get VLC</a>
+        </div>
+        <p class="muted" style="margin-top:8px;">Tap any item to play. VLC required.</p>
+    </div>
+
+    <!-- Tabs + browse -->
+    <div id="browse-card" style="display:none;">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('live', this)">📡 Live TV</button>
+            <button class="tab-btn" onclick="switchTab('movies', this)">🎬 Movies</button>
+            <button class="tab-btn" onclick="switchTab('series', this)">📺 Series</button>
         </div>
 
-        <!-- Add to Home Screen -->
-        <div class="card" id="add-home-card" style="display:none;">
-            <button type="button" onclick="handleAddToHomeScreen()" class="btn-secondary">
-                📲 Add IPTV Player to Home Screen
-            </button>
-        </div>
-
-        <!-- Now playing + fallback controls -->
-        <div class="card" id="player-card" style="display:none;">
-            <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 8px 0;"></p>
-
-            <button type="button" onclick="copyStreamLink()" class="btn-secondary">
-                📋 Copy Stream Link
-            </button>
-            <p id="copy-confirm" style="display:none; color:#4ade80; font-size:12px; margin:6px 0 0 0; text-align:center;">✅ Copied!</p>
-
-            <!-- Shown only if VLC doesn't appear to be installed -->
-            <div id="get-vlc-prompt" style="display:none; margin-top:10px; padding:10px; background-color:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.4); border-radius:8px; text-align:center;">
-                <p style="font-size:12px; color:#fecaca; margin:0 0 8px 0;">Doesn't look like VLC is installed on this device.</p>
-                <a id="get-vlc-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="display:block; text-decoration:none; box-sizing:border-box;">
-                    ⬇️ Get VLC
-                </a>
-            </div>
-
-            <div id="epg-info" style="margin-top:10px;"></div>
-            <p style="font-size:11px; color:#94a3b8; margin:8px 0 0 0;">
-                Tap any channel to switch. On desktop, use "Copy Stream Link" → paste into VLC via <b>Media → Open Network Stream</b>.
-            </p>
-        </div>
-
-        <!-- Bouquets + channels -->
-        <div class="card" id="browse-card" style="display:none;">
-            <label style="font-size:12px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">Bouquet</label>
+        <!-- Live TV -->
+        <div id="tab-live" class="card">
             <select id="bouquet-select" onchange="loadChannels(this.value)">
-                <option value="">Loading bouquets...</option>
+                <option value="">Select a bouquet...</option>
             </select>
-            <div id="channel-grid" class="channel-grid"></div>
+            <div id="channel-grid" class="media-grid"></div>
         </div>
 
-    </div>
+        <!-- Movies -->
+        <div id="tab-movies" class="card" style="display:none;">
+            <select id="movie-cat-select" onchange="loadMovies(this.value)">
+                <option value="">Select a category...</option>
+            </select>
+            <div id="movie-grid" class="media-grid"></div>
+        </div>
 
-    <!-- Add to Home Screen instructions modal -->
-    <div id="add-home-modal-overlay">
-        <div class="box">
-            <div style="font-size:38px; margin-bottom:6px;">📲</div>
-            <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
-            <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
-            <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';" class="btn-secondary">Got it</button>
+        <!-- Series -->
+        <div id="tab-series" class="card" style="display:none;">
+            <select id="series-cat-select" onchange="loadSeriesList(this.value)">
+                <option value="">Select a category...</option>
+            </select>
+            <div id="series-grid" class="media-grid"></div>
+
+            <!-- Episode drill-down (shown once a series is tapped) -->
+            <div id="series-detail" style="display:none; margin-top:10px; border-top:1px solid #334155; padding-top:10px;">
+                <p id="series-detail-title" style="font-size:14px; font-weight:bold; margin:0 0 8px 0;"></p>
+                <select id="season-select" onchange="loadEpisodes(this.value)" style="margin-bottom:8px;">
+                    <option value="">Select a season...</option>
+                </select>
+                <div id="episode-list" class="ep-list"></div>
+            </div>
         </div>
     </div>
 
-    <script>
-        const DNS_BASE = {{ dns | tojson }};
-        const CURRENT_USERNAME = {{ username | tojson }};
-        let playerToken = null;
-        let currentPassword = null;
+</div>
 
-        async function authenticatePlayer(btn) {
-            const password = document.getElementById('player-password').value;
-            const errorEl = document.getElementById('auth-error');
-            errorEl.style.display = 'none';
-            if (!password) {
-                errorEl.textContent = 'Please enter your password.';
-                errorEl.style.display = 'block';
-                return;
-            }
-            const orig = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = 'Checking...';
-            try {
-                const resp = await fetch('/ios_player/authenticate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    playerToken = data.token;
-                    currentPassword = password; // kept only in-memory, needed to build the direct VLC link
-                    document.getElementById('auth-card').style.display = 'none';
-                    document.getElementById('browse-card').style.display = 'block';
-                    loadBouquets();
-                } else {
-                    errorEl.textContent = data.message || 'Incorrect password.';
-                    errorEl.style.display = 'block';
-                }
-            } catch (e) {
-                errorEl.textContent = 'Server error - please try again.';
-                errorEl.style.display = 'block';
-            } finally {
-                btn.disabled = false;
-                btn.innerText = orig;
-            }
-        }
+<!-- Add to Home Screen modal -->
+<div id="add-home-modal-overlay">
+    <div class="box">
+        <div style="font-size:38px; margin-bottom:6px;">📲</div>
+        <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
+        <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
+        <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';" class="btn-secondary">Got it</button>
+    </div>
+</div>
 
-        async function loadBouquets() {
-            const select = document.getElementById('bouquet-select');
-            select.innerHTML = '<option value="">Loading bouquets...</option>';
-            try {
-                const resp = await fetch(`/ios_player/bouquets?token=${encodeURIComponent(playerToken)}`);
-                const data = await resp.json();
-                if (!Array.isArray(data) || !data.length) {
-                    select.innerHTML = '<option value="">No bouquets found</option>';
-                    return;
-                }
-                select.innerHTML = '<option value="">Select a bouquet...</option>' +
-                    data.map(b => `<option value="${b.category_id}">${b.category_name}</option>`).join('');
-            } catch (e) {
-                select.innerHTML = '<option value="">Error loading bouquets</option>';
-            }
-        }
+<script>
+    const DNS_BASE = {{ dns | tojson }};
+    const CURRENT_USERNAME = {{ username | tojson }};
+    let playerToken = null;
+    let currentPassword = null;
+    let currentStreamUrl = null;
+    let currentSeriesData = null;
 
-        async function loadChannels(categoryId) {
-            const grid = document.getElementById('channel-grid');
-            if (!categoryId) { grid.innerHTML = ''; return; }
-            grid.innerHTML = '<p style="color:#94a3b8; font-size:12px;">Loading channels...</p>';
-            try {
-                const resp = await fetch(`/ios_player/channels?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
-                const data = await resp.json();
-                if (!Array.isArray(data) || !data.length) {
-                    grid.innerHTML = '<p style="color:#94a3b8; font-size:12px;">No channels in this bouquet.</p>';
-                    return;
-                }
-                grid.innerHTML = '';
-                data.forEach(ch => {
-                    const tile = document.createElement('div');
-                    tile.className = 'channel-tile';
-                    tile.id = `chan-${ch.stream_id}`;
-                    const logo = ch.stream_icon
-                        ? `<img src="${ch.stream_icon}" onerror="this.style.display='none';">`
-                        : '';
-                    tile.innerHTML = `${logo}<span>${ch.name}</span>`;
-                    tile.onclick = () => playChannel(ch.stream_id, ch.name, tile);
-                    grid.appendChild(tile);
-                });
-            } catch (e) {
-                grid.innerHTML = '<p style="color:#f87171; font-size:12px;">Error loading channels.</p>';
-            }
-        }
-
-        let currentStreamUrl = null;
-
-        function playChannel(streamId, name, tileEl) {
-            document.querySelectorAll('.channel-tile.active').forEach(el => el.classList.remove('active'));
-            if (tileEl) tileEl.classList.add('active');
-
-            currentStreamUrl = `${DNS_BASE}/live/${CURRENT_USERNAME}/${currentPassword}/${streamId}.m3u8`;
-
-            document.getElementById('player-card').style.display = 'block';
-            document.getElementById('now-playing-label').textContent = `📺 ${name}`;
-            document.getElementById('copy-confirm').style.display = 'none';
-            document.getElementById('get-vlc-prompt').style.display = 'none';
-
-            loadEpg(streamId, name);
-            openInVlc();
-        }
-
-        function copyStreamLink() {
-            if (!currentStreamUrl) return;
-            navigator.clipboard.writeText(currentStreamUrl).then(() => {
-                const confirmEl = document.getElementById('copy-confirm');
-                confirmEl.style.display = 'block';
-                setTimeout(() => { confirmEl.style.display = 'none'; }, 2500);
-            }).catch(() => {
-                prompt('Copy this stream link manually:', currentStreamUrl);
+    // --- Auth ---
+    async function authenticatePlayer(btn) {
+        const password = document.getElementById('player-password').value;
+        const errorEl = document.getElementById('auth-error');
+        errorEl.style.display = 'none';
+        if (!password) { errorEl.textContent = 'Please enter your password.'; errorEl.style.display = 'block'; return; }
+        const orig = btn.innerText; btn.disabled = true; btn.innerText = 'Checking...';
+        try {
+            const resp = await fetch('/ios_player/authenticate', {
+                method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password })
             });
+            const data = await resp.json();
+            if (data.success) {
+                playerToken = data.token;
+                currentPassword = password;
+                document.getElementById('auth-card').style.display = 'none';
+                document.getElementById('player-card').style.display = 'block';
+                document.getElementById('browse-card').style.display = 'block';
+                loadBouquets();
+                loadMovieCategories();
+                loadSeriesCategories();
+            } else {
+                errorEl.textContent = data.message || 'Incorrect password.';
+                errorEl.style.display = 'block';
+            }
+        } catch (e) {
+            errorEl.textContent = 'Server error - please try again.';
+            errorEl.style.display = 'block';
+        } finally { btn.disabled = false; btn.innerText = orig; }
+    }
+
+    // --- Tabs ---
+    function switchTab(tab, btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-live').style.display = tab === 'live' ? 'block' : 'none';
+        document.getElementById('tab-movies').style.display = tab === 'movies' ? 'block' : 'none';
+        document.getElementById('tab-series').style.display = tab === 'series' ? 'block' : 'none';
+    }
+
+    // --- Live TV ---
+    async function loadBouquets() {
+        const select = document.getElementById('bouquet-select');
+        try {
+            const resp = await fetch(`/ios_player/bouquets?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { select.innerHTML = '<option>No bouquets found</option>'; return; }
+            select.innerHTML = '<option value="">Select a bouquet...</option>' +
+                data.map(b => `<option value="${b.category_id}">${b.category_name}</option>`).join('');
+        } catch (e) { select.innerHTML = '<option>Error loading</option>'; }
+    }
+
+    async function loadChannels(categoryId) {
+        const grid = document.getElementById('channel-grid');
+        if (!categoryId) { grid.innerHTML = ''; return; }
+        grid.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+            const resp = await fetch(`/ios_player/channels?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted">No channels.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(ch => {
+                const tile = document.createElement('div');
+                tile.className = 'media-tile';
+                tile.id = `chan-${ch.stream_id}`;
+                tile.innerHTML = ch.stream_icon
+                    ? `<img class="tile-logo" src="${ch.stream_icon}" onerror="this.style.display='none';"><span>${ch.name}</span>`
+                    : `<span style="padding:14px 0;display:block;">${ch.name}</span>`;
+                tile.onclick = () => playLive(ch.stream_id, ch.name, tile);
+                grid.appendChild(tile);
+            });
+        } catch (e) { grid.innerHTML = '<p style="color:#f87171; font-size:12px;">Error loading channels.</p>'; }
+    }
+
+    function playLive(streamId, name, tileEl) {
+        document.querySelectorAll('.media-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+        currentStreamUrl = `${DNS_BASE}/live/${CURRENT_USERNAME}/${currentPassword}/${streamId}.m3u8`;
+        setNowPlaying(`📡 ${name}`);
+        loadEpg(streamId, name);
+        openInVlc();
+    }
+
+    async function loadEpg(streamId) {
+        const epgDiv = document.getElementById('epg-info');
+        epgDiv.innerHTML = '';
+        try {
+            const resp = await fetch(`/ios_player/epg?token=${encodeURIComponent(playerToken)}&stream_id=${encodeURIComponent(streamId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            const labels = ['Now', 'Next', 'Then'];
+            data.forEach((item, i) => {
+                const p = document.createElement('p');
+                p.className = 'epg-line';
+                p.innerHTML = `<b>${labels[i]}:</b> ${item.title || 'No info'}`;
+                epgDiv.appendChild(p);
+            });
+        } catch (e) {}
+    }
+
+    // --- Movies ---
+    async function loadMovieCategories() {
+        const select = document.getElementById('movie-cat-select');
+        try {
+            const resp = await fetch(`/ios_player/vod_categories?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            select.innerHTML = '<option value="">Select a category...</option>' +
+                data.map(c => `<option value="${c.category_id}">${c.category_name}</option>`).join('');
+        } catch (e) {}
+    }
+
+    async function loadMovies(categoryId) {
+        const grid = document.getElementById('movie-grid');
+        if (!categoryId) { grid.innerHTML = ''; return; }
+        grid.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+            const resp = await fetch(`/ios_player/vod_streams?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted">No movies.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(m => {
+                const tile = document.createElement('div');
+                tile.className = 'media-tile';
+                tile.innerHTML = m.stream_icon
+                    ? `<img src="${m.stream_icon}" onerror="this.src='';this.style.display='none';" style="height:90px;object-fit:cover;width:100%;border-radius:4px;"><span>${m.name}</span>`
+                    : `<span style="padding:10px 0;display:block;">${m.name}</span>`;
+                tile.onclick = () => playVod(m.stream_id, m.name, m.container_extension || 'mp4', tile);
+                grid.appendChild(tile);
+            });
+        } catch (e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;">Error loading movies.</p>'; }
+    }
+
+    function playVod(streamId, name, ext, tileEl) {
+        document.querySelectorAll('.media-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+        currentStreamUrl = `${DNS_BASE}/movie/${CURRENT_USERNAME}/${currentPassword}/${streamId}.${ext}`;
+        setNowPlaying(`🎬 ${name}`);
+        document.getElementById('epg-info').innerHTML = '';
+        openInVlc();
+    }
+
+    // --- Series ---
+    async function loadSeriesCategories() {
+        const select = document.getElementById('series-cat-select');
+        try {
+            const resp = await fetch(`/ios_player/series_categories?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            select.innerHTML = '<option value="">Select a category...</option>' +
+                data.map(c => `<option value="${c.category_id}">${c.category_name}</option>`).join('');
+        } catch (e) {}
+    }
+
+    async function loadSeriesList(categoryId) {
+        const grid = document.getElementById('series-grid');
+        document.getElementById('series-detail').style.display = 'none';
+        if (!categoryId) { grid.innerHTML = ''; return; }
+        grid.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+            const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted">No series.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(s => {
+                const tile = document.createElement('div');
+                tile.className = 'media-tile';
+                tile.innerHTML = s.cover
+                    ? `<img src="${s.cover}" onerror="this.style.display='none';" style="height:90px;object-fit:cover;width:100%;border-radius:4px;"><span>${s.name}</span>`
+                    : `<span style="padding:10px 0;display:block;">${s.name}</span>`;
+                tile.onclick = () => openSeriesDetail(s.series_id, s.name, tile);
+                grid.appendChild(tile);
+            });
+        } catch (e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;">Error loading series.</p>'; }
+    }
+
+    async function openSeriesDetail(seriesId, name, tileEl) {
+        document.querySelectorAll('.media-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+
+        const detail = document.getElementById('series-detail');
+        const titleEl = document.getElementById('series-detail-title');
+        const seasonSelect = document.getElementById('season-select');
+        const epList = document.getElementById('episode-list');
+
+        titleEl.textContent = name;
+        seasonSelect.innerHTML = '<option>Loading seasons...</option>';
+        epList.innerHTML = '';
+        detail.style.display = 'block';
+        detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        try {
+            const resp = await fetch(`/ios_player/series_info?token=${encodeURIComponent(playerToken)}&series_id=${encodeURIComponent(seriesId)}`);
+            const data = await resp.json();
+            currentSeriesData = data.seasons || {};
+            const seasonNums = Object.keys(currentSeriesData).sort((a, b) => parseInt(a) - parseInt(b));
+            if (!seasonNums.length) { seasonSelect.innerHTML = '<option>No seasons found</option>'; return; }
+            seasonSelect.innerHTML = '<option value="">Select a season...</option>' +
+                seasonNums.map(s => `<option value="${s}">Season ${s}</option>`).join('');
+        } catch (e) {
+            seasonSelect.innerHTML = '<option>Error loading</option>';
         }
+    }
 
-        function isAndroid() {
-            return /android/.test(window.navigator.userAgent.toLowerCase());
-        }
+    function loadEpisodes(seasonNum) {
+        const epList = document.getElementById('episode-list');
+        epList.innerHTML = '';
+        if (!seasonNum || !currentSeriesData || !currentSeriesData[seasonNum]) return;
+        const episodes = currentSeriesData[seasonNum];
+        episodes.forEach(ep => {
+            const row = document.createElement('div');
+            row.className = 'ep-row';
+            row.innerHTML = `
+                <span>Ep ${ep.episode_num}${ep.title ? ` — ${ep.title}` : ''}</span>
+                <button class="play-btn" onclick="playEpisode(${ep.id}, '${(ep.title || 'Episode ' + ep.episode_num).replace(/'/g, '')}', '${ep.container_extension || 'mp4'}')">▶ Play</button>
+            `;
+            epList.appendChild(row);
+        });
+    }
 
-        function isIos() {
-            return /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
-        }
+    function playEpisode(episodeId, title, ext) {
+        document.querySelectorAll('.media-tile.active').forEach(el => el.classList.remove('active'));
+        currentStreamUrl = `${DNS_BASE}/series/${CURRENT_USERNAME}/${currentPassword}/${episodeId}.${ext}`;
+        setNowPlaying(`📺 ${title}`);
+        document.getElementById('epg-info').innerHTML = '';
+        openInVlc();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
-        function openInVlc() {
-            if (!currentStreamUrl) return;
-            document.getElementById('get-vlc-prompt').style.display = 'none';
+    // --- VLC handoff ---
+    function setNowPlaying(label) {
+        document.getElementById('now-playing-label').textContent = label;
+        document.getElementById('get-vlc-prompt').style.display = 'none';
+    }
 
-            if (isAndroid()) {
-                const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
-                const fallbackTimeout = setTimeout(() => {
+    function isAndroid() { return /android/.test(navigator.userAgent.toLowerCase()); }
+    function isIos() { return /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()); }
+
+    function openInVlc() {
+        if (!currentStreamUrl) return;
+        document.getElementById('get-vlc-prompt').style.display = 'none';
+
+        if (isAndroid()) {
+            const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
+            const fallback = setTimeout(() => {
+                const link = document.getElementById('get-vlc-link');
+                link.href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
+                document.getElementById('get-vlc-prompt').style.display = 'block';
+            }, 2000);
+            const onHide = () => { if (document.hidden) { clearTimeout(fallback); document.removeEventListener('visibilitychange', onHide); } };
+            document.addEventListener('visibilitychange', onHide);
+            window.location.href = intentUrl;
+        } else {
+            const check = setTimeout(() => {
+                if (!document.hidden) {
                     const link = document.getElementById('get-vlc-link');
-                    link.href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
+                    link.href = isIos() ? 'https://apps.apple.com/app/vlc-media-player/id650377962' : 'https://www.videolan.org/vlc/';
                     document.getElementById('get-vlc-prompt').style.display = 'block';
-                }, 2000);
-                const onHide = () => {
-                    if (document.hidden) {
-                        clearTimeout(fallbackTimeout);
-                        document.removeEventListener('visibilitychange', onHide);
-                    }
-                };
-                document.addEventListener('visibilitychange', onHide);
-                window.location.href = intentUrl;
-            } else {
-                const handoffCheck = setTimeout(() => {
-                    if (!document.hidden) {
-                        const link = document.getElementById('get-vlc-link');
-                        link.href = isIos()
-                            ? 'https://apps.apple.com/app/vlc-media-player/id650377962'
-                            : 'https://www.videolan.org/vlc/';
-                        document.getElementById('get-vlc-prompt').style.display = 'block';
-                    }
-                }, 1800);
-                const onHide = () => {
-                    if (document.hidden) {
-                        clearTimeout(handoffCheck);
-                        document.removeEventListener('visibilitychange', onHide);
-                    }
-                };
-                document.addEventListener('visibilitychange', onHide);
-                window.location.href = 'vlc://' + currentStreamUrl;
-            }
+                }
+            }, 1800);
+            const onHide = () => { if (document.hidden) { clearTimeout(check); document.removeEventListener('visibilitychange', onHide); } };
+            document.addEventListener('visibilitychange', onHide);
+            window.location.href = 'vlc://' + currentStreamUrl;
         }
+    }
 
-        async function loadEpg(streamId, channelName) {
-            const epgDiv = document.getElementById('epg-info');
-            epgDiv.innerHTML = `<p style="font-size:13px; font-weight:bold; margin:0 0 4px 0;">${channelName}</p>`;
-            try {
-                const resp = await fetch(`/ios_player/epg?token=${encodeURIComponent(playerToken)}&stream_id=${encodeURIComponent(streamId)}`);
-                const data = await resp.json();
-                if (!Array.isArray(data) || !data.length) return;
-                const labels = ['Now', 'Next', 'Then'];
-                data.forEach((item, i) => {
-                    const p = document.createElement('p');
-                    p.className = 'epg-line';
-                    p.innerHTML = `<b>${labels[i] || ''}:</b> ${item.title || 'No info'}`;
-                    epgDiv.appendChild(p);
-                });
-            } catch (e) {
-                // EPG is a nice-to-have - fail silently if it's not available.
-            }
+    // --- Add to Home Screen ---
+    let deferredInstallPrompt = null;
+    function isRunningStandalone() { return (navigator.standalone === true) || window.matchMedia('(display-mode: standalone)').matches; }
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault(); deferredInstallPrompt = e;
+        const card = document.getElementById('add-home-card');
+        if (card) card.style.display = 'block';
+    });
+    window.addEventListener('appinstalled', () => {
+        const card = document.getElementById('add-home-card');
+        if (card) card.style.display = 'none';
+        deferredInstallPrompt = null;
+    });
+    async function handleAddToHomeScreen() {
+        if (deferredInstallPrompt) { deferredInstallPrompt.prompt(); try { await deferredInstallPrompt.userChoice; } catch(e){} deferredInstallPrompt = null; return; }
+        const stepsDiv = document.getElementById('add-home-modal-steps');
+        if (isIos()) {
+            stepsDiv.innerHTML = `<p style="margin:0 0 8px 0;">This only works in <b>Safari</b>.</p><p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
+        } else {
+            stepsDiv.innerHTML = `<p style="margin:0 0 6px 0;">Open browser menu (⋮ or ≡)</p><p style="margin:0;">Look for <b>"Add to Home Screen"</b> or <b>"Install App"</b></p>`;
         }
-
-        // --- Add to Home Screen (same pattern as the main portal) ---
-        let deferredInstallPrompt = null;
-
-        function isIosDevice() {
-            return /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
-        }
-        function isRunningStandalone() {
-            return (window.navigator.standalone === true) ||
-                   window.matchMedia('(display-mode: standalone)').matches;
-        }
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredInstallPrompt = e;
-            const card = document.getElementById('add-home-card');
-            if (card) card.style.display = 'block';
-        });
-        window.addEventListener('appinstalled', () => {
-            const card = document.getElementById('add-home-card');
-            if (card) card.style.display = 'none';
-            deferredInstallPrompt = null;
-        });
-
-        async function handleAddToHomeScreen() {
-            if (deferredInstallPrompt) {
-                deferredInstallPrompt.prompt();
-                try { await deferredInstallPrompt.userChoice; } catch (e) {}
-                deferredInstallPrompt = null;
-                return;
-            }
-            const stepsDiv = document.getElementById('add-home-modal-steps');
-            if (isIosDevice()) {
-                stepsDiv.innerHTML = `
-                    <p style="margin:0 0 8px 0;">This only works in <b>Safari</b>.</p>
-                    <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button at the bottom of Safari</p>
-                    <p style="margin:0 0 6px 0;">2️⃣ Scroll down - <b>"Add to Home Screen"</b> is further down the list</p>
-                    <p style="margin:0 0 6px 0;">3️⃣ Tap <b>"Add to Home Screen"</b></p>
-                    <p style="margin:0;">4️⃣ Tap <b>"Add"</b></p>
-                `;
-            } else {
-                stepsDiv.innerHTML = `
-                    <p style="margin:0 0 6px 0;">Open your browser's menu (⋮ or ≡)</p>
-                    <p style="margin:0;">Look for <b>"Add to Home Screen"</b> or <b>"Install App"</b></p>
-                `;
-            }
-            document.getElementById('add-home-modal-overlay').style.display = 'flex';
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const card = document.getElementById('add-home-card');
-            if (!card) return;
-            if (isRunningStandalone()) { card.style.display = 'none'; return; }
-            if (isIosDevice()) { card.style.display = 'block'; }
-        });
-    </script>
+        document.getElementById('add-home-modal-overlay').style.display = 'flex';
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        const card = document.getElementById('add-home-card');
+        if (!card || isRunningStandalone()) return;
+        if (isIos()) card.style.display = 'block';
+    });
+</script>
 </body>
 </html>

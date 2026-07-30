@@ -4,6 +4,7 @@ import time
 import random
 import string
 import secrets
+import json
 import sqlite3
 from datetime import datetime
 from queue import Queue
@@ -820,8 +821,24 @@ def log_activity(username, action):
         print(f"ACTIVITY LOG ERROR: {e}")
 
 
-def send_telegram_alert_direct(message_text):
-    """Send a formatted text message to Telegram using environment tokens."""
+def build_telegram_inline_keyboard(buttons):
+    """
+    buttons: list of (label, callback_data) tuples. Each becomes its own
+    row (stacked vertically) so they're easy to tap on a phone. Returns
+    the reply_markup dict Telegram expects, or None if no buttons given.
+    """
+    if not buttons:
+        return None
+    return {"inline_keyboard": [[{"text": label, "callback_data": data}] for label, data in buttons]}
+
+
+def send_telegram_alert_direct(message_text, buttons=None):
+    """
+    Send a formatted text message to Telegram using environment tokens.
+    Optional `buttons`: list of (label, callback_data) tuples - shows as
+    tappable inline buttons under the message that trigger real actions via
+    the /telegram_webhook callback handler, without needing to log in.
+    """
     try:
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID')
@@ -837,6 +854,9 @@ def send_telegram_alert_direct(message_text):
             "text": message_text,
             "parse_mode": "HTML"
         }
+        reply_markup = build_telegram_inline_keyboard(buttons)
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         response = requests.post(api_url, json=payload, timeout=8)
         print(f"TELEGRAM DIRECT PUSH CODE: {response.status_code}", flush=True)
@@ -846,13 +866,16 @@ def send_telegram_alert_direct(message_text):
         return False
 
 
-def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
+def send_telegram_photo_with_overlay(poster_url, overlay_text, caption, buttons=None):
     """
     Download a poster image, stamp a bold diagonal "REQUEST" or "REPORT"
     ribbon across it, and send that composited image to Telegram with the
     given caption. Telegram captions only ever appear below/beside a photo
     - there's no way to overlay text on the image itself through the API -
     so the ribbon has to be drawn onto the image before it's sent.
+
+    Optional `buttons`: list of (label, callback_data) tuples - shows as
+    tappable inline buttons under the photo, same as send_telegram_alert_direct.
 
     Falls back to a plain text alert (no image) if the poster can't be
     downloaded/processed for any reason, so a broken or missing poster URL
@@ -936,6 +959,11 @@ def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
         api_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
         files = {'photo': ('poster.jpg', buffer, 'image/jpeg')}
         data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'HTML'}
+        reply_markup = build_telegram_inline_keyboard(buttons)
+        if reply_markup:
+            # sendPhoto is multipart/form-data, so reply_markup has to be a
+            # JSON string here rather than a nested dict like sendMessage uses.
+            data['reply_markup'] = json.dumps(reply_markup)
 
         response = requests.post(api_url, data=data, files=files, timeout=15)
         print(f"TELEGRAM PHOTO PUSH CODE: {response.status_code}", flush=True)
@@ -943,10 +971,10 @@ def send_telegram_photo_with_overlay(poster_url, overlay_text, caption):
             return True
         # Telegram rejected the photo for some reason - still get the alert
         # through as plain text rather than losing it entirely.
-        return send_telegram_alert_direct(caption)
+        return send_telegram_alert_direct(caption, buttons=buttons)
     except Exception as e:
         print(f"TELEGRAM PHOTO PUSH ERROR (falling back to text): {e}", flush=True)
-        return send_telegram_alert_direct(caption)
+        return send_telegram_alert_direct(caption, buttons=buttons)
 
 
 # --- PER-USER TELEGRAM MESSAGING ---
@@ -1051,6 +1079,215 @@ def send_telegram_message_to_user(username, text):
 
     ok = send_telegram_message_raw(row['telegram_chat_id'], text)
     return ok, ("Message sent." if ok else "Telegram rejected the message - it may need re-linking.")
+
+
+# --- TELEGRAM INLINE BUTTON ACTIONS ---
+# Lets the admin action things (mark a request added, accept a renewal,
+# clear a fault ticket, etc.) straight from the Telegram alert itself, by
+# tapping a button - no login required. Telegram delivers the tap to
+# /telegram_webhook as a "callback_query", handled below.
+
+def answer_telegram_callback(callback_id, text):
+    """Required by Telegram - stops the button showing a loading spinner
+    forever, and shows a small toast with `text` at the top of the chat."""
+    try:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        if not bot_token:
+            return
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery",
+            json={"callback_query_id": callback_id, "text": (text or "")[:200], "show_alert": False},
+            timeout=8
+        )
+    except Exception as e:
+        print("ANSWER_TELEGRAM_CALLBACK ERROR:", type(e).__name__)
+
+
+def mark_telegram_message_actioned(callback_query, result_text):
+    """Replaces the tapped button with a plain '✅ done' label (itself
+    inert), so the same action can't accidentally be triggered twice."""
+    try:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        message = callback_query.get('message') or {}
+        chat_id = message.get('chat', {}).get('id')
+        message_id = message.get('message_id')
+        if not bot_token or not chat_id or not message_id:
+            return
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup",
+            json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": {"inline_keyboard": [[{"text": f"✅ {result_text[:40]}", "callback_data": "noop"}]]}
+            },
+            timeout=8
+        )
+    except Exception as e:
+        print("MARK_TELEGRAM_MESSAGE_ACTIONED ERROR:", type(e).__name__)
+
+
+def handle_telegram_callback(callback_query):
+    """
+    Runs whenever the admin taps an inline button on an alert. Security:
+    only the admin's own configured TELEGRAM_CHAT_ID can trigger anything
+    here - if some other chat somehow sends a callback (shouldn't be
+    possible since buttons are only ever included in admin-alert messages),
+    it's rejected outright.
+    """
+    callback_id = callback_query.get('id')
+    data = (callback_query.get('data') or '').strip()
+    chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+
+    if data == 'noop':
+        answer_telegram_callback(callback_id, "Already actioned.")
+        return
+
+    admin_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not admin_chat_id or str(chat_id) != str(admin_chat_id):
+        answer_telegram_callback(callback_id, "Not authorized.")
+        return
+
+    action, _, raw_id = data.partition(':')
+    result_text = "Done."
+    success = True
+
+    try:
+        if action == 'mark_added':
+            req_id = int(raw_id)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, title FROM requests WHERE id = ?', (req_id,))
+                req_row = cursor.fetchone()
+                if not req_row:
+                    success = False
+                    result_text = "Request not found."
+                else:
+                    cursor.execute(
+                        "UPDATE requests SET status = 'Completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (req_id,)
+                    )
+                    conn.commit()
+                    send_telegram_message_to_user(
+                        req_row['username'],
+                        f"🎉 Good news! Your request for \"{req_row['title']}\" has been added to the system."
+                    )
+                    result_text = f"Marked '{req_row['title']}' as added"
+
+        elif action == 'clear_channel':
+            report_id = int(raw_id)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, channel_name FROM channel_reports WHERE id = ?', (report_id,))
+                row = cursor.fetchone()
+                if not row:
+                    success = False
+                    result_text = "Report not found."
+                else:
+                    cursor.execute('DELETE FROM channel_reports WHERE id = ?', (report_id,))
+                    conn.commit()
+                    send_telegram_message_to_user(
+                        row['username'],
+                        f"✅ Your channel fault report for \"{row['channel_name']}\" has been fixed."
+                    )
+                    result_text = f"Fixed: {row['channel_name']}"
+
+        elif action == 'clear_vod':
+            report_id = int(raw_id)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, title FROM vod_reports WHERE id = ?', (report_id,))
+                row = cursor.fetchone()
+                if not row:
+                    success = False
+                    result_text = "Report not found."
+                else:
+                    cursor.execute('DELETE FROM vod_reports WHERE id = ?', (report_id,))
+                    conn.commit()
+                    send_telegram_message_to_user(
+                        row['username'],
+                        f"✅ Your VOD fault report for \"{row['title']}\" has been fixed."
+                    )
+                    result_text = f"Fixed: {row['title']}"
+
+        elif action == 'clear_app':
+            report_id = int(raw_id)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, app_name FROM app_reports WHERE id = ?', (report_id,))
+                row = cursor.fetchone()
+                if not row:
+                    success = False
+                    result_text = "Report not found."
+                else:
+                    cursor.execute('DELETE FROM app_reports WHERE id = ?', (report_id,))
+                    conn.commit()
+                    send_telegram_message_to_user(
+                        row['username'],
+                        f"✅ Your app issue report ({row['app_name']}) has been resolved."
+                    )
+                    result_text = f"Resolved: {row['app_name']} ({row['username']})"
+
+        elif action == 'accept_renewal':
+            job_id = int(raw_id)
+            ok, result = accept_renewal_job(job_id)
+            if ok:
+                send_telegram_message_to_user(
+                    result['username'],
+                    f"✅ Your line has been renewed! New expiry date: {result['new_expiry_date']}."
+                )
+                result_text = f"Renewed {result['username']} -> {result['new_expiry_date']}"
+            else:
+                success = False
+                result_text = str(result)
+
+        elif action == 'accept_newline':
+            job_id = int(raw_id)
+            ok, result = accept_new_line_job(job_id)
+            if ok:
+                send_telegram_message_to_user(
+                    result['referrer_username'],
+                    f"✅ Your friend's line for \"{result['friend_username']}\" is now set up and ready to use."
+                )
+                result_text = f"Set up: {result['friend_username']}"
+            else:
+                success = False
+                result_text = str(result)
+
+        elif action == 'mark_spotify':
+            order_id = int(raw_id)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('SELECT portal_username, spotify_username, status FROM spotify_orders WHERE id = ?', (order_id,))
+                order = cursor.fetchone()
+                if not order:
+                    success = False
+                    result_text = "Order not found."
+                elif order['status'] == 'Upgraded':
+                    success = False
+                    result_text = "Already marked upgraded."
+                else:
+                    cursor.execute("UPDATE spotify_orders SET status = 'Upgraded' WHERE id = ?", (order_id,))
+                    conn.commit()
+                    send_telegram_message_to_user(order['portal_username'], "🎵 Your Spotify account has been upgraded!")
+                    result_text = f"Upgraded: {order['spotify_username']}"
+
+        else:
+            success = False
+            result_text = "Unknown action."
+
+    except Exception as e:
+        print("HANDLE_TELEGRAM_CALLBACK ERROR:", type(e).__name__, str(e))
+        success = False
+        result_text = "Error processing that action - check the admin panel."
+
+    answer_telegram_callback(callback_id, result_text)
+    if success:
+        mark_telegram_message_actioned(callback_query, result_text)
 
 
 def verify_xtream_credentials(dns, username, password):
@@ -1350,7 +1587,9 @@ def get_wallet_balance(username):
 # matching how the real panel extends a renewed line.
 
 def create_renewal_job(username, renewal_type, connections, order_id, amount, referrer_username=None):
-    """Insert a new pending renewal job for the admin to accept."""
+    """Insert a new pending renewal job for the admin to accept. Returns
+    the new job's id (or None on failure) so callers can build a Telegram
+    action button for it."""
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
@@ -1359,8 +1598,10 @@ def create_renewal_job(username, renewal_type, connections, order_id, amount, re
                 VALUES (?, ?, ?, ?, ?, ?, 'Pending')
             ''', (username, renewal_type, referrer_username, connections, order_id, amount))
             conn.commit()
+            return cursor.lastrowid
     except Exception as e:
         print("CREATE_RENEWAL_JOB ERROR:", e)
+        return None
 
 
 def accept_renewal_job(job_id):
@@ -2064,6 +2305,7 @@ def submit_request():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (username, title, year, media_type, imdb_id, poster, season_number, episode_number))
             conn.commit()
+            new_request_id = cursor.lastrowid
 
         request_caption = (
             f"<b>🎞 NEW MEDIA REQUEST</b>\n"
@@ -2072,10 +2314,11 @@ def submit_request():
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>ID:</b> <code>{imdb_id or 'N/A'}</code>"
         )
+        buttons = [("✅ Mark Added", f"mark_added:{new_request_id}")]
         if poster:
-            send_telegram_photo_with_overlay(poster, "REQUEST", request_caption)
+            send_telegram_photo_with_overlay(poster, "REQUEST", request_caption, buttons=buttons)
         else:
-            send_telegram_alert_direct(request_caption)
+            send_telegram_alert_direct(request_caption, buttons=buttons)
 
         log_activity(username, f"Submitted media request: {title} [{media_type}] {year}{scope_label}")
         return jsonify({'success': True, 'message': 'Request submitted.'})
@@ -2252,7 +2495,7 @@ def renew_friend_line():
 
         # Create the job the admin will accept to actually extend the
         # friend's line on the real panel (see accept_renewal_job()).
-        create_renewal_job(
+        renewal_job_id = create_renewal_job(
             username=friend_username,
             renewal_type='friend',
             connections=connections,
@@ -2269,7 +2512,8 @@ def renew_friend_line():
             f"<b>Paid:</b> £{amount_val:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
             f"<b>Connections:</b> {connections}\n"
-            f"<b>Status:</b> Pending manual extension in admin panel"
+            f"<b>Status:</b> Pending manual extension",
+            buttons=[("✅ Accept Renewal", f"accept_renewal:{renewal_job_id}")]
         )
 
         log_activity(referrer, f"Renewed friend line {friend_username} ({connections} conn, order {order_id})")
@@ -2517,7 +2761,7 @@ def log_payment():
 
         # Create the job the admin will accept to actually extend this
         # account's expiry on the real panel (see accept_renewal_job()).
-        create_renewal_job(
+        renewal_job_id = create_renewal_job(
             username=username,
             renewal_type='self',
             connections=connections,
@@ -2534,7 +2778,8 @@ def log_payment():
             f"<b>Plan:</b> {readable_connections}\n"
             f"<b>Paid:</b> £{amount_val:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
-            f"<b>Status:</b> Pending manual extension"
+            f"<b>Status:</b> Pending manual extension",
+            buttons=[("✅ Accept Renewal", f"accept_renewal:{renewal_job_id}")]
         )
 
         log_activity(username, f"IPTV renewal payment logged (order {order_id}, {connections} conn)")
@@ -2601,6 +2846,7 @@ def buy_spotify():
                 portal_user, su, encrypted_sp,
                 amount_val, discount_val, 'Pending'
             ))
+            new_spotify_order_id = cursor.lastrowid
 
             cursor.execute('''
                 INSERT INTO payments (username, order_id, amount, status)
@@ -2624,7 +2870,8 @@ def buy_spotify():
             f"<b>Order ID:</b> <code>{order_id}</code>\n"
             f"<b>Paid:</b> £{amount_val:.2f}\n"
             f"<b>Wallet Used:</b> £{discount_val:.2f}\n"
-            f"<b>Status:</b> Pending upgrade"
+            f"<b>Status:</b> Pending upgrade",
+            buttons=[("✅ Mark Upgraded", f"mark_spotify:{new_spotify_order_id}")]
         )
 
         log_activity(portal_user, f"Spotify order logged for {su} (order {order_id})")
@@ -2682,6 +2929,7 @@ def create_referral_line():
                     (referrer_username, friend_username, friend_password, first_name, last_name, phone, order_id, amount, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
             ''', (referrer, friend_username, plain_password, first_name, last_name, phone, order_id, f"{REFERRAL_LINE_PRICE:.2f}"))
+            new_line_job_id = cursor.lastrowid
 
             cursor.execute('''
                 INSERT INTO referral_wallets (username, earned_balance, spent_balance)
@@ -2714,7 +2962,8 @@ def create_referral_line():
             f"<b>Phone:</b> <code>{phone}</code>\n"
             f"<b>Order ID:</b> <code>{order_id}</code>\n"
             f"<b>Referrer Wallet Bonus:</b> £{NEW_FRIEND_BONUS:.2f}\n\n"
-            f"⚠️ Create this line on the real panel, then Accept the job in the admin panel."
+            f"⚠️ Create this line on the real panel, then tap Accept below (or in the admin panel).",
+            buttons=[("✅ Accept Setup", f"accept_newline:{new_line_job_id}")]
         )
 
         log_activity(referrer, f"Requested new friend line '{friend_username}' (order {order_id}) - pending admin setup")
@@ -2795,6 +3044,7 @@ def submit_channel_report():
                 VALUES (?, ?, ?, ?)
             ''', (username, ch_name, ch_id, issue))
             conn.commit()
+            new_report_id = cursor.lastrowid
 
         report_caption = (
             f"<b>📺 LIVE TV STREAM FAULT TICKET</b>\n"
@@ -2803,10 +3053,11 @@ def submit_channel_report():
             f"<b>Stream ID:</b> <code>{ch_id}</code>\n"
             f"<b>Issue:</b> {issue}"
         )
+        buttons = [("✅ Fixed", f"clear_channel:{new_report_id}")]
         if logo_url:
-            send_telegram_photo_with_overlay(logo_url, "REPORT", report_caption)
+            send_telegram_photo_with_overlay(logo_url, "REPORT", report_caption, buttons=buttons)
         else:
-            send_telegram_alert_direct(report_caption)
+            send_telegram_alert_direct(report_caption, buttons=buttons)
 
         log_activity(username, f"Channel fault report: {ch_name} (ID {ch_id}) - {issue}")
 
@@ -2931,6 +3182,7 @@ def submit_vod_report():
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (username, title, media_type, final_issue_type, issue_notes[:255], season_number, episode_number))
             conn.commit()
+            new_report_id = cursor.lastrowid
 
         report_caption = (
             f"<b>🎬 VOD FAULT TICKET</b>\n"
@@ -2939,10 +3191,11 @@ def submit_vod_report():
             f"<b>Type:</b> {media_type.upper()}\n"
             f"<b>Issue:</b> {final_issue_type}"
         )
+        buttons = [("✅ Fixed", f"clear_vod:{new_report_id}")]
         if poster:
-            send_telegram_photo_with_overlay(poster, "REPORT", report_caption)
+            send_telegram_photo_with_overlay(poster, "REPORT", report_caption, buttons=buttons)
         else:
-            send_telegram_alert_direct(report_caption)
+            send_telegram_alert_direct(report_caption, buttons=buttons)
 
         log_activity(username, f"VOD fault report: {title} ({media_type}) - {final_issue_type}")
 
@@ -2985,13 +3238,15 @@ def submit_app_report():
                 VALUES (?, ?, ?, ?)
             ''', (username, app_name, final_issue_type, issue_notes[:255]))
             conn.commit()
+            new_report_id = cursor.lastrowid
 
         legacy_flag = " ⚠️ LEGACY APP" if app_name in LEGACY_APPS else ""
         send_telegram_alert_direct(
             f"<b>📱 APP ISSUE REPORTED</b>{legacy_flag}\n"
             f"<b>User:</b> <code>{username}</code>\n"
             f"<b>App:</b> {app_name}\n"
-            f"<b>Issue:</b> {final_issue_type}"
+            f"<b>Issue:</b> {final_issue_type}",
+            buttons=[("✅ Resolved", f"clear_app:{new_report_id}")]
         )
 
         log_activity(username, f"App issue reported: {app_name} - {final_issue_type}")
@@ -4586,14 +4841,23 @@ def admin_telegram_webhook_status():
 @app.route('/telegram_webhook', methods=['POST'])
 def telegram_webhook():
     """
-    Telegram POSTs here whenever someone sends the bot a message. We only
-    care about "/start <token>" - that's what fires automatically when
-    someone opens their personal t.me linking link from the dashboard.
+    Telegram POSTs here whenever something happens in the chat with our
+    bot. Two things we care about:
+      - "callback_query": the admin tapped an inline action button on an
+        alert - handled by handle_telegram_callback().
+      - "/start <token>": someone opened their personal t.me linking link
+        from the dashboard - handled below as before.
     Everything else is just ignored (always replying 200 OK regardless,
     since Telegram will retry deliveries that don't get an OK response).
     """
     try:
         update = request.get_json(force=True, silent=True) or {}
+
+        callback_query = update.get('callback_query')
+        if callback_query:
+            handle_telegram_callback(callback_query)
+            return jsonify({'ok': True})
+
         message = update.get('message') or {}
         text = (message.get('text') or '').strip()
         chat = message.get('chat') or {}

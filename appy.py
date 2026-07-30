@@ -2398,7 +2398,7 @@ def ios_player_manifest(stream_id):
         return "Session expired - please re-enter your password.", 401
 
     upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
-    fetch_headers = {'User-Agent': XTREAM_USER_AGENT, 'Referer': DEFAULT_DNS}
+    fetch_headers = {'User-Agent': XTREAM_USER_AGENT}
 
     try:
         resp = sess['http_session'].get(upstream_url, headers=fetch_headers, timeout=15)
@@ -2449,7 +2449,7 @@ def ios_player_segment():
     try:
         upstream_resp = sess['http_session'].get(
             upstream_url,
-            headers={'User-Agent': XTREAM_USER_AGENT, 'Referer': DEFAULT_DNS},
+            headers={'User-Agent': XTREAM_USER_AGENT},
             timeout=20,
             stream=True
         )

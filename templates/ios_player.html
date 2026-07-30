@@ -171,11 +171,25 @@
             </button>
         </div>
 
-        <!-- Player -->
+        <!-- Player: hands off to VLC rather than playing in-browser -->
         <div class="card" id="player-card" style="display:none;">
-            <video id="video-player" controls playsinline></video>
-            <div id="player-error" style="display:none; background-color:rgba(220,38,38,0.15); border:1px solid rgba(220,38,38,0.5); color:#fecaca; padding:8px; border-radius:6px; font-size:12px; margin-top:8px; word-break:break-word;"></div>
-            <div id="epg-info" style="margin-top:8px;"></div>
+            <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 10px 0;"></p>
+
+            <a id="open-vlc-btn" href="#" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; margin-bottom:8px;">
+                ▶️ Open in VLC
+            </a>
+            <button type="button" onclick="copyStreamLink()" class="btn-secondary">
+                📋 Copy Stream Link
+            </button>
+            <p id="copy-confirm" style="display:none; color:#4ade80; font-size:12px; margin:6px 0 0 0; text-align:center;">✅ Copied!</p>
+
+            <p style="font-size:11px; color:#94a3b8; margin:10px 0 0 0; line-height:1.5;">
+                <b>On phone:</b> "Open in VLC" launches the VLC app directly (must have VLC installed).<br>
+                <b>On computer:</b> use "Copy Stream Link", then in VLC go to
+                <b>Media → Open Network Stream</b>, paste it in, and press Play.
+            </p>
+
+            <div id="epg-info" style="margin-top:10px;"></div>
         </div>
 
         <!-- Bouquets + channels -->
@@ -199,10 +213,11 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script>
+        const DNS_BASE = {{ dns | tojson }};
+        const CURRENT_USERNAME = {{ username | tojson }};
         let playerToken = null;
-        let hls = null;
+        let currentPassword = null;
 
         async function authenticatePlayer(btn) {
             const password = document.getElementById('player-password').value;
@@ -225,8 +240,8 @@
                 const data = await resp.json();
                 if (data.success) {
                     playerToken = data.token;
+                    currentPassword = password; // kept only in-memory, needed to build the direct VLC link
                     document.getElementById('auth-card').style.display = 'none';
-                    document.getElementById('player-card').style.display = 'block';
                     document.getElementById('browse-card').style.display = 'block';
                     loadBouquets();
                 } else {
@@ -287,70 +302,38 @@
             }
         }
 
-        function showPlayerError(message) {
-            const errDiv = document.getElementById('player-error');
-            if (errDiv) {
-                errDiv.textContent = '⚠️ ' + message;
-                errDiv.style.display = 'block';
-            }
-        }
-        function clearPlayerError() {
-            const errDiv = document.getElementById('player-error');
-            if (errDiv) errDiv.style.display = 'none';
-        }
+        let currentStreamUrl = null;
 
-        async function playChannel(streamId, name, tileEl) {
+        function playChannel(streamId, name, tileEl) {
             document.querySelectorAll('.channel-tile.active').forEach(el => el.classList.remove('active'));
             if (tileEl) tileEl.classList.add('active');
-            clearPlayerError();
 
-            const video = document.getElementById('video-player');
-            const manifestUrl = `/ios_player/manifest/${streamId}.m3u8?token=${encodeURIComponent(playerToken)}`;
+            // Direct, unproxied link straight to the panel - this is what
+            // makes playback actually work. It has to be opened by VLC
+            // running on the VIEWER'S OWN device, not played through our
+            // server, since the panel's Cloudflare protection blocks
+            // requests coming from a datacenter server (confirmed via
+            // testing) but allows real devices through normally - exactly
+            // the same as any other player app like TiviMate already does.
+            currentStreamUrl = `${DNS_BASE}/live/${encodeURIComponent(CURRENT_USERNAME)}/${encodeURIComponent(currentPassword)}/${streamId}.m3u8`;
 
-            if (hls) { hls.destroy(); hls = null; }
-
-            // NOTE: we deliberately only fetch the manifest ONCE per play
-            // attempt now (previously there was an extra "pre-check" fetch
-            // here too, which meant every channel click asked the panel for
-            // TWO separate streaming sessions back-to-back - some panels
-            // only allow one active session per line, so that could cause
-            // the second session to conflict with/invalidate the first).
-
-            if (window.Hls && Hls.isSupported()) {
-                hls = new Hls();
-                hls.loadSource(manifestUrl);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-                hls.on(Hls.Events.ERROR, async (event, data) => {
-                    console.error('HLS error:', data);
-                    if (data.fatal) {
-                        // Only re-fetch (once, after the real failure) to
-                        // show the server's actual error text for diagnosis.
-                        let detail = `${data.type} - ${data.details}`;
-                        try {
-                            const diagResp = await fetch(manifestUrl);
-                            if (!diagResp.ok) {
-                                const bodyText = await diagResp.text();
-                                detail = `HTTP ${diagResp.status}: ${bodyText.slice(0, 200)}`;
-                            }
-                        } catch (e) {}
-                        showPlayerError(`Playback error: ${detail}`);
-                    }
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Native HLS support (Safari/iOS)
-                video.src = manifestUrl;
-                video.addEventListener('error', () => {
-                    const err = video.error;
-                    showPlayerError(`Playback error (code ${err ? err.code : '?'}). This usually means the stream format isn't supported or the manifest failed to load.`);
-                }, { once: true });
-                video.play().catch(() => {});
-            } else {
-                showPlayerError('Your browser cannot play this stream format (no HLS support detected).');
-                return;
-            }
+            document.getElementById('player-card').style.display = 'block';
+            document.getElementById('now-playing-label').textContent = `📺 ${name}`;
+            document.getElementById('open-vlc-btn').href = 'vlc://' + currentStreamUrl;
+            document.getElementById('copy-confirm').style.display = 'none';
 
             loadEpg(streamId, name);
+        }
+
+        function copyStreamLink() {
+            if (!currentStreamUrl) return;
+            navigator.clipboard.writeText(currentStreamUrl).then(() => {
+                const confirmEl = document.getElementById('copy-confirm');
+                confirmEl.style.display = 'block';
+                setTimeout(() => { confirmEl.style.display = 'none'; }, 2500);
+            }).catch(() => {
+                prompt('Copy this stream link manually:', currentStreamUrl);
+            });
         }
 
         async function loadEpg(streamId, channelName) {

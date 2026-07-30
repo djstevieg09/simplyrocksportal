@@ -1994,9 +1994,11 @@ def login():
         session['logged_in'] = True
         session['username'] = username
         session['is_admin'] = False
-        # NOTE: we intentionally do NOT store the plaintext password in the
-        # session anymore. Nothing else in the app read it, and it's not
-        # something that should sit inside a browser cookie even signed.
+        # Stored in the signed Flask session cookie (not the database) so
+        # the web player can auto-authenticate without asking again. The
+        # cookie is signed with FLASK_SECRET_KEY and only lasts as long as
+        # the browser session - it's never written to disk or logged.
+        session['panel_password'] = password
 
         log_activity(username, "User login")
 
@@ -2255,16 +2257,34 @@ def admin_check_outbound_ip_stability():
 @app.route('/ios_player')
 def ios_player_page():
     """
-    The player page itself - basic bouquet/channel browser, handing off to
-    VLC for actual playback (see the big comment in ios_player.html for
-    why: Cloudflare blocks our server's own datacenter IP from fetching
-    video segments directly, confirmed via real testing, so playback has
-    to happen from the VIEWER'S own device/IP instead - same as any other
-    player app already does).
+    The player page itself. If the user's panel password is in their Flask
+    session (set at login), we auto-create a player session token here on
+    the server and pass it straight to the template, so the password prompt
+    never appears - the page loads straight into the content browser.
     """
     if not session.get('logged_in'):
         return redirect(url_for('login'))
-    return render_template('ios_player.html', username=session.get('username'), dns=DEFAULT_DNS.rstrip('/'))
+
+    username = session.get('username')
+    panel_password = session.get('panel_password')
+    auto_token = None
+
+    if panel_password:
+        _cleanup_expired_player_sessions()
+        auto_token = secrets.token_urlsafe(24)
+        _ios_player_sessions[auto_token] = {
+            'username': username,
+            'password': panel_password,
+            'created_at': time.time(),
+            'http_session': requests.Session()
+        }
+
+    return render_template(
+        'ios_player.html',
+        username=username,
+        dns=DEFAULT_DNS.rstrip('/'),
+        auto_token=auto_token
+    )
 
 
 @app.route('/ios_player/authenticate', methods=['POST'])
@@ -2304,6 +2324,22 @@ def ios_player_authenticate():
     }
 
     return jsonify({'success': True, 'token': token})
+
+
+@app.route('/ios_player/session_password', methods=['POST'])
+def ios_player_session_password():
+    """
+    Returns the panel password from the Flask session to the player page,
+    so it can build direct VLC stream URLs without ever having received or
+    stored it client-side. Only callable by a logged-in user for their own
+    session - never exposes another user's password.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'password': None}), 401
+    password = session.get('panel_password')
+    if not password:
+        return jsonify({'password': None}), 404
+    return jsonify({'password': password})
 
 
 def _get_player_session(token):

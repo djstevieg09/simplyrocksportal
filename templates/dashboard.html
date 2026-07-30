@@ -518,15 +518,6 @@
                     </table>
                 </div>
 
-                <!-- Add to Home Screen -->
-                <div class="card" id="add-home-card" style="border:1px solid rgba(37,99,235,0.5); display:none;">
-                    <h2 style="color:#60a5fa;">📲 Add Portal to Home Screen</h2>
-                    <p>Get one-tap access with no browser bars - it'll look and feel just like an app.</p>
-                    <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-primary" style="width:100%;">
-                        📲 Add Portal to Home Screen
-                    </button>
-                </div>
-
                 <!-- Add to Home Screen instructions modal (iOS / unsupported browsers) -->
                 <div id="add-home-modal-overlay" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
                     <div style="background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
@@ -540,13 +531,18 @@
                     </div>
                 </div>
 
-                <!-- Sky Glass app download -->
+                <!-- Download Centre -->
                 <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
-                    <h2 style="color:#60a5fa;">Download the Sky Glass App</h2>
+                    <h2 style="color:#60a5fa;">Download Centre</h2>
                     <p>Get the app directly on your phone to watch on the go.</p>
                     <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
                         📲 Download Sky Glass App
                     </a>
+                    <div id="add-home-card" style="display:none; margin-top:10px;">
+                        <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
+                            📲 Add Portal to Home Screen
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Telegram linking -->

@@ -171,25 +171,27 @@
             </button>
         </div>
 
-        <!-- Player: hands off to VLC rather than playing in-browser -->
+        <!-- Now playing + fallback controls -->
         <div class="card" id="player-card" style="display:none;">
-            <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 10px 0;"></p>
+            <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 8px 0;"></p>
 
-            <a id="open-vlc-btn" href="#" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; margin-bottom:8px;">
-                ▶️ Open in VLC
-            </a>
             <button type="button" onclick="copyStreamLink()" class="btn-secondary">
                 📋 Copy Stream Link
             </button>
             <p id="copy-confirm" style="display:none; color:#4ade80; font-size:12px; margin:6px 0 0 0; text-align:center;">✅ Copied!</p>
 
-            <p style="font-size:11px; color:#94a3b8; margin:10px 0 0 0; line-height:1.5;">
-                <b>On phone:</b> "Open in VLC" launches the VLC app directly (must have VLC installed).<br>
-                <b>On computer:</b> use "Copy Stream Link", then in VLC go to
-                <b>Media → Open Network Stream</b>, paste it in, and press Play.
-            </p>
+            <!-- Shown only if VLC doesn't appear to be installed -->
+            <div id="get-vlc-prompt" style="display:none; margin-top:10px; padding:10px; background-color:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.4); border-radius:8px; text-align:center;">
+                <p style="font-size:12px; color:#fecaca; margin:0 0 8px 0;">Doesn't look like VLC is installed on this device.</p>
+                <a id="get-vlc-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="display:block; text-decoration:none; box-sizing:border-box;">
+                    ⬇️ Get VLC
+                </a>
+            </div>
 
             <div id="epg-info" style="margin-top:10px;"></div>
+            <p style="font-size:11px; color:#94a3b8; margin:8px 0 0 0;">
+                Tap any channel to switch. On desktop, use "Copy Stream Link" → paste into VLC via <b>Media → Open Network Stream</b>.
+            </p>
         </div>
 
         <!-- Bouquets + channels -->
@@ -308,21 +310,15 @@
             document.querySelectorAll('.channel-tile.active').forEach(el => el.classList.remove('active'));
             if (tileEl) tileEl.classList.add('active');
 
-            // Direct, unproxied link straight to the panel - this is what
-            // makes playback actually work. It has to be opened by VLC
-            // running on the VIEWER'S OWN device, not played through our
-            // server, since the panel's Cloudflare protection blocks
-            // requests coming from a datacenter server (confirmed via
-            // testing) but allows real devices through normally - exactly
-            // the same as any other player app like TiviMate already does.
-            currentStreamUrl = `${DNS_BASE}/live/${encodeURIComponent(CURRENT_USERNAME)}/${encodeURIComponent(currentPassword)}/${streamId}.m3u8`;
+            currentStreamUrl = `${DNS_BASE}/live/${CURRENT_USERNAME}/${currentPassword}/${streamId}.m3u8`;
 
             document.getElementById('player-card').style.display = 'block';
             document.getElementById('now-playing-label').textContent = `📺 ${name}`;
-            document.getElementById('open-vlc-btn').href = 'vlc://' + currentStreamUrl;
             document.getElementById('copy-confirm').style.display = 'none';
+            document.getElementById('get-vlc-prompt').style.display = 'none';
 
             loadEpg(streamId, name);
+            openInVlc();
         }
 
         function copyStreamLink() {
@@ -334,6 +330,54 @@
             }).catch(() => {
                 prompt('Copy this stream link manually:', currentStreamUrl);
             });
+        }
+
+        function isAndroid() {
+            return /android/.test(window.navigator.userAgent.toLowerCase());
+        }
+
+        function isIos() {
+            return /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+        }
+
+        function openInVlc() {
+            if (!currentStreamUrl) return;
+            document.getElementById('get-vlc-prompt').style.display = 'none';
+
+            if (isAndroid()) {
+                const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
+                const fallbackTimeout = setTimeout(() => {
+                    const link = document.getElementById('get-vlc-link');
+                    link.href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
+                    document.getElementById('get-vlc-prompt').style.display = 'block';
+                }, 2000);
+                const onHide = () => {
+                    if (document.hidden) {
+                        clearTimeout(fallbackTimeout);
+                        document.removeEventListener('visibilitychange', onHide);
+                    }
+                };
+                document.addEventListener('visibilitychange', onHide);
+                window.location.href = intentUrl;
+            } else {
+                const handoffCheck = setTimeout(() => {
+                    if (!document.hidden) {
+                        const link = document.getElementById('get-vlc-link');
+                        link.href = isIos()
+                            ? 'https://apps.apple.com/app/vlc-media-player/id650377962'
+                            : 'https://www.videolan.org/vlc/';
+                        document.getElementById('get-vlc-prompt').style.display = 'block';
+                    }
+                }, 1800);
+                const onHide = () => {
+                    if (document.hidden) {
+                        clearTimeout(handoffCheck);
+                        document.removeEventListener('visibilitychange', onHide);
+                    }
+                };
+                document.addEventListener('visibilitychange', onHide);
+                window.location.href = 'vlc://' + currentStreamUrl;
+            }
         }
 
         async function loadEpg(streamId, channelName) {

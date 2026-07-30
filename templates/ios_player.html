@@ -174,6 +174,7 @@
         <!-- Player -->
         <div class="card" id="player-card" style="display:none;">
             <video id="video-player" controls playsinline></video>
+            <div id="player-error" style="display:none; background-color:rgba(220,38,38,0.15); border:1px solid rgba(220,38,38,0.5); color:#fecaca; padding:8px; border-radius:6px; font-size:12px; margin-top:8px; word-break:break-word;"></div>
             <div id="epg-info" style="margin-top:8px;"></div>
         </div>
 
@@ -286,26 +287,65 @@
             }
         }
 
-        function playChannel(streamId, name, tileEl) {
+        function showPlayerError(message) {
+            const errDiv = document.getElementById('player-error');
+            if (errDiv) {
+                errDiv.textContent = '⚠️ ' + message;
+                errDiv.style.display = 'block';
+            }
+        }
+        function clearPlayerError() {
+            const errDiv = document.getElementById('player-error');
+            if (errDiv) errDiv.style.display = 'none';
+        }
+
+        async function playChannel(streamId, name, tileEl) {
             document.querySelectorAll('.channel-tile.active').forEach(el => el.classList.remove('active'));
             if (tileEl) tileEl.classList.add('active');
+            clearPlayerError();
 
             const video = document.getElementById('video-player');
             const manifestUrl = `/ios_player/manifest/${streamId}.m3u8?token=${encodeURIComponent(playerToken)}`;
 
             if (hls) { hls.destroy(); hls = null; }
 
+            // Check the manifest directly first, so we can show the REAL
+            // server error (wrong password, panel unreachable, bad stream
+            // id, etc.) instead of a generic "can't play" failure with no
+            // explanation.
+            try {
+                const checkResp = await fetch(manifestUrl);
+                if (!checkResp.ok) {
+                    const bodyText = await checkResp.text();
+                    showPlayerError(`Stream error (HTTP ${checkResp.status}): ${bodyText.slice(0, 200)}`);
+                    return;
+                }
+            } catch (e) {
+                showPlayerError('Could not reach the server to load this stream.');
+                return;
+            }
+
             if (window.Hls && Hls.isSupported()) {
                 hls = new Hls();
                 hls.loadSource(manifestUrl);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('HLS error:', data);
+                    if (data.fatal) {
+                        showPlayerError(`Playback error: ${data.type} - ${data.details}`);
+                    }
+                });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 // Native HLS support (Safari/iOS)
                 video.src = manifestUrl;
+                video.addEventListener('error', () => {
+                    const err = video.error;
+                    showPlayerError(`Playback error (code ${err ? err.code : '?'}). This usually means the stream format isn't supported or the manifest failed to load.`);
+                }, { once: true });
                 video.play().catch(() => {});
             } else {
-                alert('Your browser cannot play this stream format.');
+                showPlayerError('Your browser cannot play this stream format (no HLS support detected).');
                 return;
             }
 

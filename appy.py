@@ -57,19 +57,30 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 # --- TELEGRAM GROUP AUTO-REPLY ---
 # When someone posts a message in your support GROUP that looks like a
-# question, fault report, or content request, the bot auto-replies pointing
-# them to the portal. This is keyword-based, not real understanding of the
-# message - it can't tell a genuine support question from someone just
-# mentioning one of these words in passing, so false positives/negatives
-# are expected. Edit this list to tune what it catches.
-TELEGRAM_GROUP_TRIGGER_KEYWORDS = [
+# setup question, a fault report, or a general request/question, the bot
+# auto-replies with the most relevant help. This is keyword-based, not real
+# understanding of the message - it can't tell a genuine support question
+# from someone just mentioning one of these words in passing, so false
+# positives/negatives are expected. Edit these lists to tune what it catches.
+# Checked in this order (most specific first) so e.g. "how do I install"
+# gets the install guide, not the generic message.
+TELEGRAM_GROUP_SETUP_KEYWORDS = [
+    "how do i install", "how to install", "how do i set up", "how do i setup",
+    "how to set up", "how to setup", "setup instructions", "install instructions",
+    "installation guide", "how do i add the app", "how to add the app",
+]
+
+TELEGRAM_GROUP_ISSUE_KEYWORDS = [
     "not working", "not loading", "won't load", "wont load", "won't work", "wont work",
     "broken", "buffering", "freezing", "frozen", "black screen", "no picture", "no sound",
     "keeps crashing", "keeps freezing", "stopped working", "down again", "is down",
-    "please add", "can you add", "could you add", "can i request", "can i get",
-    "please fix", "any updates on", "when will", "how do i", "how to install",
-    "need help", "help me", "having trouble", "having issues", "having an issue",
+    "please fix", "having trouble", "having issues", "having an issue",
     "report a fault", "report an issue", "problem with", "issue with",
+]
+
+TELEGRAM_GROUP_REQUEST_KEYWORDS = [
+    "please add", "can you add", "could you add", "can i request", "can i get",
+    "any updates on", "when will", "need help", "help me",
 ]
 
 # How long (in seconds) to wait before auto-replying again in the SAME
@@ -84,6 +95,22 @@ TELEGRAM_GROUP_AUTOREPLY_TEXT = (
     "You can request movies/shows, report a channel/VOD/app issue, check your "
     "renewal date, and more - all from your dashboard."
 )
+
+TELEGRAM_GROUP_ISSUE_REPLY_TEXT = (
+    "🔧 <b>A few quick things to try first</b> - these fix most issues:\n\n"
+    "1️⃣ <b>Reload your playlist</b> in the app\n"
+    "2️⃣ <b>Delete the playlist and re-add it</b>\n"
+    "3️⃣ <b>Turn your router off for 2 minutes</b>, then switch it back on\n"
+    "4️⃣ <b>Try running a VPN</b> - some issues are ISP-related\n\n"
+    "Still not working after that? Please report it properly through the portal "
+    "so it's tracked and actioned:\n\n"
+    f"{os.environ.get('PUBLIC_APP_URL', '').rstrip('/')}"
+)
+
+# NOTE: the setup/install reply is built inside handle_support_keyword_autoreply()
+# rather than as a constant here, since it reuses LEGACY_APP_SWITCH_INSTRUCTIONS_TEMPLATE
+# which isn't defined until further down in this file - referencing it inside
+# a function is safe since that only runs later, at actual request time.
 
 _group_autoreply_last_sent = {}  # chat_id -> unix timestamp, in-memory only
 
@@ -4870,70 +4897,98 @@ def admin_telegram_webhook_status():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-def handle_group_message_autoreply(message):
+def handle_support_keyword_autoreply(message):
     """
-    If a message in a GROUP chat contains one of the support-related
-    trigger keywords, auto-reply pointing them to the portal - subject to
-    a per-chat cooldown so it doesn't reply to every single message in a
-    burst. Never touches private (1-on-1) chats - those are handled
-    separately for account linking.
+    If a message - in the support GROUP, or sent DIRECTLY/privately to the
+    bot - looks like a setup question, a fault report, or a general
+    request/question, auto-reply with the most relevant help. Subject to a
+    per-chat cooldown so it doesn't reply to every single message in a
+    burst. Private chats still handle "/start <token>" separately for
+    account linking BEFORE this ever runs - see telegram_webhook().
     """
     chat = message.get('chat') or {}
     chat_type = chat.get('type')
     text = (message.get('text') or '').strip()
 
-    print(f"GROUP AUTOREPLY: received chat_type={chat_type!r} text={text!r}", flush=True)
+    print(f"SUPPORT AUTOREPLY: received chat_type={chat_type!r} text={text!r}", flush=True)
 
-    if chat_type not in ('group', 'supergroup'):
-        print("GROUP AUTOREPLY: skipped - not a group/supergroup chat", flush=True)
+    if chat_type not in ('group', 'supergroup', 'private'):
+        print("SUPPORT AUTOREPLY: skipped - unrecognized chat type", flush=True)
         return
 
     if not text or text.startswith('/'):
-        print("GROUP AUTOREPLY: skipped - empty text or a command", flush=True)
+        print("SUPPORT AUTOREPLY: skipped - empty text or a command", flush=True)
         return
 
     sender = message.get('from') or {}
     if sender.get('is_bot'):
-        print("GROUP AUTOREPLY: skipped - sender is a bot", flush=True)
+        print("SUPPORT AUTOREPLY: skipped - sender is a bot", flush=True)
+        return
+
+    admin_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    this_chat_id = chat.get('id')
+    if chat_type == 'private' and admin_chat_id and str(this_chat_id) == str(admin_chat_id):
+        print("SUPPORT AUTOREPLY: skipped - this is the admin's own private chat with the bot", flush=True)
         return
 
     lowered = text.lower()
-    matched_keyword = next((k for k in TELEGRAM_GROUP_TRIGGER_KEYWORDS if k in lowered), None)
-    if not matched_keyword:
-        print(f"GROUP AUTOREPLY: skipped - no keyword matched in {text!r}", flush=True)
+
+    # Checked in priority order - most specific first - so "how do I
+    # install the app" gets the install guide, not the generic message.
+    setup_match = next((k for k in TELEGRAM_GROUP_SETUP_KEYWORDS if k in lowered), None)
+    issue_match = None if setup_match else next((k for k in TELEGRAM_GROUP_ISSUE_KEYWORDS if k in lowered), None)
+    request_match = None if (setup_match or issue_match) else next((k for k in TELEGRAM_GROUP_REQUEST_KEYWORDS if k in lowered), None)
+
+    if setup_match:
+        matched_keyword, category = setup_match, "setup"
+        reply_text = (
+            "📲 Here's how to get set up:\n\n"
+            f"{LEGACY_APP_SWITCH_INSTRUCTIONS_TEMPLATE}"
+        )
+        use_html = False  # this guide contains raw "&" which HTML parse mode would reject
+    elif issue_match:
+        matched_keyword, category = issue_match, "issue"
+        reply_text = TELEGRAM_GROUP_ISSUE_REPLY_TEXT
+        use_html = True  # uses <b> tags for bold formatting
+    elif request_match:
+        matched_keyword, category = request_match, "request"
+        reply_text = TELEGRAM_GROUP_AUTOREPLY_TEXT
+        use_html = False
+    else:
+        print(f"SUPPORT AUTOREPLY: skipped - no keyword matched in {text!r}", flush=True)
         return
 
-    print(f"GROUP AUTOREPLY: matched keyword '{matched_keyword}'", flush=True)
+    print(f"SUPPORT AUTOREPLY: matched '{matched_keyword}' (category: {category})", flush=True)
 
     chat_id = chat.get('id')
     if not chat_id:
-        print("GROUP AUTOREPLY: skipped - no chat_id on message", flush=True)
+        print("SUPPORT AUTOREPLY: skipped - no chat_id on message", flush=True)
         return
 
     now = time.time()
     last_sent = _group_autoreply_last_sent.get(chat_id, 0)
     seconds_since_last = now - last_sent
     if seconds_since_last < TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS:
-        print(f"GROUP AUTOREPLY: skipped - cooldown active ({seconds_since_last:.0f}s since last reply, needs {TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS}s)", flush=True)
+        print(f"SUPPORT AUTOREPLY: skipped - cooldown active ({seconds_since_last:.0f}s since last reply, needs {TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS}s)", flush=True)
         return
 
     try:
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         if not bot_token:
-            print("GROUP AUTOREPLY: skipped - TELEGRAM_BOT_TOKEN not set", flush=True)
+            print("SUPPORT AUTOREPLY: skipped - TELEGRAM_BOT_TOKEN not set", flush=True)
             return
 
         send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        resp = requests.post(
-            send_url,
-            json={
-                "chat_id": chat_id,
-                "text": TELEGRAM_GROUP_AUTOREPLY_TEXT,
-                "reply_to_message_id": message.get('message_id')
-            },
-            timeout=8
-        )
-        print(f"GROUP AUTOREPLY: sendMessage (in-thread) -> HTTP {resp.status_code}: {resp.text[:300]}", flush=True)
+        send_payload = {
+            "chat_id": chat_id,
+            "text": reply_text,
+            "reply_to_message_id": message.get('message_id')
+        }
+        if use_html:
+            send_payload["parse_mode"] = "HTML"
+
+        resp = requests.post(send_url, json=send_payload, timeout=8)
+        print(f"SUPPORT AUTOREPLY: sendMessage (in-thread) -> HTTP {resp.status_code}: {resp.text[:300]}", flush=True)
 
         if resp.status_code == 200:
             # Only start the cooldown once a reply has actually gone out -
@@ -4945,12 +5000,11 @@ def handle_group_message_autoreply(message):
             # has Topics/forum mode enabled and that specific topic is
             # locked) - fall back to a plain message with no threading
             # rather than losing the reply entirely.
-            fallback_resp = requests.post(
-                send_url,
-                json={"chat_id": chat_id, "text": TELEGRAM_GROUP_AUTOREPLY_TEXT},
-                timeout=8
-            )
-            print(f"GROUP AUTOREPLY: sendMessage (fallback, no thread) -> HTTP {fallback_resp.status_code}: {fallback_resp.text[:300]}", flush=True)
+            fallback_payload = {"chat_id": chat_id, "text": reply_text}
+            if use_html:
+                fallback_payload["parse_mode"] = "HTML"
+            fallback_resp = requests.post(send_url, json=fallback_payload, timeout=8)
+            print(f"SUPPORT AUTOREPLY: sendMessage (fallback, no thread) -> HTTP {fallback_resp.status_code}: {fallback_resp.text[:300]}", flush=True)
             if fallback_resp.status_code == 200:
                 _group_autoreply_last_sent[chat_id] = now
     except Exception as e:
@@ -4964,8 +5018,9 @@ def telegram_webhook():
     bot. Three things we care about:
       - "callback_query": the admin tapped an inline action button on an
         alert - handled by handle_telegram_callback().
-      - A message in a GROUP chat containing a support-related keyword -
-        handled by handle_group_message_autoreply().
+      - A message in a GROUP chat, OR a private/direct message to the bot
+        that isn't a /start command - keyword-based auto-reply, handled by
+        handle_support_keyword_autoreply().
       - "/start <token>" in a PRIVATE chat: someone opened their personal
         t.me linking link from the dashboard - handled below as before.
     Everything else is just ignored (always replying 200 OK regardless,
@@ -4985,15 +5040,20 @@ def telegram_webhook():
         chat_id = chat.get('id')
         chat_type = chat.get('type')
 
-        # Group messages: keyword-based auto-reply, never touches the
-        # account-linking flow below.
+        # Group messages: keyword-based auto-reply.
         if chat_type in ('group', 'supergroup'):
-            handle_group_message_autoreply(message)
+            handle_support_keyword_autoreply(message)
             return jsonify({'ok': True})
 
-        # Everything past here is the private-chat /start linking flow -
-        # restricted to private chats so a stray "/start" typed in a group
-        # can't be misused to link someone's account to the group itself.
+        # Private chat: "/start <token>" is always the account-linking
+        # flow (handled below). Anything else private that isn't a
+        # command gets the same keyword-based auto-reply as the group -
+        # this is what lets people message the bot directly instead of
+        # your personal account and still get useful answers.
+        if chat_type == 'private' and not text.startswith('/start'):
+            handle_support_keyword_autoreply(message)
+            return jsonify({'ok': True})
+
         if chat_type != 'private' or not chat_id or not text.startswith('/start'):
             return jsonify({'ok': True})
 

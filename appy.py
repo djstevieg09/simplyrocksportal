@@ -2449,7 +2449,14 @@ def ios_player_segment():
     try:
         upstream_resp = sess['http_session'].get(
             upstream_url,
-            headers={'User-Agent': XTREAM_USER_AGENT},
+            headers={
+                'User-Agent': XTREAM_USER_AGENT,
+                # Many nginx-based HLS delivery setups reject plain,
+                # non-range GET requests to .ts segments as an anti-scraping
+                # measure - real players almost always request with a Range
+                # header, even when they want the whole file.
+                'Range': 'bytes=0-'
+            },
             timeout=20,
             stream=True
         )
@@ -2457,7 +2464,7 @@ def ios_player_segment():
         print(f"IOS_PLAYER_SEGMENT NETWORK ERROR: {type(e).__name__}", flush=True)
         return "Could not reach the streaming server.", 502
 
-    if upstream_resp.status_code != 200:
+    if upstream_resp.status_code not in (200, 206):
         # Read a little of the body for logging (safe - segment URLs don't
         # carry the account password, only the manifest ones do, and this
         # is a server-side log line, never sent to the browser).
@@ -2466,7 +2473,12 @@ def ios_player_segment():
             preview = next(upstream_resp.iter_content(200), b'').decode('utf-8', errors='replace')
         except Exception:
             pass
-        print(f"IOS_PLAYER_SEGMENT UPSTREAM ERROR: HTTP {upstream_resp.status_code} for {upstream_url} - body starts: {preview!r}", flush=True)
+        print(
+            f"IOS_PLAYER_SEGMENT UPSTREAM ERROR: HTTP {upstream_resp.status_code} for {upstream_url}\n"
+            f"  response headers: {dict(upstream_resp.headers)}\n"
+            f"  body starts: {preview!r}",
+            flush=True
+        )
         return f"Streaming server returned HTTP {upstream_resp.status_code}.", 502
 
     content_type = upstream_resp.headers.get('Content-Type', '')

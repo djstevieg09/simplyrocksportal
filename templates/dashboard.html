@@ -518,6 +518,28 @@
                     </table>
                 </div>
 
+                <!-- Add to Home Screen -->
+                <div class="card" id="add-home-card" style="border:1px solid rgba(37,99,235,0.5); display:none;">
+                    <h2 style="color:#60a5fa;">📲 Add Portal to Home Screen</h2>
+                    <p>Get one-tap access with no browser bars - it'll look and feel just like an app.</p>
+                    <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-primary" style="width:100%;">
+                        📲 Add Portal to Home Screen
+                    </button>
+                </div>
+
+                <!-- Add to Home Screen instructions modal (iOS / unsupported browsers) -->
+                <div id="add-home-modal-overlay" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
+                    <div style="background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+                        <div style="font-size:38px; margin-bottom:6px;">📲</div>
+                        <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
+                        <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
+                        <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';"
+                                class="btn-secondary" style="width:100%;">
+                            Got it
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Sky Glass app download -->
                 <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
                     <h2 style="color:#60a5fa;">Download the Sky Glass App</h2>
@@ -1340,6 +1362,89 @@
                 alert('Server error while removing managed friend.');
             }
         }
+
+        // --- Add to Home Screen ---
+        let deferredInstallPrompt = null;
+
+        function isIosDevice() {
+            return /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+        }
+
+        function isRunningStandalone() {
+            return (window.navigator.standalone === true) ||
+                   window.matchMedia('(display-mode: standalone)').matches;
+        }
+
+        // Android/Chrome fires this automatically when the site qualifies as
+        // installable - capturing it lets us trigger the real native
+        // install prompt from our own button instead of a browser banner.
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e;
+            const card = document.getElementById('add-home-card');
+            if (card) card.style.display = 'block';
+        });
+
+        window.addEventListener('appinstalled', () => {
+            const card = document.getElementById('add-home-card');
+            if (card) card.style.display = 'none';
+            deferredInstallPrompt = null;
+        });
+
+        async function handleAddToHomeScreen(btn) {
+            // Android/Chrome and anything else that supports the real
+            // install prompt API - one tap, done.
+            if (deferredInstallPrompt) {
+                deferredInstallPrompt.prompt();
+                try {
+                    await deferredInstallPrompt.userChoice;
+                } catch (e) {}
+                deferredInstallPrompt = null;
+                return;
+            }
+            // No native prompt available (iOS Safari never supports this,
+            // and some browsers don't offer it) - show clear manual steps.
+            showAddToHomeInstructions();
+        }
+
+        function showAddToHomeInstructions() {
+            const stepsDiv = document.getElementById('add-home-modal-steps');
+            if (isIosDevice()) {
+                stepsDiv.innerHTML = `
+                    <p style="margin:0 0 8px 0;">On iPhone/iPad, Apple requires this to be done manually from Safari:</p>
+                    <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (square with an arrow ↑) in Safari's toolbar</p>
+                    <p style="margin:0 0 6px 0;">2️⃣ Scroll down and tap <b>"Add to Home Screen"</b></p>
+                    <p style="margin:0;">3️⃣ Tap <b>"Add"</b> in the top right</p>
+                `;
+            } else {
+                stepsDiv.innerHTML = `
+                    <p style="margin:0 0 8px 0;">Your browser doesn't support one-tap install, but you can still add it manually:</p>
+                    <p style="margin:0 0 6px 0;">1️⃣ Open your browser's menu (usually ⋮ or ≡)</p>
+                    <p style="margin:0;">2️⃣ Look for <b>"Add to Home Screen"</b> or <b>"Install App"</b></p>
+                `;
+            }
+            document.getElementById('add-home-modal-overlay').style.display = 'flex';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const card = document.getElementById('add-home-card');
+            if (!card) return;
+
+            if (isRunningStandalone()) {
+                // Already added/installed - nothing to do.
+                card.style.display = 'none';
+                return;
+            }
+
+            if (isIosDevice()) {
+                // iOS never fires beforeinstallprompt, so show the button
+                // right away - tapping it opens the manual instructions.
+                card.style.display = 'block';
+            }
+            // Other browsers: the button stays hidden until/unless
+            // beforeinstallprompt actually fires above, since that's the
+            // browser's own signal that a real one-tap install is possible.
+        });
 
         // --- Telegram linking ---
         let telegramLinkPollTimer = null;

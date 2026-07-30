@@ -125,25 +125,25 @@
 
         <!-- Movies -->
         <div id="tab-movies" class="card" style="display:none;">
-            <select id="movie-cat-select" onchange="loadMovies(this.value)">
-                <option value="">Select a category...</option>
-            </select>
-            <div class="search-bar" id="movie-search-bar" style="display:none;">
-                <input type="text" id="movie-search" placeholder="Search movies..." oninput="filterPosters('movie-grid', this.value, 'movie-search-clear')">
-                <button class="clear-btn" id="movie-search-clear" onclick="clearSearch('movie-search','movie-grid','movie-search-clear')">✕</button>
+            <div class="search-bar" id="movie-search-bar">
+                <input type="text" id="movie-search" placeholder="Search all movies..." oninput="searchAllMovies(this.value, 'movie-search-clear')">
+                <button class="clear-btn" id="movie-search-clear" onclick="clearMovieSearch()">✕</button>
             </div>
+            <select id="movie-cat-select" onchange="loadMovies(this.value)">
+                <option value="">— or browse by category —</option>
+            </select>
             <div id="movie-grid" class="poster-grid"></div>
         </div>
 
         <!-- Series -->
         <div id="tab-series" class="card" style="display:none;">
-            <select id="series-cat-select" onchange="loadSeriesList(this.value)">
-                <option value="">Select a category...</option>
-            </select>
-            <div class="search-bar" id="series-search-bar" style="display:none;">
-                <input type="text" id="series-search" placeholder="Search series..." oninput="filterPosters('series-grid', this.value, 'series-search-clear')">
-                <button class="clear-btn" id="series-search-clear" onclick="clearSearch('series-search','series-grid','series-search-clear')">✕</button>
+            <div class="search-bar" id="series-search-bar">
+                <input type="text" id="series-search" placeholder="Search all series..." oninput="searchAllSeries(this.value, 'series-search-clear')">
+                <button class="clear-btn" id="series-search-clear" onclick="clearSeriesSearch()">✕</button>
             </div>
+            <select id="series-cat-select" onchange="loadSeriesList(this.value)">
+                <option value="">— or browse by category —</option>
+            </select>
             <div id="series-grid" class="poster-grid"></div>
 
             <!-- Episode drill-down -->
@@ -183,6 +183,8 @@
     let currentPassword = null;
     let currentStreamUrl = null;
     let currentSeriesData = null;
+    let allMoviesCache = [];   // all movies across all categories, for global search
+    let allSeriesCache = [];   // all series across all categories, for global search
 
     // --- Favourites (localStorage, persists between sessions) ---
     const FAV_KEY = 'iptv_player_favs';
@@ -288,6 +290,8 @@
                 loadBouquets();
                 loadMovieCategories();
                 loadSeriesCategories();
+                loadAllMoviesInBackground();
+                loadAllSeriesInBackground();
             } else {
                 errorEl.textContent = data.message || 'Incorrect password.';
                 errorEl.style.display = 'block';
@@ -308,21 +312,82 @@
         if (tab === 'favs') renderFavs();
     }
 
-    // --- Search & filter (client-side, filters already-rendered tiles) ---
-    function filterPosters(gridId, query, clearBtnId) {
-        const q = query.toLowerCase().trim();
-        const clearBtn = document.getElementById(clearBtnId);
-        if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
-        const grid = document.getElementById(gridId);
-        if (!grid) return;
-        grid.querySelectorAll('.poster-tile').forEach(tile => {
-            const name = (tile.dataset.name || '');
-            tile.style.display = (!q || name.includes(q)) ? '' : 'none';
-        });
+    // --- Search: cross-category, searches the full background-loaded cache ---
+    let movieSearchTimeout = null;
+    let seriesSearchTimeout = null;
+
+    async function loadAllMoviesInBackground() {
+        try {
+            const resp = await fetch(`/ios_player/vod_streams?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (Array.isArray(data)) allMoviesCache = data;
+        } catch(e) {}
     }
-    function clearSearch(inputId, gridId, clearBtnId) {
-        const input = document.getElementById(inputId);
-        if (input) { input.value = ''; filterPosters(gridId, '', clearBtnId); }
+
+    async function loadAllSeriesInBackground() {
+        try {
+            const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (Array.isArray(data)) allSeriesCache = data;
+        } catch(e) {}
+    }
+
+    function searchAllMovies(query, clearBtnId) {
+        const clearBtn = document.getElementById(clearBtnId);
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        if (!query.trim()) {
+            // Empty search: revert to category browse
+            document.getElementById('movie-grid').innerHTML = '';
+            document.getElementById('movie-cat-select').value = '';
+            return;
+        }
+        if (movieSearchTimeout) clearTimeout(movieSearchTimeout);
+        movieSearchTimeout = setTimeout(() => {
+            const q = query.toLowerCase().trim();
+            const results = allMoviesCache.filter(m => m.name && m.name.toLowerCase().includes(q));
+            const grid = document.getElementById('movie-grid');
+            grid.innerHTML = '';
+            document.getElementById('movie-cat-select').value = '';
+            if (!results.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No results found.</p>'; return; }
+            results.forEach(m => {
+                grid.appendChild(makePosterTile(m.stream_id, m.name, m.stream_icon, 'movie', m.container_extension || 'mp4', null));
+            });
+        }, 250);
+    }
+
+    function searchAllSeries(query, clearBtnId) {
+        const clearBtn = document.getElementById(clearBtnId);
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        if (!query.trim()) {
+            document.getElementById('series-grid').innerHTML = '';
+            document.getElementById('series-detail').style.display = 'none';
+            document.getElementById('series-cat-select').value = '';
+            return;
+        }
+        if (seriesSearchTimeout) clearTimeout(seriesSearchTimeout);
+        seriesSearchTimeout = setTimeout(() => {
+            const q = query.toLowerCase().trim();
+            const results = allSeriesCache.filter(s => s.name && s.name.toLowerCase().includes(q));
+            const grid = document.getElementById('series-grid');
+            grid.innerHTML = '';
+            document.getElementById('series-cat-select').value = '';
+            document.getElementById('series-detail').style.display = 'none';
+            if (!results.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No results found.</p>'; return; }
+            results.forEach(s => {
+                grid.appendChild(makePosterTile(s.series_id, s.name, s.cover, 'series', 'mp4',
+                    (id, name, ext, el) => openSeriesDetail(id, name, el)));
+            });
+        }, 250);
+    }
+
+    function clearMovieSearch() {
+        const input = document.getElementById('movie-search');
+        if (input) { input.value = ''; searchAllMovies('', 'movie-search-clear'); }
+    }
+
+    function clearSeriesSearch() {
+        const input = document.getElementById('series-search');
+        if (input) { input.value = ''; searchAllSeries('', 'series-search-clear'); }
     }
 
     // --- Live TV ---
@@ -398,11 +463,11 @@
 
     async function loadMovies(categoryId) {
         const grid = document.getElementById('movie-grid');
-        const searchBar = document.getElementById('movie-search-bar');
-        clearSearch('movie-search', 'movie-grid', 'movie-search-clear');
-        if (!categoryId) { grid.innerHTML = ''; searchBar.style.display = 'none'; return; }
+        // Clear the search box when the user browses by category
+        const searchInput = document.getElementById('movie-search');
+        if (searchInput) { searchInput.value = ''; document.getElementById('movie-search-clear').style.display = 'none'; }
+        if (!categoryId) { grid.innerHTML = ''; return; }
         grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">Loading...</p>';
-        searchBar.style.display = 'none';
         try {
             const resp = await fetch(`/ios_player/vod_streams?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
             const data = await resp.json();
@@ -412,7 +477,6 @@
                 const ext = m.container_extension || 'mp4';
                 grid.appendChild(makePosterTile(m.stream_id, m.name, m.stream_icon, 'movie', ext, null));
             });
-            searchBar.style.display = 'block';
         } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;grid-column:1/-1;">Error loading.</p>'; }
     }
 
@@ -439,12 +503,12 @@
 
     async function loadSeriesList(categoryId) {
         const grid = document.getElementById('series-grid');
-        const searchBar = document.getElementById('series-search-bar');
         document.getElementById('series-detail').style.display = 'none';
-        clearSearch('series-search', 'series-grid', 'series-search-clear');
-        if (!categoryId) { grid.innerHTML = ''; searchBar.style.display = 'none'; return; }
+        // Clear the search box when the user browses by category
+        const searchInput = document.getElementById('series-search');
+        if (searchInput) { searchInput.value = ''; document.getElementById('series-search-clear').style.display = 'none'; }
+        if (!categoryId) { grid.innerHTML = ''; return; }
         grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">Loading...</p>';
-        searchBar.style.display = 'none';
         try {
             const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
             const data = await resp.json();
@@ -454,7 +518,6 @@
                 grid.appendChild(makePosterTile(s.series_id, s.name, s.cover, 'series', 'mp4',
                     (id, name, ext, el) => openSeriesDetail(id, name, el)));
             });
-            searchBar.style.display = 'block';
         } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;grid-column:1/-1;">Error loading.</p>'; }
     }
 
@@ -578,6 +641,8 @@
                         loadBouquets();
                         loadMovieCategories();
                         loadSeriesCategories();
+                        loadAllMoviesInBackground();
+                        loadAllSeriesInBackground();
                     }
                 })
                 .catch(() => {

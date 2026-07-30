@@ -178,6 +178,7 @@
 <script>
     const DNS_BASE = {{ dns | tojson }};
     const CURRENT_USERNAME = {{ username | tojson }};
+    const AUTO_TOKEN = {{ (auto_token or '') | tojson }};
     let playerToken = null;
     let currentPassword = null;
     let currentStreamUrl = null;
@@ -554,9 +555,35 @@
         document.getElementById('add-home-modal-overlay').style.display = 'flex';
     }
     document.addEventListener('DOMContentLoaded', () => {
+        // Add to Home Screen card
         const c = document.getElementById('add-home-card');
-        if (!c || isRunningStandalone()) return;
-        if (isIos()) c.style.display = 'block';
+        if (c && !isRunningStandalone() && isIos()) c.style.display = 'block';
+
+        // If the server already created a player session (because the panel
+        // password was available from the portal login session), skip the
+        // password gate entirely and load content straight away.
+        if (AUTO_TOKEN) {
+            playerToken = AUTO_TOKEN;
+            // We don't have the plaintext password client-side in this path
+            // (it never leaves the server), but the stream URLs need it.
+            // Fetch it from the session via a lightweight endpoint.
+            fetch('/ios_player/session_password', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.password) {
+                        currentPassword = data.password;
+                        document.getElementById('auth-card').style.display = 'none';
+                        document.getElementById('player-card').style.display = 'block';
+                        document.getElementById('browse-card').style.display = 'block';
+                        loadBouquets();
+                        loadMovieCategories();
+                        loadSeriesCategories();
+                    }
+                })
+                .catch(() => {
+                    // Session endpoint failed - fall back to password prompt
+                });
+        }
     });
 </script>
 </body>

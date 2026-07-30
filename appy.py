@@ -2210,6 +2210,34 @@ def dashboard():
 
 # --- iOS WEB PLAYER ROUTES ---
 
+@app.route('/admin/check_outbound_ip_stability')
+def admin_check_outbound_ip_stability():
+    """
+    Diagnostic: makes two separate outbound HTTP requests and reports the
+    IP address Render used for each. If they differ, that confirms Render
+    doesn't guarantee a stable outbound IP per app instance - which would
+    explain segment fetches getting a 403 from panels that IP-lock their
+    HLS chunk URLs to whichever IP first requested the manifest.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    ips = []
+    for _ in range(2):
+        try:
+            resp = requests.get('https://api.ipify.org?format=json', timeout=8)
+            ips.append(resp.json().get('ip'))
+        except Exception as e:
+            ips.append(f"error: {type(e).__name__}")
+
+    return jsonify({
+        'success': True,
+        'first_request_ip': ips[0],
+        'second_request_ip': ips[1],
+        'stable': ips[0] == ips[1]
+    })
+
+
 @app.route('/ios_player')
 def ios_player_page():
     """The player page itself - basic bouquet/channel browser + video player."""

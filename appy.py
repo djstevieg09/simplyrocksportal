@@ -55,6 +55,38 @@ RESELLER_PASSWORD = os.environ.get('RESELLER_PASS')
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
+# --- TELEGRAM GROUP AUTO-REPLY ---
+# When someone posts a message in your support GROUP that looks like a
+# question, fault report, or content request, the bot auto-replies pointing
+# them to the portal. This is keyword-based, not real understanding of the
+# message - it can't tell a genuine support question from someone just
+# mentioning one of these words in passing, so false positives/negatives
+# are expected. Edit this list to tune what it catches.
+TELEGRAM_GROUP_TRIGGER_KEYWORDS = [
+    "not working", "not loading", "won't load", "wont load", "won't work", "wont work",
+    "broken", "buffering", "freezing", "frozen", "black screen", "no picture", "no sound",
+    "keeps crashing", "keeps freezing", "stopped working", "down again", "is down",
+    "please add", "can you add", "could you add", "can i request", "can i get",
+    "please fix", "any updates on", "when will", "how do i", "how to install",
+    "need help", "help me", "having trouble", "having issues", "having an issue",
+    "report a fault", "report an issue", "problem with", "issue with",
+]
+
+# How long (in seconds) to wait before auto-replying again in the SAME
+# group chat, even if more trigger messages come in - stops the bot
+# replying to every single message in a burst and feeling spammy.
+TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS = 300  # 5 minutes
+
+TELEGRAM_GROUP_AUTOREPLY_TEXT = (
+    "👋 For any requests, fault reports, or account questions, please use the portal "
+    "rather than posting here - that way it's tracked properly and gets actioned:\n\n"
+    f"{os.environ.get('PUBLIC_APP_URL', '').rstrip('/')}\n\n"
+    "You can request movies/shows, report a channel/VOD/app issue, check your "
+    "renewal date, and more - all from your dashboard."
+)
+
+_group_autoreply_last_sent = {}  # chat_id -> unix timestamp, in-memory only
+
 # Xtream default password for sync
 XTREAM_DEFAULT_PASSWORD = os.environ.get('XTREAM_DEFAULT_PASSWORD', '')
 
@@ -4838,15 +4870,69 @@ def admin_telegram_webhook_status():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+def handle_group_message_autoreply(message):
+    """
+    If a message in a GROUP chat contains one of the support-related
+    trigger keywords, auto-reply pointing them to the portal - subject to
+    a per-chat cooldown so it doesn't reply to every single message in a
+    burst. Never touches private (1-on-1) chats - those are handled
+    separately for account linking.
+    """
+    chat = message.get('chat') or {}
+    if chat.get('type') not in ('group', 'supergroup'):
+        return
+
+    text = (message.get('text') or '').strip()
+    if not text or text.startswith('/'):
+        return
+
+    sender = message.get('from') or {}
+    if sender.get('is_bot'):
+        return
+
+    lowered = text.lower()
+    if not any(keyword in lowered for keyword in TELEGRAM_GROUP_TRIGGER_KEYWORDS):
+        return
+
+    chat_id = chat.get('id')
+    if not chat_id:
+        return
+
+    now = time.time()
+    last_sent = _group_autoreply_last_sent.get(chat_id, 0)
+    if now - last_sent < TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS:
+        return
+
+    _group_autoreply_last_sent[chat_id] = now
+
+    try:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        if not bot_token:
+            return
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": TELEGRAM_GROUP_AUTOREPLY_TEXT,
+                "reply_to_message_id": message.get('message_id')
+            },
+            timeout=8
+        )
+    except Exception as e:
+        print(f"GROUP_AUTOREPLY ERROR: {type(e).__name__}", flush=True)
+
+
 @app.route('/telegram_webhook', methods=['POST'])
 def telegram_webhook():
     """
     Telegram POSTs here whenever something happens in the chat with our
-    bot. Two things we care about:
+    bot. Three things we care about:
       - "callback_query": the admin tapped an inline action button on an
         alert - handled by handle_telegram_callback().
-      - "/start <token>": someone opened their personal t.me linking link
-        from the dashboard - handled below as before.
+      - A message in a GROUP chat containing a support-related keyword -
+        handled by handle_group_message_autoreply().
+      - "/start <token>" in a PRIVATE chat: someone opened their personal
+        t.me linking link from the dashboard - handled below as before.
     Everything else is just ignored (always replying 200 OK regardless,
     since Telegram will retry deliveries that don't get an OK response).
     """
@@ -4862,8 +4948,18 @@ def telegram_webhook():
         text = (message.get('text') or '').strip()
         chat = message.get('chat') or {}
         chat_id = chat.get('id')
+        chat_type = chat.get('type')
 
-        if not chat_id or not text.startswith('/start'):
+        # Group messages: keyword-based auto-reply, never touches the
+        # account-linking flow below.
+        if chat_type in ('group', 'supergroup'):
+            handle_group_message_autoreply(message)
+            return jsonify({'ok': True})
+
+        # Everything past here is the private-chat /start linking flow -
+        # restricted to private chats so a stray "/start" typed in a group
+        # can't be misused to link someone's account to the group itself.
+        if chat_type != 'private' or not chat_id or not text.startswith('/start'):
             return jsonify({'ok': True})
 
         parts = text.split(maxsplit=1)

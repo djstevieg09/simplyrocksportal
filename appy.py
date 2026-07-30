@@ -4879,28 +4879,42 @@ def handle_group_message_autoreply(message):
     separately for account linking.
     """
     chat = message.get('chat') or {}
-    if chat.get('type') not in ('group', 'supergroup'):
+    chat_type = chat.get('type')
+    text = (message.get('text') or '').strip()
+
+    print(f"GROUP AUTOREPLY: received chat_type={chat_type!r} text={text!r}", flush=True)
+
+    if chat_type not in ('group', 'supergroup'):
+        print("GROUP AUTOREPLY: skipped - not a group/supergroup chat", flush=True)
         return
 
-    text = (message.get('text') or '').strip()
     if not text or text.startswith('/'):
+        print("GROUP AUTOREPLY: skipped - empty text or a command", flush=True)
         return
 
     sender = message.get('from') or {}
     if sender.get('is_bot'):
+        print("GROUP AUTOREPLY: skipped - sender is a bot", flush=True)
         return
 
     lowered = text.lower()
-    if not any(keyword in lowered for keyword in TELEGRAM_GROUP_TRIGGER_KEYWORDS):
+    matched_keyword = next((k for k in TELEGRAM_GROUP_TRIGGER_KEYWORDS if k in lowered), None)
+    if not matched_keyword:
+        print(f"GROUP AUTOREPLY: skipped - no keyword matched in {text!r}", flush=True)
         return
+
+    print(f"GROUP AUTOREPLY: matched keyword '{matched_keyword}'", flush=True)
 
     chat_id = chat.get('id')
     if not chat_id:
+        print("GROUP AUTOREPLY: skipped - no chat_id on message", flush=True)
         return
 
     now = time.time()
     last_sent = _group_autoreply_last_sent.get(chat_id, 0)
-    if now - last_sent < TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS:
+    seconds_since_last = now - last_sent
+    if seconds_since_last < TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS:
+        print(f"GROUP AUTOREPLY: skipped - cooldown active ({seconds_since_last:.0f}s since last reply, needs {TELEGRAM_GROUP_AUTOREPLY_COOLDOWN_SECONDS}s)", flush=True)
         return
 
     _group_autoreply_last_sent[chat_id] = now
@@ -4908,8 +4922,9 @@ def handle_group_message_autoreply(message):
     try:
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         if not bot_token:
+            print("GROUP AUTOREPLY: skipped - TELEGRAM_BOT_TOKEN not set", flush=True)
             return
-        requests.post(
+        resp = requests.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
             json={
                 "chat_id": chat_id,
@@ -4918,8 +4933,9 @@ def handle_group_message_autoreply(message):
             },
             timeout=8
         )
+        print(f"GROUP AUTOREPLY: sendMessage -> HTTP {resp.status_code}: {resp.text[:300]}", flush=True)
     except Exception as e:
-        print(f"GROUP_AUTOREPLY ERROR: {type(e).__name__}", flush=True)
+        print(f"GROUP_AUTOREPLY ERROR: {type(e).__name__}: {e}", flush=True)
 
 
 @app.route('/telegram_webhook', methods=['POST'])

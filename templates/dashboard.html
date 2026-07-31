@@ -595,13 +595,9 @@
                             <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
                             <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
                         </div>
-                        <button onclick="applyReferralDiscount()" id="redeem-btn"
-                                style="display:none; background-color:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">
-                            Redeem Credit
-                        </button>
                     </div>
-                    <p style="margin-top:8px;">
-                        Use wallet credit for IPTV renewals, Spotify, and friend renewals.
+                    <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                        Use wallet credit on IPTV renewals, Spotify, and friend renewals — enter how much to use on each product below.
                     </p>
                 </div>
 
@@ -709,10 +705,19 @@
                         <option value="3" data-price="125.00">3 Devices — £125.00</option>
                         <option value="4" data-price="150.00">4 Devices — £150.00</option>
                     </select>
+                    <div id="renewal-wallet-row" style="display:none; margin-bottom:10px;">
+                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="renewal-wallet-avail">0.00</span>):</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="number" id="renewal-wallet-input" min="0" step="0.01"
+                                   class="form-field" style="margin-bottom:0; flex:1;"
+                                   placeholder="0.00" oninput="applyRenewalWalletInput()">
+                            <button onclick="applyMaxRenewalWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
+                        </div>
+                    </div>
                     <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
                         <span id="plan-title-display" style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Premium 1-Year (1 Connection)</span><br>
                         <span id="plan-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£75.00</span>
-                        <span id="discount-note" style="display:none; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold;">Wallet Discount Applied</span>
+                        <span id="discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
                     </div>
                     <div id="paypal-button-container"></div>
                 </div>
@@ -725,10 +730,19 @@
                     <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email">
                     <label class="section-title">Spotify Password:</label>
                     <input type="password" id="spotify-password" class="form-field" placeholder="Spotify password">
+                    <div id="spotify-wallet-row" style="display:none; margin-bottom:10px;">
+                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="spotify-wallet-avail">0.00</span>):</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="number" id="spotify-wallet-input" min="0" step="0.01"
+                                   class="form-field" style="margin-bottom:0; flex:1;"
+                                   placeholder="0.00" oninput="applySpotifyWalletInput()">
+                            <button onclick="applyMaxSpotifyWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
+                        </div>
+                    </div>
                     <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
                         <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Spotify Upgrade</span><br>
                         <span id="spotify-price-display" style="font-size:22px; font-weight:900;">£45.00</span>
-                        <span id="spotify-discount-note" style="display:none; font-size:11px; color:#ef4444; margin-top:4px; font-weight:bold;"></span>
+                        <span id="spotify-discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
                     </div>
                     <div id="paypal-spotify-container"></div>
                 </div>
@@ -806,15 +820,25 @@
                 maxAvailableWalletBalance = parseFloat(data.balance) || 0.00;
                 const walletDisp = document.getElementById('wallet-balance-display');
                 if (walletDisp) walletDisp.innerText = maxAvailableWalletBalance.toFixed(2);
-                const redeemBtn = document.getElementById('redeem-btn');
-                if (redeemBtn) {
-                    if (maxAvailableWalletBalance > 0) {
-                        redeemBtn.innerText = `Redeem £${maxAvailableWalletBalance.toFixed(2)} Credit`;
-                        redeemBtn.style.display = 'inline-block';
-                    } else {
-                        redeemBtn.style.display = 'none';
-                    }
-                }
+
+                // Show/hide the wallet input rows on each product
+                const renewalRow = document.getElementById('renewal-wallet-row');
+                const spotifyRow = document.getElementById('spotify-wallet-row');
+                if (renewalRow) renewalRow.style.display = maxAvailableWalletBalance > 0 ? 'block' : 'none';
+                if (spotifyRow) spotifyRow.style.display = maxAvailableWalletBalance > 0 ? 'block' : 'none';
+
+                // Update "available" labels
+                const renewalAvail = document.getElementById('renewal-wallet-avail');
+                const spotifyAvail = document.getElementById('spotify-wallet-avail');
+                if (renewalAvail) renewalAvail.textContent = maxAvailableWalletBalance.toFixed(2);
+                if (spotifyAvail) spotifyAvail.textContent = maxAvailableWalletBalance.toFixed(2);
+
+                // Update input maximums to the product price (capped at balance)
+                const renewalInput = document.getElementById('renewal-wallet-input');
+                if (renewalInput) renewalInput.max = Math.min(maxAvailableWalletBalance, basePrice).toFixed(2);
+                const spotifyInput = document.getElementById('spotify-wallet-input');
+                if (spotifyInput) spotifyInput.max = Math.min(maxAvailableWalletBalance, 45.00).toFixed(2);
+
                 calculateFinalPrice();
                 updateSpotifyPriceDisplay();
             } catch (e) { console.log("Wallet fetch:", e); }
@@ -826,24 +850,65 @@
             const opt = select.options[select.selectedIndex];
             currentConnections = opt.value;
             basePrice = parseFloat(opt.getAttribute('data-price'));
+            // Update the max allowed wallet credit to match new price
+            const renewalInput = document.getElementById('renewal-wallet-input');
+            if (renewalInput) {
+                const cap = Math.min(maxAvailableWalletBalance, basePrice);
+                renewalInput.max = cap.toFixed(2);
+                // If typed amount now exceeds the new cap, clamp it
+                if (parseFloat(renewalInput.value || 0) > cap) {
+                    renewalInput.value = cap.toFixed(2);
+                }
+            }
+            applyRenewalWalletInput();
+        }
+
+        // --- Typed wallet input handlers ---
+
+        function clampWalletInput(inputEl, maxCap) {
+            let val = parseFloat(inputEl.value || 0);
+            if (isNaN(val) || val < 0) val = 0;
+            if (val > maxCap) { val = maxCap; inputEl.value = val.toFixed(2); }
+            return parseFloat(val.toFixed(2));
+        }
+
+        function applyRenewalWalletInput() {
+            const input = document.getElementById('renewal-wallet-input');
+            if (!input) return;
+            const cap = Math.min(maxAvailableWalletBalance, basePrice);
+            discountDeduction = clampWalletInput(input, cap);
+            const noteSpan = document.getElementById('discount-note');
+            if (noteSpan) {
+                if (discountDeduction > 0) {
+                    noteSpan.innerText = `Wallet: -£${discountDeduction.toFixed(2)}`;
+                    noteSpan.style.display = 'block';
+                } else {
+                    noteSpan.style.display = 'none';
+                }
+            }
             calculateFinalPrice();
         }
 
-        function applyReferralDiscount() {
-            const renewalCost = parseFloat(basePrice);
-            discountDeduction = Math.min(maxAvailableWalletBalance, renewalCost);
-            const spotifyBase = 45.00;
-            spotifyDiscount = Math.min(maxAvailableWalletBalance, spotifyBase);
+        function applyMaxRenewalWallet() {
+            const input = document.getElementById('renewal-wallet-input');
+            if (!input) return;
+            input.value = Math.min(maxAvailableWalletBalance, basePrice).toFixed(2);
+            applyRenewalWalletInput();
+        }
 
-            const noteSpan = document.getElementById('discount-note');
-            if (noteSpan) {
-                noteSpan.innerText = `Wallet Discount: -£${discountDeduction.toFixed(2)}`;
-                noteSpan.style.display = 'block';
-            }
-            const redeemBtn = document.getElementById('redeem-btn');
-            if (redeemBtn) redeemBtn.style.display = 'none';
-            calculateFinalPrice();
+        function applySpotifyWalletInput() {
+            const input = document.getElementById('spotify-wallet-input');
+            if (!input) return;
+            const cap = Math.min(maxAvailableWalletBalance, 45.00);
+            spotifyDiscount = clampWalletInput(input, cap);
             updateSpotifyPriceDisplay();
+        }
+
+        function applyMaxSpotifyWallet() {
+            const input = document.getElementById('spotify-wallet-input');
+            if (!input) return;
+            input.value = Math.min(maxAvailableWalletBalance, 45.00).toFixed(2);
+            applySpotifyWalletInput();
         }
 
         function calculateFinalPrice() {
@@ -947,11 +1012,10 @@
             const priceSpan = document.getElementById('spotify-price-display');
             const noteSpan = document.getElementById('spotify-discount-note');
             if (!priceSpan || !noteSpan) return;
-            let final = base - spotifyDiscount;
-            if (final < 0) final = 0;
+            let final = Math.max(0, base - spotifyDiscount);
             priceSpan.innerText = `£${final.toFixed(2)}`;
             if (spotifyDiscount > 0) {
-                noteSpan.innerText = `Wallet Discount Applied: -£${spotifyDiscount.toFixed(2)}`;
+                noteSpan.innerText = `-£${spotifyDiscount.toFixed(2)} wallet credit applied`;
                 noteSpan.style.display = 'block';
             } else {
                 noteSpan.style.display = 'none';

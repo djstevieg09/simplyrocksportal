@@ -234,6 +234,8 @@
                                         <button class="btn btn-success btn-small" onclick="clearAppReport({{ item.id }})">Resolved ✓</button>
                                     {% elif item.kind == 'spotify_order' %}
                                         <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ item.id }})">Mark Upgraded</button>
+                                    {% elif item.kind == 'spotify_expiry' %}
+                                        <button class="btn btn-blue btn-small" onclick="notifyUserTelegram('{{ item.portal_username }}')">💬 Notify</button>
                                     {% elif item.kind == 'payment' %}
                                         <button class="btn btn-success btn-small" onclick="markLineAsCompleted({{ item.id }})">Mark Done</button>
                                     {% elif item.kind == 'expiry_reminder' %}
@@ -726,20 +728,19 @@
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Spotify Orders</h2>
             <p style="font-size:12px; color:#94a3b8;">
-                Review Spotify subscription orders submitted via the portal.
+                Review and manage Spotify subscription orders.
             </p>
-            <div style="max-height:220px; overflow-y:auto;">
+            <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
                             <th>Portal User</th>
                             <th>Spotify User</th>
-                            <th>Spotify Pass</th>
+                            <th>Password</th>
+                            <th>Expiry</th>
                             <th>Amount</th>
-                            <th>Wallet Used</th>
                             <th>Status</th>
-                            <th>When</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -753,8 +754,14 @@
                                     <button class="btn btn-blue btn-small" style="margin-left:4px; padding:2px 6px;"
                                             onclick="toggleSpotifyPassword({{ order.id }}, this)">Reveal</button>
                                 </td>
+                                <td style="font-size:11px; white-space:nowrap;">
+                                    {% if order.expiry_date %}
+                                        {{ order.expiry_date }}
+                                    {% else %}
+                                        <span style="color:#64748b;">Not set</span>
+                                    {% endif %}
+                                </td>
                                 <td>£{{ "%.2f"|format(order.amount) }}</td>
-                                <td>£{{ "%.2f"|format(order.discount_used) }}</td>
                                 <td id="spotify-status-cell-{{ order.id }}">
                                     {% if order.status == 'Upgraded' %}
                                         <span class="badge badge-done">✅ Upgraded</span>
@@ -762,21 +769,22 @@
                                         <span class="badge-chip badge-chip-yellow">⏳ {{ order.status }}</span>
                                     {% endif %}
                                 </td>
-                                <td style="font-size:11px; color:#9ca3af;">{{ order.timestamp }}</td>
-                                <td id="spotify-action-cell-{{ order.id }}">
-                                    {% if order.status != 'Upgraded' %}
-                                    <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ order.id }})">
-                                        ✓ Mark Upgraded
-                                    </button>
-                                    {% else %}
-                                    <span style="color:#64748b; font-size:11px;">Done</span>
-                                    {% endif %}
+                                <td style="white-space:nowrap;">
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        {% if order.status != 'Upgraded' %}
+                                        <button class="btn btn-success btn-small" onclick="markSpotifyUpgraded({{ order.id }})">✓ Upgraded</button>
+                                        {% endif %}
+                                        <button class="btn btn-blue btn-small" onclick="spotifyChangePassword({{ order.id }})">🔑 Change PW</button>
+                                        <button class="btn btn-blue btn-small" onclick="spotifyAmendExpiry({{ order.id }}, '{{ order.expiry_date or '' }}')">📅 Set Expiry</button>
+                                        <button class="btn btn-blue btn-small" onclick="spotifyUpdateUser({{ order.id }}, '{{ order.spotify_username }}')">👤 Change User</button>
+                                        <button class="btn btn-danger btn-small" onclick="spotifyRemoveOrder({{ order.id }})">🗑 Remove</button>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No Spotify orders yet.</td>
+                            <td colspan="7" style="text-align:center; color:#64748b; padding:10px; font-size:12px;">No Spotify orders yet.</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -1522,15 +1530,70 @@
                 headers: { 'Content-Type': 'application/json' }
             }).then(r => r.json())
             .then(data => {
+                if (data.success) { window.location.reload(); }
+                else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
+        }
+
+        function spotifyChangePassword(orderId) {
+            const newPw = prompt("Enter new Spotify password:");
+            if (!newPw) return;
+            fetch(`/admin/spotify_change_password/${orderId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: newPw })
+            }).then(r => r.json())
+            .then(data => {
                 if (data.success) {
-                    const statusCell = document.getElementById('spotify-status-cell-' + orderId);
-                    const actionCell = document.getElementById('spotify-action-cell-' + orderId);
-                    if (statusCell) statusCell.innerHTML = '<span class="badge badge-done">✅ Upgraded</span>';
-                    if (actionCell) actionCell.innerHTML = '<span style="color:#64748b; font-size:11px;">Done</span>';
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            }).catch(() => alert("Server timeout while marking Spotify order upgraded."));
+                    alert(data.message);
+                    // Reset the reveal display since password has changed
+                    const disp = document.getElementById('spotify-pass-display-' + orderId);
+                    if (disp) disp.textContent = '••••••••';
+                } else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
+        }
+
+        function spotifyAmendExpiry(orderId, currentExpiry) {
+            const newExpiry = prompt("Set expiry date (YYYY-MM-DD):", currentExpiry || '');
+            if (!newExpiry) return;
+            fetch(`/admin/spotify_amend_expiry/${orderId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ expiry_date: newExpiry })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) { alert(data.message); window.location.reload(); }
+                else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
+        }
+
+        function spotifyUpdateUser(orderId, currentUser) {
+            const newEmail = prompt("New Spotify email/username:", currentUser || '');
+            if (!newEmail) return;
+            fetch(`/admin/spotify_add_user/${orderId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_email: newEmail })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) { alert(data.message); window.location.reload(); }
+                else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
+        }
+
+        function spotifyRemoveOrder(orderId) {
+            if (!confirm("Remove this Spotify order permanently? The user will be notified.")) return;
+            fetch(`/admin/spotify_remove_order/${orderId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const row = document.getElementById('spotify-order-row-' + orderId);
+                    if (row) row.remove();
+                    else window.location.reload();
+                } else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
         }
 
         // --- Payments ---

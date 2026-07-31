@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Login - SimplyRocks Portal</title>
+    <title>Trotters Independent TV Streamers</title>
 
     <!-- Add to Home Screen support -->
     <link rel="manifest" href="/static/manifest.json">
@@ -47,6 +47,12 @@
             margin: 0 0 6px 0;
             font-size: 24px;
             font-weight: 800;
+            display: none; /* replaced by logo */
+        }
+        .login-header .logo-img {
+            width: 220px;
+            max-width: 100%;
+            margin-bottom: 10px;
         }
         .login-header p {
             color: #94a3b8;
@@ -157,6 +163,7 @@
 
     <div class="login-container">
         <div class="login-header">
+            <img src="/static/logo.png" alt="Trotters Independent TV Streamers" class="logo-img">
             <h1>SimplyRocks Portal</h1>
             <p>Sign in using your IPTV credentials</p>
         </div>

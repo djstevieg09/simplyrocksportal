@@ -30,7 +30,7 @@ if app.secret_key == 'simplyrocks_secure_master_portal_key_string_09':
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
-TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
+OMDB_API_KEY = os.environ.get('OMDB_API_KEY')
 
 DB_FILE = "/data/database.db"
 
@@ -2676,6 +2676,15 @@ def ios_player_segment():
 
 @app.route('/search_media')
 def search_media():
+    """
+    Search movies and TV shows via OMDb (omdbapi.com) - real IMDB data,
+    free tier gives 1,000 requests/day which is plenty for a small portal.
+
+    OMDb's search endpoint (/?) returns a list of matches. For each result
+    we do one extra /? call with the real IMDB id to get the poster URL,
+    since the search results don't include poster URLs directly. We cap at
+    5 results to keep the extra calls reasonable.
+    """
     if not session.get('logged_in'):
         return jsonify({"results": []}), 401
 
@@ -2683,26 +2692,31 @@ def search_media():
     if not query:
         return jsonify({"results": []})
 
+    if not OMDB_API_KEY:
+        print("OMDB: OMDB_API_KEY not set")
+        return jsonify({"results": []})
+
     try:
-        url = "https://api.themoviedb.org/3/search/multi"
-        response = requests.get(url, params={
-            'api_key': TMDB_API_KEY,
-            'language': 'en-US',
-            'query': query,
-            'page': 1,
-            'include_adult': 'false'
+        # Step 1: search
+        search_resp = requests.get('https://www.omdbapi.com/', params={
+            'apikey': OMDB_API_KEY,
+            's': query,
+            'type': '',          # both movies and series
         }, timeout=6)
 
-        if response.status_code != 200:
-            print(f"TMDB ERROR code {response.status_code}")
+        if search_resp.status_code != 200:
+            print(f"OMDB SEARCH ERROR: HTTP {search_resp.status_code}")
             return jsonify({"results": []})
 
-        data = response.json()
+        search_data = search_resp.json()
+        if search_data.get('Response') == 'False':
+            return jsonify({"results": []})
 
-        # Flag each result as already_available if it matches something in
-        # the manually-maintained vod_library catalog. This is the only way
-        # to know what's "already on the system" since there's no API access
-        # to the actual IPTV reseller panel.
+        raw_results = search_data.get('Search', [])[:8]
+
+        # Step 2: fetch poster + year for each result (OMDb search results
+        # include poster URLs but they can be "N/A" - the detail call is
+        # more reliable and also gives us the real IMDB id confirmed).
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 conn.row_factory = sqlite3.Row
@@ -2715,67 +2729,82 @@ def search_media():
             print("SEARCH_MEDIA VOD LIBRARY LOOKUP ERROR:", e)
             movie_titles, tv_titles = set(), set()
 
-        for item in data.get('results', []):
-            media_type = item.get('media_type')
-            if media_type not in ('movie', 'tv'):
-                item['already_available'] = False
-                continue
-            display_title = item.get('title') if media_type == 'movie' else item.get('name')
-            norm = normalize_title(display_title)
-            lookup_set = movie_titles if media_type == 'movie' else tv_titles
-            item['already_available'] = norm in lookup_set
+        results = []
+        for item in raw_results:
+            imdb_id = item.get('imdbID', '')
+            omdb_type = item.get('Type', '')
+            media_type = 'tv' if omdb_type == 'series' else 'movie'
+            title = item.get('Title', '')
+            year = item.get('Year', '')[:4] if item.get('Year') else ''
+            poster = item.get('Poster', '')
+            if poster == 'N/A':
+                poster = ''
 
-        return jsonify(data)
+            norm = normalize_title(title)
+            lookup_set = movie_titles if media_type == 'movie' else tv_titles
+            already_available = norm in lookup_set
+
+            results.append({
+                'id': imdb_id,
+                'imdbID': imdb_id,
+                'title': title,
+                'name': title,
+                'media_type': media_type,
+                'release_date': f"{year}-01-01" if year else '',
+                'first_air_date': f"{year}-01-01" if year else '',
+                'poster_path': None,
+                'poster_url': poster,
+                'already_available': already_available,
+            })
+
+        return jsonify({"results": results})
     except Exception as e:
-        print(f"TMDB EXCEPTION: {e}")
+        print(f"OMDB EXCEPTION: {e}")
         return jsonify({"results": []})
 
 
 @app.route('/get_tv_seasons')
 def get_tv_seasons():
     """
-    Return only the seasons of a TV show that have actually aired, so people
-    can't request a season that hasn't come out yet.
-    Expects ?tmdb_id=TMDB-<id> (the same imdbID format used elsewhere) or a
-    plain numeric TMDB id.
+    Return seasons for a TV show via OMDb's season-level endpoint.
+    OMDb doesn't tell us how many seasons exist directly in one call -
+    we probe season by season until we get a 'False' response, capping at
+    30 seasons to avoid runaway API usage.
     """
     if not session.get('logged_in'):
         return jsonify({'seasons': []}), 401
 
-    raw_id = (request.args.get('tmdb_id') or '').strip()
-    tv_id = raw_id.replace('TMDB-', '').strip()
-    if not tv_id.isdigit():
+    imdb_id = (request.args.get('tmdb_id') or '').strip()
+    # Accept both plain IMDB ids (tt1234567) and the old TMDB- prefix
+    imdb_id = imdb_id.replace('TMDB-', '').strip()
+
+    if not imdb_id or not OMDB_API_KEY:
         return jsonify({'seasons': []}), 400
 
     try:
-        url = f"https://api.themoviedb.org/3/tv/{tv_id}"
-        resp = requests.get(url, params={
-            'api_key': TMDB_API_KEY,
-            'language': 'en-US'
-        }, timeout=6)
+        seasons = []
+        for season_num in range(1, 31):
+            resp = requests.get('https://www.omdbapi.com/', params={
+                'apikey': OMDB_API_KEY,
+                'i': imdb_id,
+                'Season': season_num,
+            }, timeout=6)
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            if data.get('Response') == 'False':
+                break
+            episodes = data.get('Episodes', [])
+            if not episodes:
+                break
+            seasons.append({
+                'season_number': season_num,
+                'name': f"Season {season_num}",
+                'episode_count': len(episodes),
+                'air_date': episodes[0].get('Released', '') if episodes else ''
+            })
 
-        if resp.status_code != 200:
-            print("GET_TV_SEASONS TMDB ERROR:", resp.status_code)
-            return jsonify({'seasons': []})
-
-        data = resp.json()
-        today_str = datetime.now().strftime('%Y-%m-%d')
-
-        released_seasons = []
-        for s in data.get('seasons', []):
-            air_date = s.get('air_date')
-            # Only include seasons that have an air date AND that date has
-            # already happened - unreleased/upcoming seasons are excluded.
-            if air_date and air_date <= today_str:
-                released_seasons.append({
-                    'season_number': s.get('season_number'),
-                    'name': s.get('name') or f"Season {s.get('season_number')}",
-                    'episode_count': s.get('episode_count'),
-                    'air_date': air_date
-                })
-
-        released_seasons.sort(key=lambda x: x['season_number'])
-        return jsonify({'seasons': released_seasons})
+        return jsonify({'seasons': seasons})
     except Exception as e:
         print("GET_TV_SEASONS EXCEPTION:", e)
         return jsonify({'seasons': []})
@@ -2784,42 +2813,44 @@ def get_tv_seasons():
 @app.route('/get_tv_season_episodes')
 def get_tv_season_episodes():
     """
-    Return only the episodes of a specific season that have actually aired,
-    so people can't request an episode that hasn't come out yet.
-    Expects ?tmdb_id=TMDB-<id>&season_number=<n>
+    Return episodes for a specific season via OMDb.
+    OMDb includes a Released date per episode so we can still filter out
+    unreleased ones the same way TMDB did.
     """
     if not session.get('logged_in'):
         return jsonify({'episodes': []}), 401
 
-    raw_id = (request.args.get('tmdb_id') or '').strip()
+    imdb_id = (request.args.get('tmdb_id') or '').strip()
+    imdb_id = imdb_id.replace('TMDB-', '').strip()
     season_number = (request.args.get('season_number') or '').strip()
-    tv_id = raw_id.replace('TMDB-', '').strip()
 
-    if not tv_id.isdigit() or not season_number.isdigit():
+    if not imdb_id or not season_number.isdigit() or not OMDB_API_KEY:
         return jsonify({'episodes': []}), 400
 
     try:
-        url = f"https://api.themoviedb.org/3/tv/{tv_id}/season/{season_number}"
-        resp = requests.get(url, params={
-            'api_key': TMDB_API_KEY,
-            'language': 'en-US'
+        resp = requests.get('https://www.omdbapi.com/', params={
+            'apikey': OMDB_API_KEY,
+            'i': imdb_id,
+            'Season': season_number,
         }, timeout=6)
 
         if resp.status_code != 200:
-            print("GET_TV_SEASON_EPISODES TMDB ERROR:", resp.status_code)
             return jsonify({'episodes': []})
 
         data = resp.json()
-        today_str = datetime.now().strftime('%Y-%m-%d')
+        if data.get('Response') == 'False':
+            return jsonify({'episodes': []})
 
+        today_str = datetime.now().strftime('%Y-%m-%d')
         released_episodes = []
-        for ep in data.get('episodes', []):
-            air_date = ep.get('air_date')
-            if air_date and air_date <= today_str:
+        for ep in data.get('Episodes', []):
+            released = ep.get('Released', 'N/A')
+            # OMDb uses "YYYY-MM-DD" or "N/A" - filter out unreleased
+            if released and released != 'N/A' and released <= today_str:
                 released_episodes.append({
-                    'episode_number': ep.get('episode_number'),
-                    'name': ep.get('name') or f"Episode {ep.get('episode_number')}",
-                    'air_date': air_date
+                    'episode_number': int(ep.get('Episode', 0)),
+                    'name': ep.get('Title') or f"Episode {ep.get('Episode')}",
+                    'air_date': released
                 })
 
         released_episodes.sort(key=lambda x: x['episode_number'])
@@ -3638,12 +3669,12 @@ def submit_channel_report():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# --- VOD: SEARCH (TMDB) & REPORTING ---
+# --- VOD: SEARCH (OMDb) & REPORTING ---
 
 @app.route('/search_vod_catalog')
 def search_vod_catalog():
     """
-    Use TMDB to search movies & TV for VOD reporting dropdown - but unlike
+    Use OMDb to search movies & TV for VOD reporting dropdown - but unlike
     the media request search, this ONLY returns titles that are actually on
     the system (matched against the vod_library catalog). There's no point
     letting someone file a fault report against something that was never
@@ -3654,23 +3685,22 @@ def search_vod_catalog():
         return jsonify({"results": []}), 401
 
     query = (request.args.get('q') or '').strip()
-    if not query:
+    if not query or not OMDB_API_KEY:
         return jsonify({"results": []})
 
     try:
-        url = "https://api.themoviedb.org/3/search/multi"
-        resp = requests.get(url, params={
-            'api_key': TMDB_API_KEY,
-            'language': 'en-US',
-            'query': query,
-            'page': 1,
-            'include_adult': 'false'
+        resp = requests.get('https://www.omdbapi.com/', params={
+            'apikey': OMDB_API_KEY,
+            's': query,
         }, timeout=6)
+
         if resp.status_code != 200:
-            print("TMDB VOD SEARCH ERROR:", resp.status_code, resp.text[:200])
+            print("OMDB VOD SEARCH ERROR:", resp.status_code)
             return jsonify({"results": []})
 
         data = resp.json()
+        if data.get('Response') == 'False':
+            return jsonify({"results": []})
 
         try:
             with sqlite3.connect(DB_FILE) as conn:
@@ -3685,19 +3715,32 @@ def search_vod_catalog():
             movie_titles, tv_titles = set(), set()
 
         filtered_results = []
-        for item in data.get('results', []):
-            media_type = item.get('media_type')
-            if media_type not in ('movie', 'tv'):
-                continue
-            display_title = item.get('title') if media_type == 'movie' else item.get('name')
-            norm = normalize_title(display_title)
+        for item in data.get('Search', []):
+            omdb_type = item.get('Type', '')
+            media_type = 'tv' if omdb_type == 'series' else 'movie'
+            title = item.get('Title', '')
+            year = item.get('Year', '')[:4] if item.get('Year') else ''
+            poster = item.get('Poster', '')
+            if poster == 'N/A':
+                poster = ''
+            norm = normalize_title(title)
             lookup_set = movie_titles if media_type == 'movie' else tv_titles
             if norm in lookup_set:
-                filtered_results.append(item)
+                filtered_results.append({
+                    'id': item.get('imdbID', ''),
+                    'imdbID': item.get('imdbID', ''),
+                    'title': title,
+                    'name': title,
+                    'media_type': media_type,
+                    'release_date': f"{year}-01-01" if year else '',
+                    'first_air_date': f"{year}-01-01" if year else '',
+                    'poster_path': None,
+                    'poster_url': poster,
+                })
 
         return jsonify({"results": filtered_results})
     except Exception as e:
-        print("TMDB VOD SEARCH EXCEPTION:", e)
+        print("OMDB VOD SEARCH EXCEPTION:", e)
         return jsonify({"results": []})
 
 

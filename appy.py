@@ -758,6 +758,22 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        # Expiry date for Spotify orders so the admin can track when each
+        # subscription runs out and get a reminder in the To-Do list.
+        try:
+            cursor.execute("ALTER TABLE spotify_orders ADD COLUMN expiry_date TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
+        # Free-text notes field so the admin can record things like
+        # "changed password on 01/08/2026" against a specific order.
+        try:
+            cursor.execute("ALTER TABLE spotify_orders ADD COLUMN notes TEXT DEFAULT ''")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Channel logos, pulled from the panel's stream_icon field when
         # syncing, so channel reports can show a logo the same way movie/TV
         # requests show a poster.
@@ -4006,6 +4022,24 @@ def build_admin_todo_list():
                 'timestamp': row['timestamp']
             })
 
+        # Spotify expiry reminders — upgraded orders expiring within 7 days
+        cursor.execute("SELECT * FROM spotify_orders WHERE status = 'Upgraded' AND expiry_date IS NOT NULL")
+        for row in cursor.fetchall():
+            try:
+                exp_dt = datetime.strptime(row['expiry_date'], '%Y-%m-%d')
+                days_left = (exp_dt - datetime.now()).days
+                if days_left <= 7:
+                    urgency = "EXPIRED" if days_left < 0 else f"{days_left}d left"
+                    todo_items.append({
+                        'kind': 'spotify_expiry', 'id': row['id'],
+                        'portal_username': row['portal_username'],
+                        'label': f"Spotify Expiry - {row['spotify_username']} ({urgency})",
+                        'detail': f"Portal user: {row['portal_username']} - expires {row['expiry_date']}",
+                        'timestamp': row['expiry_date']
+                    })
+            except (ValueError, TypeError):
+                pass
+
         cursor.execute("SELECT * FROM payments WHERE status = 'Pending Manual'")
         for row in cursor.fetchall():
             todo_items.append({
@@ -5423,6 +5457,144 @@ def admin_mark_spotify_order_upgraded(order_id):
         return jsonify({'success': True, 'message': f"Order #{order_id} marked as upgraded."})
     except Exception as e:
         print("ADMIN_MARK_SPOTIFY_ORDER_UPGRADED ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/spotify_change_password/<int:order_id>', methods=['POST'])
+def admin_spotify_change_password(order_id):
+    """Admin: update the stored Spotify password for an existing order."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    new_password = (data.get('new_password') or '').strip()
+    if not new_password:
+        return jsonify({'success': False, 'message': 'New password is required.'}), 400
+    try:
+        encrypted = encrypt_spotify_password(new_password)
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT portal_username, spotify_username FROM spotify_orders WHERE id = ?", (order_id,))
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': 'Order not found.'}), 404
+            cursor.execute(
+                "UPDATE spotify_orders SET spotify_password = ? WHERE id = ?",
+                (encrypted, order_id)
+            )
+            conn.commit()
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Changed Spotify password for order #{order_id} ({order['spotify_username']})")
+        send_telegram_message_to_user(
+            order['portal_username'],
+            "🎵 Your Spotify account password has been updated."
+        )
+        return jsonify({'success': True, 'message': 'Password updated.'})
+    except Exception as e:
+        print("ADMIN_SPOTIFY_CHANGE_PASSWORD ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/spotify_amend_expiry/<int:order_id>', methods=['POST'])
+def admin_spotify_amend_expiry(order_id):
+    """Admin: set or update the Spotify subscription expiry date."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    expiry_date = (data.get('expiry_date') or '').strip()
+    if not expiry_date:
+        return jsonify({'success': False, 'message': 'Expiry date is required.'}), 400
+    try:
+        datetime.strptime(expiry_date, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid date format — use YYYY-MM-DD.'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT portal_username, spotify_username FROM spotify_orders WHERE id = ?", (order_id,))
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': 'Order not found.'}), 404
+            cursor.execute(
+                "UPDATE spotify_orders SET expiry_date = ? WHERE id = ?",
+                (expiry_date, order_id)
+            )
+            conn.commit()
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Set Spotify expiry for order #{order_id} to {expiry_date}")
+        send_telegram_message_to_user(
+            order['portal_username'],
+            f"🎵 Your Spotify subscription expiry has been updated to {expiry_date}."
+        )
+        return jsonify({'success': True, 'message': f'Expiry set to {expiry_date}.'})
+    except Exception as e:
+        print("ADMIN_SPOTIFY_AMEND_EXPIRY ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/spotify_add_user/<int:order_id>', methods=['POST'])
+def admin_spotify_add_user(order_id):
+    """Admin: record that a new email/slot has been added to this Spotify order."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    new_email = (data.get('new_email') or '').strip()
+    if not new_email:
+        return jsonify({'success': False, 'message': 'Email/username is required.'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT portal_username, spotify_username, notes FROM spotify_orders WHERE id = ?", (order_id,))
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': 'Order not found.'}), 404
+            existing_notes = order['notes'] or ''
+            new_note = f"Added user: {new_email} on {datetime.now().strftime('%Y-%m-%d')}"
+            updated_notes = f"{existing_notes}\n{new_note}".strip()
+            cursor.execute(
+                "UPDATE spotify_orders SET spotify_username = ?, notes = ? WHERE id = ?",
+                (new_email, updated_notes, order_id)
+            )
+            conn.commit()
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Added Spotify user {new_email} to order #{order_id}")
+        send_telegram_message_to_user(
+            order['portal_username'],
+            f"🎵 Your Spotify account has been updated — new user added: {new_email}."
+        )
+        return jsonify({'success': True, 'message': f'User updated to {new_email}.'})
+    except Exception as e:
+        print("ADMIN_SPOTIFY_ADD_USER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/spotify_remove_order/<int:order_id>', methods=['POST'])
+def admin_spotify_remove_order(order_id):
+    """Admin: remove/cancel a Spotify order entirely."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT portal_username, spotify_username FROM spotify_orders WHERE id = ?", (order_id,))
+            order = cursor.fetchone()
+            if not order:
+                return jsonify({'success': False, 'message': 'Order not found.'}), 404
+            # Notify before deleting so we still have their chat_id
+            send_telegram_message_to_user(
+                order['portal_username'],
+                "🎵 Your Spotify subscription has been cancelled by the admin."
+            )
+            cursor.execute("DELETE FROM spotify_orders WHERE id = ?", (order_id,))
+            conn.commit()
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Removed Spotify order #{order_id} ({order['spotify_username']})")
+        return jsonify({'success': True, 'message': 'Spotify order removed.'})
+    except Exception as e:
+        print("ADMIN_SPOTIFY_REMOVE_ORDER ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

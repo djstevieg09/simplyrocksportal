@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SimplyRocks">
+    <meta name="apple-mobile-web-app-title" content="Nags Head">
 
     <style>
         :root {
@@ -1632,12 +1632,12 @@
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
                     let year = 'VOD';
                     if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
-                    const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
+                    const posterImg = (item.poster_url && item.poster_url !== 'N/A') ? item.poster_url : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
 
                     const cacheKey = `${item.media_type}-${item.id}`;
                     mediaResultsCache[cacheKey] = {
                         title, year, type: item.media_type,
-                        imdbID: "TMDB-" + item.id,
+                        imdbID: item.imdbID,
                         poster: posterImg
                     };
 
@@ -1958,7 +1958,7 @@
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
                     let year = 'N/A';
                     if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
-                    const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co${encodeURIComponent(title)}`;
+                    const posterImg = (item.poster_url && item.poster_url !== 'N/A') ? item.poster_url : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
 
                     // Reuse the same cache used by the media request search -
                     // same shape, same cacheKey scheme, so the season/episode
@@ -1966,7 +1966,7 @@
                     const cacheKey = `${item.media_type}-${item.id}`;
                     mediaResultsCache[cacheKey] = {
                         title, year, type: item.media_type,
-                        imdbID: "TMDB-" + item.id,
+                        imdbID: item.imdbID,
                         poster: posterImg
                     };
 

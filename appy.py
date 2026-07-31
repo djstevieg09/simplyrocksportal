@@ -5598,6 +5598,56 @@ def admin_spotify_remove_order(order_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/admin/spotify_create_order', methods=['POST'])
+def admin_spotify_create_order():
+    """Admin: manually create a Spotify order without going through checkout."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    portal_username = (data.get('portal_username') or '').strip()
+    spotify_username = (data.get('spotify_username') or '').strip()
+    spotify_password = (data.get('spotify_password') or '').strip()
+    expiry_date = (data.get('expiry_date') or '').strip()
+    amount = data.get('amount', '0.00')
+
+    if not portal_username or not spotify_username or not spotify_password:
+        return jsonify({'success': False, 'message': 'Portal username, Spotify email and password are all required.'}), 400
+
+    if expiry_date:
+        try:
+            datetime.strptime(expiry_date, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Invalid expiry date — use YYYY-MM-DD.'}), 400
+
+    try:
+        amount_val = float(amount)
+    except (ValueError, TypeError):
+        amount_val = 0.0
+
+    try:
+        encrypted = encrypt_spotify_password(spotify_password)
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO spotify_orders
+                    (portal_username, spotify_username, spotify_password, amount, discount_used, status, expiry_date)
+                VALUES (?, ?, ?, ?, 0.0, 'Upgraded', ?)
+            ''', (portal_username, spotify_username, encrypted, amount_val, expiry_date or None))
+            conn.commit()
+            new_id = cursor.lastrowid
+
+        admin_user = session.get('username', 'admin')
+        log_activity(admin_user, f"Manually created Spotify order for {portal_username} ({spotify_username})")
+        send_telegram_message_to_user(
+            portal_username,
+            f"🎵 Your Spotify subscription has been set up! Email: {spotify_username}"
+        )
+        return jsonify({'success': True, 'message': f'Spotify order created (#{new_id}).', 'id': new_id})
+    except Exception as e:
+        print("ADMIN_SPOTIFY_CREATE_ORDER ERROR:", e)
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/admin/telegram_webhook_status')
 def admin_telegram_webhook_status():
     """

@@ -2274,12 +2274,14 @@ def admin_check_outbound_ip_stability():
 def ios_player_page():
     """
     The player page itself. If the user's panel password is in their Flask
-    session (set at login), we auto-create a player session token here on
-    the server and pass it straight to the template, so the password prompt
-    never appears - the page loads straight into the content browser.
+    session (set at login via either the portal or the dedicated player
+    login page), we auto-create a player session token here on the server
+    and pass it straight to the template, so the password prompt never
+    appears. If not logged in at all, redirect to the player's own
+    lightweight login rather than the full portal login.
     """
     if not session.get('logged_in'):
-        return redirect(url_for('login'))
+        return redirect(url_for('player_login'))
 
     username = session.get('username')
     panel_password = session.get('panel_password')
@@ -2301,6 +2303,41 @@ def ios_player_page():
         dns=DEFAULT_DNS.rstrip('/'),
         auto_token=auto_token
     )
+
+
+@app.route('/player_login', methods=['GET', 'POST'])
+def player_login():
+    """
+    Lightweight login page for the IPTV Player PWA. When someone adds the
+    player to their home screen and opens it directly (without a portal
+    session), they end up here instead of the full portal login. On success,
+    it logs them in exactly the same way as the main portal login, and
+    redirects straight to /ios_player.
+    """
+    if session.get('logged_in'):
+        return redirect('/ios_player')
+
+    error = None
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        password = (request.form.get('password') or '').strip()
+
+        if not username or not password:
+            error = 'Please enter your username and password.'
+        else:
+            success, user_info = verify_xtream_credentials(DEFAULT_DNS, username, password)
+            if success and user_info:
+                session['logged_in'] = True
+                session['username'] = username
+                session['is_admin'] = False
+                session['panel_password'] = password
+                session['expiry_date'] = 'Active'
+                log_activity(username, "Player app login")
+                return redirect('/ios_player')
+            else:
+                error = 'Incorrect username or password.'
+
+    return render_template('player_login.html', error=error)
 
 
 @app.route('/ios_player/authenticate', methods=['POST'])

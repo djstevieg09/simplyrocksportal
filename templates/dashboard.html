@@ -1337,43 +1337,62 @@
             const cont = document.getElementById(divId);
             if (!cont) return;
 
-            // Check whether the user has opted in to using wallet credit.
-            // Default is NOT to use it - the user must explicitly tick the
-            // checkbox, matching the same opt-in pattern used for self-renewal.
-            const walletCheckbox = cont.querySelector('.friend-wallet-checkbox');
-            const useWallet = walletCheckbox ? walletCheckbox.checked : false;
+            // Preserve any typed wallet amount across re-renders (e.g. when
+            // the user changes the connection tier after entering a discount).
+            const existingInput = cont.querySelector('.friend-wallet-input');
+            const previousTypedAmount = existingInput ? parseFloat(existingInput.value || 0) : 0;
 
-            let friendDiscount = useWallet ? Math.min(maxAvailableWalletBalance, base) : 0;
+            const cap = Math.min(maxAvailableWalletBalance, base);
+            // Clamp the previously-typed amount to the new cap in case the
+            // user switched to a cheaper tier after typing an amount.
+            let friendDiscount = Math.min(Math.max(0, previousTypedAmount), cap);
             const finalAmount = Math.max(0, base - friendDiscount).toFixed(2);
 
-            // Preserve the checkbox across re-renders so ticking it and then
-            // changing the connection tier doesn't lose the user's choice.
-            const hadCheckbox = !!walletCheckbox;
             cont.innerHTML = '';
 
-            // Only show the wallet opt-in if the user actually has credit.
+            // Only show the wallet input if the user actually has credit.
             if (maxAvailableWalletBalance > 0) {
                 const walletRow = document.createElement('div');
-                walletRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:13px; color:#94a3b8;';
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.className = 'friend-wallet-checkbox';
-                cb.checked = hadCheckbox ? useWallet : false;
-                cb.style.cssText = 'width:16px; height:16px; cursor:pointer;';
-                cb.onchange = () => renderFriendPayPal(divId, friendUsername, idSafe);
-                const lbl = document.createElement('label');
-                lbl.style.cursor = 'pointer';
-                lbl.textContent = `Use £${Math.min(maxAvailableWalletBalance, base).toFixed(2)} wallet credit`;
-                lbl.onclick = () => { cb.checked = !cb.checked; renderFriendPayPal(divId, friendUsername, idSafe); };
-                walletRow.appendChild(cb);
-                walletRow.appendChild(lbl);
+                walletRow.style.cssText = 'margin-bottom:10px;';
+
+                const label = document.createElement('label');
+                label.style.cssText = 'font-size:12px; color:#4ade80; display:block; margin-bottom:4px;';
+                label.textContent = `Use Wallet Credit (available: £${maxAvailableWalletBalance.toFixed(2)}):`;
+
+                const inputRow = document.createElement('div');
+                inputRow.style.cssText = 'display:flex; gap:8px; align-items:center;';
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'friend-wallet-input form-field';
+                input.min = '0';
+                input.max = cap.toFixed(2);
+                input.step = '0.01';
+                input.placeholder = '0.00';
+                input.value = friendDiscount > 0 ? friendDiscount.toFixed(2) : '';
+                input.style.cssText = 'margin-bottom:0; flex:1;';
+                input.oninput = () => renderFriendPayPal(divId, friendUsername, idSafe);
+
+                const maxBtn = document.createElement('button');
+                maxBtn.type = 'button';
+                maxBtn.textContent = 'Use Max';
+                maxBtn.style.cssText = 'background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;';
+                maxBtn.onclick = () => {
+                    input.value = cap.toFixed(2);
+                    renderFriendPayPal(divId, friendUsername, idSafe);
+                };
+
+                inputRow.appendChild(input);
+                inputRow.appendChild(maxBtn);
+                walletRow.appendChild(label);
+                walletRow.appendChild(inputRow);
                 cont.appendChild(walletRow);
             }
 
             if (friendDiscount > 0) {
                 const discNote = document.createElement('p');
                 discNote.style.cssText = 'font-size:12px; color:#4ade80; margin:0 0 8px 0;';
-                discNote.textContent = `Wallet discount: -£${friendDiscount.toFixed(2)} → Pay £${finalAmount}`;
+                discNote.textContent = `Wallet: -£${friendDiscount.toFixed(2)} → Pay £${finalAmount}`;
                 cont.appendChild(discNote);
             }
 
@@ -1382,11 +1401,8 @@
             paypalWrap.id = divId + '-pp';
             cont.appendChild(paypalWrap);
 
-            // If the wallet credit fully covers this renewal, the price is
-            // £0.00 - PayPal's checkout button can't process a £0 order and
-            // will just open and immediately close if we try. So instead,
-            // show a "claim free renewal" button, same as the self-renewal
-            // flow already does.
+            // If the wallet credit fully covers this renewal, show a free
+            // claim button instead of a £0 PayPal order.
             if (parseFloat(finalAmount) <= 0) {
                 paypalWrap.remove();
                 const freeBtn = document.createElement('button');

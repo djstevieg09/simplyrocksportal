@@ -16,6 +16,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Nags Head">
 
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+    </script>
+
     <style>
         :root {
             color-scheme: dark;
@@ -1527,42 +1533,60 @@
         });
 
         async function handleAddToHomeScreen(btn) {
-            // Android/Chrome and anything else that supports the real
-            // install prompt API - one tap, done.
             if (deferredInstallPrompt) {
+                // Native install prompt is ready - trigger it directly.
                 deferredInstallPrompt.prompt();
-                try {
-                    await deferredInstallPrompt.userChoice;
-                } catch (e) {}
+                try { await deferredInstallPrompt.userChoice; } catch(e) {}
                 deferredInstallPrompt = null;
                 return;
             }
-            // No native prompt available (iOS Safari never supports this,
-            // and some browsers don't offer it) - show clear manual steps.
-            showAddToHomeInstructions();
+
+            if (isIosDevice()) {
+                // iOS Safari never supports beforeinstallprompt - always
+                // show the manual instructions.
+                showIosInstructions();
+                return;
+            }
+
+            if (isAndroidDevice()) {
+                // Android but beforeinstallprompt hasn't fired yet.
+                // This means the browser hasn't confirmed installability -
+                // most likely because the service worker hasn't activated
+                // yet on this first visit. Show a brief message and ask
+                // them to try again after refreshing.
+                const stepsDiv = document.getElementById('add-home-modal-steps');
+                stepsDiv.innerHTML = `
+                    <p style="margin:0 0 8px 0;">Almost ready! The app needs a moment to finish setting up.</p>
+                    <p style="margin:0 0 6px 0;">1️⃣ <b>Refresh this page</b> (pull down or tap your browser's refresh button)</p>
+                    <p style="margin:0;">2️⃣ Tap <b>"Add to Home Screen"</b> again — it should install with the icon this time</p>
+                `;
+                document.getElementById('add-home-modal-overlay').style.display = 'flex';
+                return;
+            }
+
+            // Fallback for any other browser
+            showIosInstructions();
+        }
+
+        function isAndroidDevice() {
+            return /android/.test(navigator.userAgent.toLowerCase());
+        }
+
+        function showIosInstructions() {
+            const stepsDiv = document.getElementById('add-home-modal-steps');
+            stepsDiv.innerHTML = `
+                <p style="margin:0 0 8px 0;">On iPhone/iPad you need to use <b>Safari</b> for this to work properly.</p>
+                <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (□↑) at the bottom of the screen</p>
+                <p style="margin:0 0 6px 0;">2️⃣ Scroll down the list and tap <b>"Add to Home Screen"</b></p>
+                <p style="margin:0;">3️⃣ Tap <b>"Add"</b> in the top right</p>
+            `;
+            document.getElementById('add-home-modal-overlay').style.display = 'flex';
         }
 
         function showAddToHomeInstructions() {
-            const stepsDiv = document.getElementById('add-home-modal-steps');
-            if (isIosDevice()) {
-                stepsDiv.innerHTML = `
-                    <p style="margin:0 0 8px 0;">This only works in <b>Safari</b> - if you're using Chrome or another
-                    browser on iPhone, please open this page in Safari first and try again.</p>
-                    <p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (square with an arrow ↑) at the
-                    bottom of Safari's screen</p>
-                    <p style="margin:0 0 6px 0;">2️⃣ <b>"Add to Home Screen" is usually further down the list</b> -
-                    not in the top row of icons. Scroll/swipe down until you see it</p>
-                    <p style="margin:0 0 6px 0;">3️⃣ Tap <b>"Add to Home Screen"</b></p>
-                    <p style="margin:0;">4️⃣ Tap <b>"Add"</b> in the top right</p>
-                `;
-            } else {
-                stepsDiv.innerHTML = `
-                    <p style="margin:0 0 8px 0;">Your browser doesn't support one-tap install, but you can still add it manually:</p>
-                    <p style="margin:0 0 6px 0;">1️⃣ Open your browser's menu (usually ⋮ or ≡)</p>
-                    <p style="margin:0;">2️⃣ Look for <b>"Add to Home Screen"</b> or <b>"Install App"</b></p>
-                `;
-            }
-            document.getElementById('add-home-modal-overlay').style.display = 'flex';
+            // Android should never reach here - the button handles it directly.
+            // This is iOS-only now.
+            showIosInstructions();
         }
 
         document.addEventListener('DOMContentLoaded', () => {

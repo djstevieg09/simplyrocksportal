@@ -91,7 +91,7 @@
     </div>
 
     <!-- Add to Home Screen -->
-    <div class="card" id="add-home-card" style="display:none;">
+    <div class="card" id="add-home-card" style="display:block;">
         <button type="button" onclick="handleAddToHomeScreen()" class="btn-secondary">📲 Add IPTV Player to Home Screen</button>
     </div>
 
@@ -618,9 +618,9 @@
         document.getElementById('add-home-modal-overlay').style.display = 'flex';
     }
     document.addEventListener('DOMContentLoaded', () => {
-        // Add to Home Screen card
+        // Hide Add to Home Screen button only if already running as installed PWA
         const c = document.getElementById('add-home-card');
-        if (c && !isRunningStandalone() && isIos()) c.style.display = 'block';
+        if (c && isRunningStandalone()) c.style.display = 'none';
 
         // If the server already created a player session (because the panel
         // password was available from the portal login session), skip the

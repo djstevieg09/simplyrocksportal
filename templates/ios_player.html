@@ -627,11 +627,11 @@
         const s = document.getElementById('add-home-modal-steps');
 
         if (isIos()) {
-            s.innerHTML = `<p style="margin:0 0 8px 0;">On iPhone/iPad use <b>Safari</b> for this to work.</p><p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
+            s.innerHTML = `<p style="margin:0 0 10px 0; color:#fbbf24;"><b>⚠️ Opened from Telegram?</b> Tap Share → <b>Open in Safari</b> first, then Share again.</p><p style="margin:0 0 6px 0;">Already in Safari:</p><p style="margin:0 0 6px 0;">1️⃣ Tap <b>Share</b> (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
         } else if (isAndroid()) {
             s.innerHTML = `<p style="margin:0 0 8px 0;">Almost ready! The app needs a moment to finish setting up.</p><p style="margin:0 0 6px 0;">1️⃣ <b>Refresh this page</b></p><p style="margin:0;">2️⃣ Tap <b>"Add to Home Screen"</b> again — it should install with the icon this time</p>`;
         } else {
-            s.innerHTML = `<p style="margin:0 0 8px 0;">On iPhone/iPad use <b>Safari</b> for this to work.</p><p style="margin:0 0 6px 0;">1️⃣ Tap the <b>Share</b> button (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
+            s.innerHTML = `<p style="margin:0 0 10px 0; color:#fbbf24;"><b>⚠️ Opened from Telegram?</b> Tap Share → <b>Open in Safari</b> first, then Share again.</p><p style="margin:0 0 6px 0;">Already in Safari:</p><p style="margin:0 0 6px 0;">1️⃣ Tap <b>Share</b> (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
         }
         document.getElementById('add-home-modal-overlay').style.display = 'flex';
     }

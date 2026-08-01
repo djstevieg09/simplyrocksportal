@@ -545,7 +545,7 @@
                     <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
                         📲 Download Sky Glass App
                     </a>
-                    <div id="add-home-card" style="display:none; margin-top:10px;">
+                    <div id="add-home-card" style="display:block; margin-top:10px;">
                         <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
                             📲 Add Portal to Home Screen
                         </button>
@@ -1552,21 +1552,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             const card = document.getElementById('add-home-card');
             if (!card) return;
-
+            // Hide only if already running as an installed PWA - otherwise
+            // always show the button regardless of platform/browser detection,
+            // since the detection was unreliable and caused the button to disappear.
             if (isRunningStandalone()) {
-                // Already added/installed - nothing to do.
                 card.style.display = 'none';
-                return;
-            }
-
-            if (isIosDevice()) {
-                // iOS never fires beforeinstallprompt, so show the button
-                // right away - tapping it opens the manual instructions.
+            } else {
                 card.style.display = 'block';
             }
-            // Other browsers: the button stays hidden until/unless
-            // beforeinstallprompt actually fires above, since that's the
-            // browser's own signal that a real one-tap install is possible.
         });
 
         // --- Telegram linking ---

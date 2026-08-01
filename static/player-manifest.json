@@ -3,7 +3,7 @@
   "short_name": "IPTV Player",
   "description": "Watch your live TV channels.",
   "start_url": "/ios_player",
-  "scope": "/ios_player",
+  "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0f172a",

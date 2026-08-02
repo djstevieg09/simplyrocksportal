@@ -13,7 +13,7 @@ from queue import Queue
 from threading import Thread
 
 import requests
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, Response, stream_with_context, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet, InvalidToken
 from io import BytesIO
@@ -2236,7 +2236,8 @@ def dashboard():
         referral_history=referral_history,
         paypal_client_id=PAYPAL_JS_CLIENT_ID,
         telegram_linked=telegram_linked,
-        my_reported_issues=my_reported_issues
+        my_reported_issues=my_reported_issues,
+        dns=DEFAULT_DNS.rstrip('/')
     )
 
 
@@ -6075,6 +6076,28 @@ def admin_search_wallets():
     except Exception as e:
         print("ADMIN_SEARCH_WALLETS ERROR:", e)
         return jsonify([]), 500
+
+
+@app.route('/sw.js')
+def service_worker():
+    """
+    Serves the portal service worker from the root path so it can control
+    the full site scope. Chrome requires a service worker before offering
+    the proper PWA 'Install app' prompt rather than just a basic shortcut.
+    """
+    response = send_from_directory('static', 'sw.js', mimetype='application/javascript')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.route('/player-sw.js')
+def player_service_worker():
+    """Serves the player PWA service worker from root scope."""
+    response = send_from_directory('static', 'player-sw.js', mimetype='application/javascript')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
 
 
 @app.route('/logout')

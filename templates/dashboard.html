@@ -822,6 +822,11 @@
         async function fetchWalletBalance() {
             try {
                 const response = await fetch('/get_referral_balance');
+                const contentType = response.headers.get('content-type') || '';
+                if (!response.ok || !contentType.includes('application/json')) {
+                    console.log('Wallet fetch: non-JSON response, skipping');
+                    return;
+                }
                 const data = await response.json();
                 maxAvailableWalletBalance = parseFloat(data.balance) || 0.00;
                 const walletDisp = document.getElementById('wallet-balance-display');
@@ -2328,9 +2333,18 @@
         // INIT
         fetchWalletBalance();
         updatePricingDisplay();
-        renderPayPalButtons();
-        renderReferralPayPalButtons();
-        renderSpotifyPayPalButtons();
+        // PayPal SDK loads asynchronously - wait until it's actually ready
+        // before trying to render buttons, otherwise we get "paypal is not defined"
+        function initPayPalWhenReady() {
+            if (typeof paypal !== 'undefined') {
+                renderPayPalButtons();
+                renderReferralPayPalButtons();
+                renderSpotifyPayPalButtons();
+            } else {
+                setTimeout(initPayPalWhenReady, 100);
+            }
+        }
+        initPayPalWhenReady();
         setTimeout(validateReferralFormInputs, 500);
         fetchReferralFriends();
     </script>

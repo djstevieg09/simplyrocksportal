@@ -2166,7 +2166,7 @@ def dashboard():
                 expiry_display = datetime.fromtimestamp(exp_ts).strftime('%B %d, %Y')
                 now_ts = int(time.time())
                 days_remaining = int((exp_ts - now_ts) / 86400)
-                if days_remaining <= 7:
+                if days_remaining <= 14:
                     show_expiry_warning = True
             else:
                 expiry_display = 'Unlimited Account'
@@ -2958,6 +2958,24 @@ def submit_request():
 # --- REFERRAL WALLET BALANCE ---
 
 @app.route('/get_referral_balance')
+@app.route('/whats_new')
+def whats_new():
+    """Returns recently added VOD content for the dashboard What's New section."""
+    if not session.get('logged_in'):
+        return jsonify({'movies': [], 'series': []}), 401
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='movie' ORDER BY added_at DESC LIMIT 20")
+            movies = [dict(r) for r in cursor.fetchall()]
+            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='tv' ORDER BY added_at DESC LIMIT 20")
+            series = [dict(r) for r in cursor.fetchall()]
+        return jsonify({'movies': movies, 'series': series})
+    except Exception as e:
+        return jsonify({'movies': [], 'series': []})
+
+
 def get_referral_balance():
     """Return current referral wallet balance for logged in user."""
     if not session.get('logged_in'):
@@ -4178,6 +4196,38 @@ def admin_panel():
         cursor.execute("SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 50")
         activity_rows = cursor.fetchall()
 
+        cursor.execute("SELECT COUNT(*) FROM portal_users")
+        stats_total_users = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM portal_users WHERE telegram_chat_id IS NOT NULL")
+        stats_telegram_linked = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE timestamp >= datetime('now', '-30 days')")
+        stats_renewals_30d = cursor.fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE timestamp >= datetime('now', '-30 days')")
+        stats_revenue_30d = float(cursor.fetchone()[0] or 0)
+        cursor.execute("SELECT COALESCE(SUM(earned_balance-spent_balance),0) FROM referral_wallets WHERE (earned_balance-spent_balance)>0")
+        stats_wallet_outstanding = float(cursor.fetchone()[0] or 0)
+        cursor.execute("SELECT COUNT(*) FROM requests WHERE status='Pending'")
+        stats_pending_requests = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM spotify_orders WHERE status='Upgraded'")
+        stats_active_spotify = cursor.fetchone()[0]
+        cursor.execute("""
+            SELECT COUNT(*) FROM portal_users WHERE expiry_date IS NOT NULL
+            AND date(substr(expiry_date,7,4)||'-'||substr(expiry_date,4,2)||'-'||substr(expiry_date,1,2))
+            BETWEEN date('now') AND date('now','+7 days')
+        """)
+        stats_expiring_soon = cursor.fetchone()[0]
+
+    stats = {
+        'total_users': stats_total_users,
+        'telegram_linked': stats_telegram_linked,
+        'renewals_30d': stats_renewals_30d,
+        'revenue_30d': round(stats_revenue_30d, 2),
+        'wallet_outstanding': round(stats_wallet_outstanding, 2),
+        'pending_requests': stats_pending_requests,
+        'active_spotify': stats_active_spotify,
+        'expiring_soon': stats_expiring_soon,
+    }
+
     return render_template(
         'admin.html',
         requests=all_requests,
@@ -4192,7 +4242,8 @@ def admin_panel():
         admin_todo_list=admin_todo_list,
         spotify_orders=spotify_orders,
         latest_announcement=latest_announcement,
-        activity_rows=activity_rows
+        activity_rows=activity_rows,
+        stats=stats
     )
 
 
@@ -5102,6 +5153,52 @@ def cleanup_old_completed_requests(retention_days=30):
         return 0
 
 
+def send_renewal_reminders():
+    """Send Telegram renewal reminders to users expiring within 7 days."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT username, telegram_chat_id, expiry_date, expiry_reminder_dismissed_for
+                FROM portal_users WHERE telegram_chat_id IS NOT NULL AND expiry_date IS NOT NULL
+            """)
+            users = cursor.fetchall()
+
+        today = datetime.now()
+        reminded = 0
+        for user in users:
+            try:
+                exp_dt = datetime.strptime(user['expiry_date'], '%d/%m/%Y')
+            except (ValueError, TypeError):
+                continue
+            days_left = (exp_dt - today).days
+            if days_left > 7 or days_left < 0:
+                continue
+            if user['expiry_reminder_dismissed_for'] == user['expiry_date']:
+                continue
+            msg = (
+                f"⏰ <b>Renewal Reminder</b>\n\n"
+                f"Your IPTV subscription expires in <b>{days_left} day{'s' if days_left != 1 else ''}</b> "
+                f"({user['expiry_date']}).\n\n"
+                f"Renew now to avoid any interruption 👇\n"
+                f"{os.environ.get('PUBLIC_APP_URL', '').rstrip('/')}/dashboard"
+            )
+            send_telegram_message_to_user(user['username'], msg)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute(
+                    "UPDATE portal_users SET expiry_reminder_dismissed_for = ? WHERE username = ?",
+                    (user['expiry_date'], user['username'])
+                )
+                conn.commit()
+            reminded += 1
+
+        if reminded:
+            print(f"AUTO SYNC: Sent renewal reminders to {reminded} user(s).", flush=True)
+    except Exception as e:
+        print(f"SEND_RENEWAL_REMINDERS ERROR: {type(e).__name__}: {e}", flush=True)
+
+
 def perform_live_channels_sync():
     """
     Core live channels sync logic - fully replaces live_channels with the
@@ -5956,6 +6053,33 @@ def admin_notify_user_telegram():
     return jsonify({'success': ok, 'message': result_message})
 
 
+@app.route('/admin/broadcast_telegram', methods=['POST'])
+def admin_broadcast_telegram():
+    """Admin: send a Telegram message to ALL linked users at once."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    message_text = (data.get('message') or '').strip()
+    if not message_text:
+        return jsonify({'success': False, 'message': 'Message is required.'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT username FROM portal_users WHERE telegram_chat_id IS NOT NULL")
+            users = [row['username'] for row in cursor.fetchall()]
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    sent = 0
+    failed = 0
+    for username in users:
+        ok, _ = send_telegram_message_to_user(username, message_text)
+        if ok: sent += 1
+        else: failed += 1
+    log_activity(session.get('username', 'admin'), f"Broadcast Telegram to {sent} user(s)")
+    return jsonify({'success': True, 'message': f"Sent to {sent} user(s). {failed} not linked."})
+
+
 @app.route('/admin/dismiss_expiry_reminder', methods=['POST'])
 def admin_dismiss_expiry_reminder():
     """
@@ -6124,6 +6248,11 @@ def auto_sync_loop():
                 print(f"AUTO SYNC: Cleaned up {deleted_count} old completed request(s).", flush=True)
         except Exception as e:
             print(f"AUTO SYNC: Request cleanup failed - {type(e).__name__}: {e}", flush=True)
+
+        try:
+            send_renewal_reminders()
+        except Exception as e:
+            print(f"AUTO SYNC: Renewal reminders failed - {type(e).__name__}: {e}", flush=True)
 
         time.sleep(AUTO_SYNC_INTERVAL_SECONDS)
 

@@ -126,6 +126,10 @@
             <select id="bouquet-select" onchange="loadChannels(this.value)">
                 <option value="">Select a bouquet...</option>
             </select>
+            <div class="search-bar" id="channel-search-bar" style="display:none; margin-bottom:10px;">
+                <input type="text" id="channel-search" placeholder="Search channels..." oninput="filterChannels(this.value)">
+                <button class="clear-btn" id="channel-search-clear" onclick="clearChannelSearch()">✕</button>
+            </div>
             <div id="channel-grid" class="channel-grid"></div>
         </div>
 
@@ -405,13 +409,42 @@
             if (!Array.isArray(data) || !data.length) { select.innerHTML = '<option>No bouquets found</option>'; return; }
             select.innerHTML = '<option value="">Select a bouquet...</option>' +
                 data.map(b => `<option value="${b.category_id}">${b.category_name}</option>`).join('');
+            // Restore last selected bouquet
+            const saved = localStorage.getItem('iptv_last_bouquet');
+            if (saved) {
+                select.value = saved;
+                if (select.value === saved) loadChannels(saved);
+            }
         } catch(e) {}
+    }
+
+    function filterChannels(query) {
+        const clearBtn = document.getElementById('channel-search-clear');
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        const grid = document.getElementById('channel-grid');
+        if (!grid) return;
+        const q = query.toLowerCase();
+        grid.querySelectorAll('.channel-tile').forEach(tile => {
+            const name = (tile.dataset.name || '').toLowerCase();
+            tile.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+
+    function clearChannelSearch() {
+        const input = document.getElementById('channel-search');
+        if (input) { input.value = ''; filterChannels(''); }
+        const clearBtn = document.getElementById('channel-search-clear');
+        if (clearBtn) clearBtn.style.display = 'none';
     }
 
     async function loadChannels(categoryId) {
         const grid = document.getElementById('channel-grid');
-        if (!categoryId) { grid.innerHTML = ''; return; }
+        const searchBar = document.getElementById('channel-search-bar');
+        if (!categoryId) { grid.innerHTML = ''; if (searchBar) searchBar.style.display = 'none'; return; }
+        localStorage.setItem('iptv_last_bouquet', categoryId);
+        clearChannelSearch();
         grid.innerHTML = '<p class="muted">Loading...</p>';
+        if (searchBar) searchBar.style.display = 'none';
         try {
             const resp = await fetch(`/ios_player/channels?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
             const data = await resp.json();
@@ -420,12 +453,14 @@
             data.forEach(ch => {
                 const tile = document.createElement('div');
                 tile.className = 'channel-tile';
+                tile.dataset.name = ch.name;
                 tile.innerHTML = ch.stream_icon
                     ? `<img class="ch-logo" src="${ch.stream_icon}" onerror="this.style.display='none';"><span>${ch.name}</span>`
                     : `<span style="padding:14px 0;display:block;">${ch.name}</span>`;
                 tile.onclick = () => playLive(ch.stream_id, ch.name, tile);
                 grid.appendChild(tile);
             });
+            if (searchBar) searchBar.style.display = 'block';
         } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;">Error loading channels.</p>'; }
     }
 

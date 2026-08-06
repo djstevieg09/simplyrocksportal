@@ -1739,12 +1739,12 @@
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
                     let year = 'VOD';
                     if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
-                    const posterImg = (item.poster_url && item.poster_url !== 'N/A') ? item.poster_url : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
+                    const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
 
                     const cacheKey = `${item.media_type}-${item.id}`;
                     mediaResultsCache[cacheKey] = {
                         title, year, type: item.media_type,
-                        imdbID: item.imdbID,
+                        imdbID: "TMDB-" + item.id,
                         poster: posterImg
                     };
 
@@ -1880,7 +1880,7 @@
             if (!item) { alert('Item data expired, please search again.'); return; }
             await sendMediaRequest({
                 title: item.title, year: item.year, type: item.type,
-                imdbID: item.imdbID, poster: item.poster
+                imdbID: "TMDB-" + item.id, poster: item.poster
             }, btn);
         }
 
@@ -1893,7 +1893,7 @@
 
             const payload = {
                 title: item.title, year: item.year, type: item.type,
-                imdbID: item.imdbID, poster: item.poster
+                imdbID: "TMDB-" + item.id, poster: item.poster
             };
 
             if (scope === 'season' || scope === 'episode') {
@@ -2065,7 +2065,7 @@
                     const rawDate = item.media_type === 'movie' ? item.release_date : item.first_air_date;
                     let year = 'N/A';
                     if (rawDate && rawDate.includes('-')) year = rawDate.split('-')[0];
-                    const posterImg = (item.poster_url && item.poster_url !== 'N/A') ? item.poster_url : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
+                    const posterImg = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : `https://placehold.co/200x300?text=${encodeURIComponent(title)}`;
 
                     // Reuse the same cache used by the media request search -
                     // same shape, same cacheKey scheme, so the season/episode
@@ -2073,7 +2073,7 @@
                     const cacheKey = `${item.media_type}-${item.id}`;
                     mediaResultsCache[cacheKey] = {
                         title, year, type: item.media_type,
-                        imdbID: item.imdbID,
+                        imdbID: "TMDB-" + item.id,
                         poster: posterImg
                     };
 

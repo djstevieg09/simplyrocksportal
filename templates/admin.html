@@ -192,6 +192,30 @@
 
     <div class="wrapper">
 
+        <!-- Stats Summary -->
+        <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
+            <h2 style="color:#818cf8; margin:0 0 12px 0;">📊 Overview</h2>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px;">
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#fff;">{{ stats.total_users }}</div><div style="font-size:11px; color:#94a3b8;">Total Users</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#4ade80;">{{ stats.renewals_30d }}</div><div style="font-size:11px; color:#94a3b8;">Renewals (30d)</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#4ade80;">£{{ "%.2f"|format(stats.revenue_30d) }}</div><div style="font-size:11px; color:#94a3b8;">Revenue (30d)</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#f87171;">{{ stats.expiring_soon }}</div><div style="font-size:11px; color:#94a3b8;">Expiring (7d)</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#facc15;">£{{ "%.2f"|format(stats.wallet_outstanding) }}</div><div style="font-size:11px; color:#94a3b8;">Wallet Credit</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#38bdf8;">{{ stats.pending_requests }}</div><div style="font-size:11px; color:#94a3b8;">Pending Requests</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#a78bfa;">{{ stats.active_spotify }}</div><div style="font-size:11px; color:#94a3b8;">Spotify Active</div></div>
+                <div style="background:#0f172a; border-radius:8px; padding:10px; text-align:center;"><div style="font-size:22px; font-weight:900; color:#34d399;">{{ stats.telegram_linked }}</div><div style="font-size:11px; color:#94a3b8;">Telegram Linked</div></div>
+            </div>
+        </div>
+
+        <!-- Broadcast Message -->
+        <div class="card" style="border:1px solid rgba(56,189,248,0.4);">
+            <h2 style="color:#38bdf8; margin:0 0 6px 0;">📢 Broadcast Message</h2>
+            <p style="font-size:12px; color:#94a3b8; margin:0 0 10px 0;">Send a Telegram message to all {{ stats.telegram_linked }} linked user(s) at once.</p>
+            <textarea id="broadcast-message" rows="3" style="width:100%; padding:10px; background:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:13px; resize:vertical;" placeholder="Your message to all users..."></textarea>
+            <button class="btn btn-blue" onclick="sendBroadcast(this)" style="margin-top:8px;">📢 Send to All Users</button>
+            <p id="broadcast-result" style="display:none; font-size:12px; margin:6px 0 0 0;"></p>
+        </div>
+
         <!-- Consolidated To-Do List -->
         <div class="card" style="border:2px solid rgba(250,204,21,0.6);">
             <div class="section-header-row">
@@ -993,6 +1017,27 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => alert("Server timeout while sending message."));
+        }
+
+        async function sendBroadcast(btn) {
+            const msg = document.getElementById('broadcast-message').value.trim();
+            const resultEl = document.getElementById('broadcast-result');
+            if (!msg) { alert('Please enter a message.'); return; }
+            if (!confirm(`Send this to ALL Telegram-linked users?\n\n"${msg}"`)) return;
+            const orig = btn.innerText; btn.disabled = true; btn.innerText = 'Sending...';
+            try {
+                const resp = await fetch('/admin/broadcast_telegram', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await resp.json();
+                resultEl.style.color = data.success ? '#4ade80' : '#f87171';
+                resultEl.textContent = data.message;
+                resultEl.style.display = 'block';
+                if (data.success) document.getElementById('broadcast-message').value = '';
+            } catch (e) {
+                resultEl.style.color = '#f87171'; resultEl.textContent = 'Server timeout.'; resultEl.style.display = 'block';
+            } finally { btn.disabled = false; btn.innerText = orig; }
         }
 
         function dismissExpiryReminder(username) {

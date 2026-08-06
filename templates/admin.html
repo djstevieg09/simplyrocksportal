@@ -6,180 +6,81 @@
     <title>Trotters - Admin Console</title>
     <style>
         :root { color-scheme: dark; }
-        body {
-            background-color: #0f172a;
-            color: #ffffff;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; }
+        body { background-color:#0f172a; color:#fff; font-family:Arial,sans-serif; margin:0; padding:0; }
         nav {
-            background-color: #1e293b;
-            padding: 12px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
-            position: sticky;
-            top: 0;
-            z-index: 40;
+            background-color:#1e293b; padding:12px 16px; display:flex;
+            justify-content:space-between; align-items:center;
+            box-shadow:0 4px 6px -1px rgba(0,0,0,0.2); position:sticky; top:0; z-index:40;
         }
-        nav h1 {
-            color: #facc15;
-            margin: 0;
-            font-size: 18px;
-            display: none;
+        nav h1 { color:#facc15; margin:0; font-size:18px; display:none; }
+        nav .logo-img { height:44px; width:auto; }
+        nav a { color:#cbd5e1; text-decoration:none; font-size:13px; }
+
+        /* Sidebar layout */
+        .admin-layout { display:flex; min-height:calc(100vh - 70px); }
+
+        .sidebar {
+            width:220px; flex-shrink:0; background-color:#1e293b;
+            padding:12px 0; position:sticky; top:70px;
+            height:calc(100vh - 70px); overflow-y:auto;
+            border-right:1px solid #334155;
         }
-        nav .logo-img {
-            height: 44px;
-            width: auto;
+        .sidebar-section-label {
+            font-size:10px; text-transform:uppercase; color:#64748b;
+            font-weight:bold; padding:10px 16px 4px; letter-spacing:0.08em;
         }
-        nav a {
-            color: #cbd5e1;
-            text-decoration: none;
-            font-size: 13px;
+        .sidebar-item {
+            display:flex; align-items:center; gap:8px;
+            padding:8px 16px; font-size:13px; color:#94a3b8;
+            cursor:pointer; border-left:3px solid transparent;
+            transition:all 0.15s; white-space:nowrap; overflow:hidden;
+            text-overflow:ellipsis;
         }
-        .wrapper {
-            max-width: 1280px;
-            margin: 16px auto 40px;
-            padding: 0 10px;
-            box-sizing: border-box;
+        .sidebar-item:hover { background-color:#334155; color:#e2e8f0; }
+        .sidebar-item.active { background-color:rgba(37,99,235,0.15); color:#60a5fa; border-left-color:#2563eb; }
+        .sidebar-item .badge-count {
+            margin-left:auto; background-color:#dc2626; color:white;
+            border-radius:999px; font-size:10px; padding:1px 6px; font-weight:bold;
         }
-        .card {
-            background-color: #1e293b;
-            padding: 16px;
-            border-radius: 12px;
-            box-shadow: 0 3px 8px -2px rgba(0,0,0,0.4);
-            margin-bottom: 16px;
-        }
-        .card h2 {
-            margin-top: 0;
-            font-size: 16px;
-            margin-bottom: 10px;
-            color: #cbd5e1;
-        }
-        .section-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .section-header-row h2 {
-            margin-bottom: 0;
-        }
-        .pill-info {
-            background-color: rgba(59,130,246,0.15);
-            border: 1px solid rgba(59,130,246,0.4);
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 11px;
-            color: #93c5fd;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-        th {
-            background-color: #334155;
-            padding: 8px;
-            text-align: left;
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #cbd5e1;
-        }
-        td {
-            padding: 8px;
-            border-bottom: 1px solid #334155;
-            vertical-align: top;
-        }
-        .badge {
-            padding: 3px 7px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: bold;
-            display: inline-block;
-        }
-        .badge-pending { background-color: rgba(234,179,8,0.2); color: #facc15; }
-        .badge-done { background-color: rgba(22,163,74,0.18); color: #4ade80; }
-        .btn {
-            border: none;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.2s;
-            color: white;
-        }
-        .btn-small {
-            padding: 4px 8px;
-            font-size: 11px;
-        }
-        .btn-danger {
-            background: linear-gradient(90deg, #dc2626, #ef4444);
-        }
-        .btn-success {
-            background: linear-gradient(90deg, #16a34a, #22c55e);
-        }
-        .btn-blue {
-            background: linear-gradient(90deg, #2563eb, #3b82f6);
-        }
-        .btn-amber {
-            background-color: #eab308;
-            color: #111827;
-        }
-        .badge-chip {
-            font-size: 11px;
-            border-radius: 999px;
-            padding: 2px 8px;
-            display: inline-block;
-        }
-        .badge-chip-yellow {
-            background-color: rgba(234,179,8,0.18);
-            color: #facc15;
-            border: 1px solid rgba(234,179,8,0.4);
-        }
-        .badge-chip-green {
-            background-color: rgba(22,163,74,0.18);
-            color: #4ade80;
-            border: 1px solid rgba(22,163,74,0.4);
-        }
-        .badge-chip-gray {
-            background-color: rgba(148,163,184,0.18);
-            color: #e5e7eb;
-            border: 1px solid rgba(148,163,184,0.4);
-        }
-        .form-field {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 9px;
-            background-color: #334155;
-            border: 1px solid #475569;
-            border-radius: 6px;
-            color: #ffffff;
-            font-size: 12px;
-            margin-bottom: 8px;
-            outline: none;
-        }
-        .form-field:focus {
-            border-color: #3b82f6;
-        }
-        .section-title {
-            font-size: 11px;
-            color: #9ca3af;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-            font-weight: bold;
-        }
-        .muted {
-            font-size: 11px;
-            color: #9ca3af;
-        }
-        @media (max-width: 700px) {
-            th, td { font-size: 11px; }
-            .section-header-row { flex-direction: column; align-items: flex-start; }
+
+        .main-content { flex:1; padding:16px; min-width:0; max-width:1060px; }
+
+        /* Section panels — only active one is shown */
+        .admin-section { display:none; }
+        .admin-section.active { display:block; }
+
+        .card { background-color:#1e293b; padding:16px; border-radius:12px; box-shadow:0 3px 8px -2px rgba(0,0,0,0.4); margin-bottom:16px; }
+        .card h2 { margin-top:0; font-size:16px; margin-bottom:10px; color:#cbd5e1; }
+        .section-header-row { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+        .section-header-row h2 { margin-bottom:0; }
+        .pill-info { background-color:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.4); border-radius:999px; padding:4px 10px; font-size:11px; color:#93c5fd; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th { background-color:#334155; padding:8px; text-align:left; font-size:11px; text-transform:uppercase; color:#cbd5e1; }
+        td { padding:8px; border-bottom:1px solid #334155; vertical-align:top; }
+        .badge { padding:3px 7px; border-radius:4px; font-size:11px; font-weight:bold; display:inline-block; }
+        .badge-pending { background-color:rgba(234,179,8,0.2); color:#facc15; }
+        .badge-done { background-color:rgba(22,163,74,0.18); color:#4ade80; }
+        .btn { border:none; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; color:white; }
+        .btn-small { padding:4px 8px; font-size:11px; }
+        .btn-danger { background:linear-gradient(90deg,#dc2626,#ef4444); }
+        .btn-success { background:linear-gradient(90deg,#16a34a,#22c55e); }
+        .btn-blue { background:linear-gradient(90deg,#2563eb,#3b82f6); }
+        .btn-amber { background-color:#eab308; color:#111827; }
+        .badge-chip { font-size:11px; border-radius:999px; padding:2px 8px; display:inline-block; }
+        .badge-chip-yellow { background-color:rgba(234,179,8,0.18); color:#facc15; border:1px solid rgba(234,179,8,0.4); }
+        .badge-chip-green { background-color:rgba(22,163,74,0.18); color:#4ade80; border:1px solid rgba(22,163,74,0.4); }
+        .badge-chip-gray { background-color:rgba(148,163,184,0.18); color:#e5e7eb; border:1px solid rgba(148,163,184,0.4); }
+        .form-field { width:100%; padding:9px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:12px; margin-bottom:8px; outline:none; }
+        .form-field:focus { border-color:#3b82f6; }
+        .section-title { font-size:11px; color:#9ca3af; text-transform:uppercase; margin-bottom:4px; font-weight:bold; }
+        .muted { font-size:11px; color:#9ca3af; }
+        @media (max-width:700px) {
+            .sidebar { width:52px; }
+            .sidebar-item span { display:none; }
+            .sidebar-section-label { display:none; }
+            .sidebar-item .badge-count { display:none; }
+            th, td { font-size:11px; }
         }
     </style>
 </head>
@@ -190,8 +91,46 @@
         <a href="/dashboard">← Back to Dashboard</a>
     </nav>
 
-    <div class="wrapper">
+    <div class="admin-layout">
 
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-section-label">Main</div>
+            <div class="sidebar-item active" onclick="showSection('overview', this)"><span>📊</span><span>Overview</span></div>
+            <div class="sidebar-item" onclick="showSection('todo', this)">
+                <span>📋</span><span>To-Do List</span>
+                {% if admin_todo_list %}<span class="badge-count">{{ admin_todo_list|length }}</span>{% endif %}
+            </div>
+            <div class="sidebar-item" onclick="showSection('broadcast', this)"><span>📢</span><span>Broadcast</span></div>
+
+            <div class="sidebar-section-label">Content</div>
+            <div class="sidebar-item" onclick="showSection('requests', this)">
+                <span>🎬</span><span>Media Requests</span>
+                {% set pending = requests|selectattr('status','equalto','Pending')|list %}
+                {% if pending %}<span class="badge-count">{{ pending|length }}</span>{% endif %}
+            </div>
+            <div class="sidebar-item" onclick="showSection('faults', this)"><span>⚠️</span><span>Fault Reports</span></div>
+            <div class="sidebar-item" onclick="showSection('vod', this)"><span>📼</span><span>VOD Library</span></div>
+            <div class="sidebar-item" onclick="showSection('announcement', this)"><span>📣</span><span>Announcement</span></div>
+
+            <div class="sidebar-section-label">Users</div>
+            <div class="sidebar-item" onclick="showSection('expiry', this)"><span>📅</span><span>Client Expiry</span></div>
+            <div class="sidebar-item" onclick="showSection('portal-users', this)"><span>👤</span><span>Portal Accounts</span></div>
+            <div class="sidebar-item" onclick="showSection('wallet', this)"><span>💰</span><span>Wallet Manager</span></div>
+            <div class="sidebar-item" onclick="showSection('message', this)"><span>💬</span><span>Message User</span></div>
+
+            <div class="sidebar-section-label">Finance</div>
+            <div class="sidebar-item" onclick="showSection('spotify', this)"><span>🎵</span><span>Spotify Orders</span></div>
+            <div class="sidebar-item" onclick="showSection('payments', this)"><span>💳</span><span>Payments</span></div>
+
+            <div class="sidebar-section-label">Logs</div>
+            <div class="sidebar-item" onclick="showSection('activity', this)"><span>📜</span><span>Activity Log</span></div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+
+<div class="admin-section active" id="section-overview">
         <!-- Stats Summary -->
         <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
             <h2 style="color:#818cf8; margin:0 0 12px 0;">📊 Overview</h2>
@@ -207,6 +146,8 @@
             </div>
         </div>
 
+</div>
+        <div class="admin-section" id="section-broadcast">
         <!-- Broadcast Message -->
         <div class="card" style="border:1px solid rgba(56,189,248,0.4);">
             <h2 style="color:#38bdf8; margin:0 0 6px 0;">📢 Broadcast Message</h2>
@@ -216,6 +157,8 @@
             <p id="broadcast-result" style="display:none; font-size:12px; margin:6px 0 0 0;"></p>
         </div>
 
+</div>
+        <div class="admin-section" id="section-todo">
         <!-- Consolidated To-Do List -->
         <div class="card" style="border:2px solid rgba(250,204,21,0.6);">
             <div class="section-header-row">
@@ -281,6 +224,8 @@
             </div>
         </div>
 
+</div>
+        <div class="admin-section" id="section-message">
         <!-- Message a specific user -->
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">💬 Message a User</h2>
@@ -292,6 +237,8 @@
             <button class="btn btn-blue" style="width:100%;" onclick="submitDirectMessage(this)">Send Message</button>
         </div>
 
+</div>
+        <div class="admin-section" id="section-announcement">
         <!-- Announcements -->
         <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
             <div class="section-header-row">
@@ -314,6 +261,8 @@
         </div>
 
         <!-- Expiration matrix -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-expiry">
         <div class="card">
             <div class="section-header-row" style="margin-bottom:8px; border-bottom:1px solid rgba(148,163,184,0.25); padding-bottom:6px;">
                 <h2>Client Expiration Matrix</h2>
@@ -366,6 +315,8 @@
         </div>
 
         <!-- Requests queue -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-requests">
         <div class="card">
             <h2>Media Requests Queue</h2>
             <p class="muted">Completed requests are automatically removed 30 days after being marked added.</p>
@@ -429,6 +380,8 @@
         </div>
 
         <!-- Channel fault tickets -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-faults">
         <div class="card" style="border:1px solid rgba(239,68,68,0.3);">
             <h2 style="color:#fca5a5;">Live Stream Fault Tickets</h2>
             <table>
@@ -568,6 +521,8 @@
         </div>
 
         <!-- Manual wallet credit manager -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-wallet">
         <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
             <h2 style="color:#4ade80;">Manual Wallet Credit Manager</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -642,6 +597,10 @@
         </div>
 
         <!-- Portal user management -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-vod">
+</div><!-- end prev -->
+        <div class="admin-section" id="section-portal-users">
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Portal Access Accounts</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -749,6 +708,8 @@
         </div>
 
         <!-- Spotify orders -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-spotify">
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Spotify Orders</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -848,6 +809,8 @@
         </div>
 
         <!-- Payments -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-payments">
         <div class="card">
             <h2>Payment & Purchase Logs</h2>
             <div style="max-height:260px; overflow-y:auto;">
@@ -894,6 +857,8 @@
         </div>
 
         <!-- Activity Log -->
+</div><!-- end prev -->
+        <div class="admin-section" id="section-activity">
         <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
             <h2>Activity Log</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -929,9 +894,30 @@
             </div>
         </div>
 
-    </div>
+        </div><!-- end last section -->
+        </div><!-- end main-content -->
+    </div><!-- end admin-layout -->
 
     <script>
+        // --- Sidebar navigation ---
+        function showSection(id, clickedItem) {
+            document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+            const section = document.getElementById('section-' + id);
+            if (section) section.classList.add('active');
+            if (clickedItem) clickedItem.classList.add('active');
+            // Persist across page reloads
+            try { sessionStorage.setItem('admin_section', id); } catch(e) {}
+        }
+        // Restore last section on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = sessionStorage.getItem('admin_section');
+            if (saved) {
+                const item = document.querySelector(`.sidebar-item[onclick*="'${saved}'"]`);
+                if (item) showSection(saved, item);
+            }
+        });
+
         // --- Announcements ---
         function saveAnnouncement(btn) {
             const text = document.getElementById('announcement-text').value.trim();

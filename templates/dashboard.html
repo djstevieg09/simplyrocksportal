@@ -84,21 +84,49 @@
             color: #93c5fd;
         }
         .main-wrapper {
-            max-width: 1280px;
-            margin: 15px auto 40px;
-            padding: 0 12px;
-            box-sizing: border-box;
+            display: flex;
+            min-height: calc(100vh - 70px);
         }
-        .grid {
-            display: grid;
-            grid-template-columns: 2fr 1.1fr;
-            gap: 18px;
+        .dash-sidebar {
+            width: 200px;
+            flex-shrink: 0;
+            background-color: #1e293b;
+            padding: 10px 0;
+            position: sticky;
+            top: 70px;
+            height: calc(100vh - 70px);
+            overflow-y: auto;
+            border-right: 1px solid #334155;
         }
-        @media (max-width: 900px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
+        .dash-sidebar-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #64748b;
+            font-weight: bold;
+            padding: 10px 14px 4px;
+            letter-spacing: 0.08em;
         }
+        .dash-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 14px;
+            font-size: 13px;
+            color: #94a3b8;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            white-space: nowrap;
+        }
+        .dash-nav-item:hover { background-color: #334155; color: #e2e8f0; }
+        .dash-nav-item.active { background-color: rgba(37,99,235,0.15); color: #60a5fa; border-left-color: #2563eb; }
+        .dash-content {
+            flex: 1;
+            padding: 14px 16px;
+            min-width: 0;
+            max-width: 860px;
+        }
+        .dash-section { display: none; }
+        .dash-section.active { display: block; }
         .card {
             background-color: #1e293b;
             padding: 18px;
@@ -285,7 +313,10 @@
             nav h1 { font-size: 16px; }
             nav .logo-img { height: 36px; }
             .nav-right { flex-wrap: wrap; justify-content: flex-end; }
-            .main-wrapper { padding: 0 8px; }
+            .dash-sidebar { width: 48px; }
+            .dash-sidebar-label { display: none; }
+            .dash-nav-item span:last-child { display: none; }
+            .dash-content { padding: 10px 8px; }
         }
     </style>
 </head>
@@ -356,7 +387,27 @@
 
     <div class="main-wrapper">
 
-        <!-- Expiry Status Card -->
+        <!-- Sidebar Navigation -->
+        <nav class="dash-sidebar">
+            <div class="dash-sidebar-label">Dashboard</div>
+            <div class="dash-nav-item active" onclick="showDash('home',this)"><span>🏠</span><span>Home</span></div>
+            <div class="dash-nav-item" onclick="showDash('tv',this)"><span>📺</span><span>TV & Player</span></div>
+            <div class="dash-nav-item" onclick="showDash('requests',this)"><span>🎬</span><span>Requests</span></div>
+            <div class="dash-nav-item" onclick="showDash('issues',this)"><span>⚠️</span><span>My Issues</span></div>
+            <div class="dash-sidebar-label">Billing</div>
+            <div class="dash-nav-item" onclick="showDash('renew',this)"><span>🔄</span><span>Renew IPTV</span></div>
+            <div class="dash-nav-item" onclick="showDash('spotify',this)"><span>🎵</span><span>Spotify</span></div>
+            <div class="dash-sidebar-label">Referrals</div>
+            <div class="dash-nav-item" onclick="showDash('refer',this)"><span>👥</span><span>Refer a Friend</span></div>
+            <div class="dash-sidebar-label">Account</div>
+            <div class="dash-nav-item" onclick="showDash('account',this)"><span>👤</span><span>Account</span></div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="dash-content">
+
+        <div class="dash-section active" id="dash-home">
+            <!-- Expiry Status Card -->
         {% if days_left is not none %}
         <div class="card" style="border:1px solid {% if days_left <= 7 %}rgba(239,68,68,0.6){% elif days_left <= 14 %}rgba(245,158,11,0.5){% else %}rgba(34,197,94,0.4){% endif %}; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -371,7 +422,7 @@
                     </span>
                 </div>
                 {% if days_left <= 14 %}
-                <button onclick="document.getElementById('connection-tier-select').scrollIntoView({behavior:'smooth',block:'center'})"
+                <button onclick="showDash('renew', document.querySelector('.dash-nav-item[onclick*=\'renew\']'))"
                     style="background:linear-gradient(90deg,#2563eb,#38bdf8);color:white;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;font-size:13px;cursor:pointer;white-space:nowrap;">
                     Renew Now →
                 </button>
@@ -394,11 +445,11 @@
             <div id="wn-series" class="wn-grid" style="display:none;"></div>
             <p id="wn-loading" style="font-size:12px; color:#64748b; margin:0;">Loading...</p>
         </div>
+            <p style="color:#94a3b8; font-size:13px; margin:0;">Use the menu on the left to navigate.</p>
+        </div>
 
-        <div class="grid">
-            <!-- LEFT COLUMN -->
-            <div>
-                <!-- Channel fault report -->
+        <div class="dash-section" id="dash-tv">
+            <!-- Channel fault report -->
                 <div class="card">
                     <h2>Report a Channel Issue</h2>
                     <p>Search your live channel lineup below to file a broken stream report ticket.</p>
@@ -494,8 +545,9 @@
                         <button onclick="submitAppReport(this)" class="btn-secondary">Submit App Report</button>
                     </div>
                 </div>
-
-                <!-- Media search & requests -->
+        </div>
+        <div class="dash-section" id="dash-requests">
+            <!-- Media search & requests -->
                 <div class="card">
                     <h2>Request a Movie or TV Show</h2>
                     <div class="search-box">
@@ -542,8 +594,9 @@
                         </tbody>
                     </table>
                 </div>
-
-                <!-- My reported issues -->
+        </div>
+        <div class="dash-section" id="dash-issues">
+            <!-- My reported issues -->
                 <div class="card">
                     <h2>My Reported Issues</h2>
                     <p style="font-size:12px; color:#94a3b8; margin-top:-6px;">
@@ -588,58 +641,9 @@
                         </button>
                     </div>
                 </div>
-
-                <!-- Download Centre -->
-                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
-                    <h2 style="color:#60a5fa;">Download Centre</h2>
-                    <p>Get the app directly on your phone to watch on the go.</p>
-                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
-                        📲 Download Sky Glass App
-                    </a>
-                    <div id="add-home-card" style="display:block; margin-top:10px;">
-                        <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
-                            📲 Add Portal to Home Screen
-                        </button>
-                    </div>
-                </div>
-
-                <!-- iOS Player -->
-                <div class="card" style="border:1px solid rgba(220,38,38,0.4);">
-                    <h2 style="color:#f87171;">📺 Watch on iOS / Web</h2>
-                    <p>No app needed - watch your live channels directly in your browser, or install it to your home screen like an app.</p>
-                    <a href="/ios_player" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:linear-gradient(90deg, #dc2626, #f97316);">
-                        📺 Open IPTV Player
-                    </a>
-                </div>
-
-                <!-- Telegram linking -->
-                <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
-                    <h2 style="color:#60a5fa;">Telegram Notifications</h2>
-                    {% if telegram_linked %}
-                        <p style="color:#4ade80;">✅ Your Telegram is linked. You'll get updates here about your requests and renewals.</p>
-                    {% else %}
-                        <p>Link your Telegram so we can message you directly about your requests, renewals, and account.</p>
-                        <button onclick="getTelegramLink(this)" class="btn-primary" style="width:100%;">🔗 Link My Telegram</button>
-                        <div id="telegram-link-result" style="margin-top:10px; display:none;"></div>
-                    {% endif %}
-                </div>
-
-                <!-- Friends referred / managed -->
-                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
-                    <h2>Friends You Referred</h2>
-                    <p>
-                        Renew your friends’ lines and earn
-                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
-                        wallet credit per renewal.
-                    </p>
-                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
-                </div>
-
-            </div>
-
-            <!-- RIGHT COLUMN -->
-            <div>
-                <!-- Wallet card -->
+        </div>
+        <div class="dash-section" id="dash-renew">
+            <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
@@ -651,8 +655,149 @@
                         Use wallet credit on IPTV renewals, Spotify, and friend renewals — enter how much to use on each product below.
                     </p>
                 </div>
-
-                <!-- Rewards & Purchase history -->
+            <!-- IPTV Renewal -->
+                <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
+                    <h2 style="color:#facc15;">Renew IPTV Subscription</h2>
+                    <p>Extend your IPTV line. Choose how many devices you want to connect.</p>
+                    <label class="section-title">Connections:</label>
+                    <select id="connection-tier-select" onchange="updatePricingDisplay()" class="form-field">
+                        <option value="1" data-price="75.00">1 Device — £75.00</option>
+                        <option value="2" data-price="100.00">2 Devices — £100.00</option>
+                        <option value="3" data-price="125.00">3 Devices — £125.00</option>
+                        <option value="4" data-price="150.00">4 Devices — £150.00</option>
+                    </select>
+                    <div id="renewal-wallet-row" style="display:none; margin-bottom:10px;">
+                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="renewal-wallet-avail">0.00</span>):</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="number" id="renewal-wallet-input" min="0" step="0.01"
+                                   class="form-field" style="margin-bottom:0; flex:1;"
+                                   placeholder="0.00" oninput="applyRenewalWalletInput()">
+                            <button onclick="applyMaxRenewalWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
+                        </div>
+                    </div>
+                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span id="plan-title-display" style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Premium 1-Year (1 Connection)</span><br>
+                        <span id="plan-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£75.00</span>
+                        <span id="discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
+                    </div>
+                    <div id="paypal-button-container"></div>
+                </div>
+        </div>
+        <div class="dash-section" id="dash-spotify">
+            <!-- Wallet card -->
+                <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                        </div>
+                    </div>
+                    <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                        Use wallet credit on IPTV renewals, Spotify, and friend renewals — enter how much to use on each product below.
+                    </p>
+                </div>
+            <!-- Spotify purchase -->
+                <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
+                    <h2 style="color:#60a5fa;">Spotify Subscription (£45)</h2>
+                    <p>Upgrade your Spotify account to our premium package.</p>
+                    <label class="section-title">Spotify Email:</label>
+                    <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email">
+                    <label class="section-title">Spotify Password:</label>
+                    <input type="password" id="spotify-password" class="form-field" placeholder="Spotify password">
+                    <div id="spotify-wallet-row" style="display:none; margin-bottom:10px;">
+                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="spotify-wallet-avail">0.00</span>):</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="number" id="spotify-wallet-input" min="0" step="0.01"
+                                   class="form-field" style="margin-bottom:0; flex:1;"
+                                   placeholder="0.00" oninput="applySpotifyWalletInput()">
+                            <button onclick="applyMaxSpotifyWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
+                        </div>
+                    </div>
+                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Spotify Upgrade</span><br>
+                        <span id="spotify-price-display" style="font-size:22px; font-weight:900;">£45.00</span>
+                        <span id="spotify-discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
+                    </div>
+                    <div id="paypal-spotify-container"></div>
+                </div>
+        </div>
+        <div class="dash-section" id="dash-refer">
+            <!-- Wallet card -->
+                <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                        </div>
+                    </div>
+                    <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                        Use wallet credit on IPTV renewals, Spotify, and friend renewals — enter how much to use on each product below.
+                    </p>
+                </div>
+            <!-- Refer a friend purchase -->
+                <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
+                    <h2 style="color:#4ade80;">Refer a Friend (1-Year)</h2>
+                    <p>
+                        Buy a 12‑month IPTV line for a friend.
+                        <strong>You earn £{{ "%.2f"|format(new_friend_bonus or 0.0) }} wallet credit</strong>
+                        for each new sign-up.
+                    </p>
+                    <p style="font-size:12px; color:#94a3b8; margin-top:4px;">
+                        Share the portal link:
+                        <code>https://tinyurl.com/avatarportal</code>,
+                        then create their line here to earn your bonus.
+                    </p>
+                    <div id="referral-form-error" style="display:none; background-color:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:8px; border-radius:6px; font-size:12px; margin-bottom:8px;"></div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                        <div>
+                            <label class="section-title">Friend's First Name:</label>
+                            <input type="text" id="ref-first-name" class="form-field" placeholder="e.g. John" oninput="validateReferralFormInputs()">
+                        </div>
+                        <div>
+                            <label class="section-title">Friend's Last Name:</label>
+                            <input type="text" id="ref-last-name" class="form-field" placeholder="e.g. Doe" oninput="validateReferralFormInputs()">
+                        </div>
+                    </div>
+                    <label class="section-title">Friend's Mobile / Phone:</label>
+                    <input type="text" id="ref-phone-number" class="form-field" placeholder="e.g. 07123456789" oninput="validateReferralFormInputs()">
+                    <div style="background-color:#020617; padding:10px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Friend 1-Year Line</span><br>
+                        <span style="font-size:20px; font-weight:900; color:#ffffff;">£75.00</span>
+                    </div>
+                    <div id="paypal-referral-lockout-mask" style="pointer-events:none; opacity:0.3;">
+                        <div id="paypal-referral-container"></div>
+                    </div>
+                    <div id="referral-success-receipt" style="display:none; background-color:#020617; padding:10px; border-radius:8px; border:1px solid #16a34a; margin-top:10px; font-size:12px;">
+                        <p style="margin:0 0 6px 0; color:#4ade80; font-weight:bold;">Friend account created:</p>
+                        <div style="background-color:#1e293b; padding:8px; border-radius:6px; font-family:monospace;">
+                            Username: <span id="rec-user" style="color:#ffffff;"></span><br>
+                            Password: <span id="rec-pass" style="color:#ffffff;"></span>
+                        </div>
+                        <p style="margin:10px 0 6px 0; color:#4ade80; font-weight:bold;">Setup instructions for your friend:</p>
+                        <textarea id="rec-instructions" readonly rows="6"
+                                  style="width:100%; box-sizing:border-box; background-color:#1e293b; color:#e5e7eb; border:1px solid #334155; border-radius:6px; padding:8px; font-family:monospace; font-size:11px; resize:vertical;"></textarea>
+                        <button type="button" onclick="copyReferralInstructions(this)" class="btn-secondary" style="margin-top:8px;">
+                            📋 Copy Instructions
+                        </button>
+                        <p style="margin:6px 0 0 0; color:#94a3b8; font-size:11px;">
+                            Copy this and send it to your friend however you like (text, WhatsApp, etc.) - it already has their username and password filled in.
+                        </p>
+                    </div>
+        </div>
+        <div class="dash-section" id="dash-account">
+            <!-- Wallet card -->
+                <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                        </div>
+                    </div>
+                    <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                        Use wallet credit on IPTV renewals, Spotify, and friend renewals — enter how much to use on each product below.
+                    </p>
+                </div>
+            <!-- Rewards & Purchase history -->
                 <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
                     <h2>Rewards & Purchase History</h2>
                     <p style="font-size:12px; color:#94a3b8;">
@@ -744,113 +889,56 @@
                         </table>
                     </div>
                 </div>
-
-                <!-- IPTV Renewal -->
-                <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
-                    <h2 style="color:#facc15;">Renew IPTV Subscription</h2>
-                    <p>Extend your IPTV line. Choose how many devices you want to connect.</p>
-                    <label class="section-title">Connections:</label>
-                    <select id="connection-tier-select" onchange="updatePricingDisplay()" class="form-field">
-                        <option value="1" data-price="75.00">1 Device — £75.00</option>
-                        <option value="2" data-price="100.00">2 Devices — £100.00</option>
-                        <option value="3" data-price="125.00">3 Devices — £125.00</option>
-                        <option value="4" data-price="150.00">4 Devices — £150.00</option>
-                    </select>
-                    <div id="renewal-wallet-row" style="display:none; margin-bottom:10px;">
-                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="renewal-wallet-avail">0.00</span>):</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="number" id="renewal-wallet-input" min="0" step="0.01"
-                                   class="form-field" style="margin-bottom:0; flex:1;"
-                                   placeholder="0.00" oninput="applyRenewalWalletInput()">
-                            <button onclick="applyMaxRenewalWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
-                        </div>
-                    </div>
-                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
-                        <span id="plan-title-display" style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Premium 1-Year (1 Connection)</span><br>
-                        <span id="plan-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£75.00</span>
-                        <span id="discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
-                    </div>
-                    <div id="paypal-button-container"></div>
-                </div>
-
-                <!-- Spotify purchase -->
-                <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
-                    <h2 style="color:#60a5fa;">Spotify Subscription (£45)</h2>
-                    <p>Upgrade your Spotify account to our premium package.</p>
-                    <label class="section-title">Spotify Email:</label>
-                    <input type="text" id="spotify-username" class="form-field" placeholder="Spotify email">
-                    <label class="section-title">Spotify Password:</label>
-                    <input type="password" id="spotify-password" class="form-field" placeholder="Spotify password">
-                    <div id="spotify-wallet-row" style="display:none; margin-bottom:10px;">
-                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="spotify-wallet-avail">0.00</span>):</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="number" id="spotify-wallet-input" min="0" step="0.01"
-                                   class="form-field" style="margin-bottom:0; flex:1;"
-                                   placeholder="0.00" oninput="applySpotifyWalletInput()">
-                            <button onclick="applyMaxSpotifyWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
-                        </div>
-                    </div>
-                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
-                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Spotify Upgrade</span><br>
-                        <span id="spotify-price-display" style="font-size:22px; font-weight:900;">£45.00</span>
-                        <span id="spotify-discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
-                    </div>
-                    <div id="paypal-spotify-container"></div>
-                </div>
-
-                <!-- Refer a friend purchase -->
-                <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
-                    <h2 style="color:#4ade80;">Refer a Friend (1-Year)</h2>
-                    <p>
-                        Buy a 12‑month IPTV line for a friend.
-                        <strong>You earn £{{ "%.2f"|format(new_friend_bonus or 0.0) }} wallet credit</strong>
-                        for each new sign-up.
-                    </p>
-                    <p style="font-size:12px; color:#94a3b8; margin-top:4px;">
-                        Share the portal link:
-                        <code>https://tinyurl.com/avatarportal</code>,
-                        then create their line here to earn your bonus.
-                    </p>
-                    <div id="referral-form-error" style="display:none; background-color:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:8px; border-radius:6px; font-size:12px; margin-bottom:8px;"></div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
-                        <div>
-                            <label class="section-title">Friend's First Name:</label>
-                            <input type="text" id="ref-first-name" class="form-field" placeholder="e.g. John" oninput="validateReferralFormInputs()">
-                        </div>
-                        <div>
-                            <label class="section-title">Friend's Last Name:</label>
-                            <input type="text" id="ref-last-name" class="form-field" placeholder="e.g. Doe" oninput="validateReferralFormInputs()">
-                        </div>
-                    </div>
-                    <label class="section-title">Friend's Mobile / Phone:</label>
-                    <input type="text" id="ref-phone-number" class="form-field" placeholder="e.g. 07123456789" oninput="validateReferralFormInputs()">
-                    <div style="background-color:#020617; padding:10px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
-                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Friend 1-Year Line</span><br>
-                        <span style="font-size:20px; font-weight:900; color:#ffffff;">£75.00</span>
-                    </div>
-                    <div id="paypal-referral-lockout-mask" style="pointer-events:none; opacity:0.3;">
-                        <div id="paypal-referral-container"></div>
-                    </div>
-                    <div id="referral-success-receipt" style="display:none; background-color:#020617; padding:10px; border-radius:8px; border:1px solid #16a34a; margin-top:10px; font-size:12px;">
-                        <p style="margin:0 0 6px 0; color:#4ade80; font-weight:bold;">Friend account created:</p>
-                        <div style="background-color:#1e293b; padding:8px; border-radius:6px; font-family:monospace;">
-                            Username: <span id="rec-user" style="color:#ffffff;"></span><br>
-                            Password: <span id="rec-pass" style="color:#ffffff;"></span>
-                        </div>
-                        <p style="margin:10px 0 6px 0; color:#4ade80; font-weight:bold;">Setup instructions for your friend:</p>
-                        <textarea id="rec-instructions" readonly rows="6"
-                                  style="width:100%; box-sizing:border-box; background-color:#1e293b; color:#e5e7eb; border:1px solid #334155; border-radius:6px; padding:8px; font-family:monospace; font-size:11px; resize:vertical;"></textarea>
-                        <button type="button" onclick="copyReferralInstructions(this)" class="btn-secondary" style="margin-top:8px;">
-                            📋 Copy Instructions
+            <!-- Download Centre -->
+                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
+                    <h2 style="color:#60a5fa;">Download Centre</h2>
+                    <p>Get the app directly on your phone to watch on the go.</p>
+                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
+                        📲 Download Sky Glass App
+                    </a>
+                    <div id="add-home-card" style="display:block; margin-top:10px;">
+                        <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
+                            📲 Add Portal to Home Screen
                         </button>
-                        <p style="margin:6px 0 0 0; color:#94a3b8; font-size:11px;">
-                            Copy this and send it to your friend however you like (text, WhatsApp, etc.) - it already has their username and password filled in.
-                        </p>
                     </div>
                 </div>
+
+                <!-- iOS Player -->
+                <div class="card" style="border:1px solid rgba(220,38,38,0.4);">
+                    <h2 style="color:#f87171;">📺 Watch on iOS / Web</h2>
+                    <p>No app needed - watch your live channels directly in your browser, or install it to your home screen like an app.</p>
+                    <a href="/ios_player" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:linear-gradient(90deg, #dc2626, #f97316);">
+                        📺 Open IPTV Player
+                    </a>
+                </div>
+
+                <!-- Telegram linking -->
+                <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
+                    <h2 style="color:#60a5fa;">Telegram Notifications</h2>
+                    {% if telegram_linked %}
+                        <p style="color:#4ade80;">✅ Your Telegram is linked. You'll get updates here about your requests and renewals.</p>
+                    {% else %}
+                        <p>Link your Telegram so we can message you directly about your requests, renewals, and account.</p>
+                        <button onclick="getTelegramLink(this)" class="btn-primary" style="width:100%;">🔗 Link My Telegram</button>
+                        <div id="telegram-link-result" style="margin-top:10px; display:none;"></div>
+                    {% endif %}
+                </div>
+
+                <!-- Friends referred / managed -->
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Friends You Referred</h2>
+                    <p>
+                        Renew your friends’ lines and earn
+                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
+                        wallet credit per renewal.
+                    </p>
+                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
+                </div>
+
             </div>
         </div>
-    </div>
+        </div><!-- end dash-content -->
+    </div><!-- end main-wrapper -->
 
     <!-- PayPal SDK -->
     <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=GBP"></script>
@@ -2374,6 +2462,24 @@
                 chPopup.style.display = 'none';
             }
         });
+
+        // --- Dashboard sidebar navigation ---
+        function showDash(id, clickedItem) {
+            document.querySelectorAll('.dash-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.dash-nav-item').forEach(i => i.classList.remove('active'));
+            const section = document.getElementById('dash-' + id);
+            if (section) section.classList.add('active');
+            if (clickedItem) clickedItem.classList.add('active');
+            try { sessionStorage.setItem('dash_section', id); } catch(e) {}
+        }
+        // Restore last section
+        (function() {
+            const saved = sessionStorage.getItem('dash_section');
+            if (saved) {
+                const item = document.querySelector(`.dash-nav-item[onclick*="'${saved}'"]`);
+                if (item) showDash(saved, item);
+            }
+        })();
 
         // INIT
         fetchWalletBalance();

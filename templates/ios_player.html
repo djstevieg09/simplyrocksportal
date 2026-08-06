@@ -640,33 +640,31 @@
         const c = document.getElementById('add-home-card');
         if (c && isRunningStandalone()) c.style.display = 'none';
 
-        // If the server already created a player session (because the panel
-        // password was available from the portal login session), skip the
-        // password gate entirely and load content straight away.
-        if (AUTO_TOKEN) {
-            playerToken = AUTO_TOKEN;
-            // We don't have the plaintext password client-side in this path
-            // (it never leaves the server), but the stream URLs need it.
-            // Fetch it from the session via a lightweight endpoint.
-            fetch('/ios_player/session_password', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.password) {
-                        currentPassword = data.password;
-                        document.getElementById('auth-card').style.display = 'none';
-                        document.getElementById('player-card').style.display = 'block';
-                        document.getElementById('browse-card').style.display = 'block';
-                        loadBouquets();
-                        loadMovieCategories();
-                        loadSeriesCategories();
-                        loadAllMoviesInBackground();
-                        loadAllSeriesInBackground();
-                    }
-                })
-                .catch(() => {
-                    // Session endpoint failed - fall back to password prompt
-                });
-        }
+        // Always try to silently authenticate via the server session on
+        // page load - this handles all cases: fresh load, server restart
+        // (which clears in-memory player sessions), and returning visits.
+        // Only shows the password prompt if the server session has expired
+        // (i.e. they've been logged out of the portal too).
+        fetch('/ios_player/silent_auth', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    playerToken = data.token;
+                    currentPassword = data.password;
+                    document.getElementById('auth-card').style.display = 'none';
+                    document.getElementById('player-card').style.display = 'block';
+                    document.getElementById('browse-card').style.display = 'block';
+                    loadBouquets();
+                    loadMovieCategories();
+                    loadSeriesCategories();
+                    loadAllMoviesInBackground();
+                    loadAllSeriesInBackground();
+                }
+                // If it fails, the password prompt stays visible as fallback
+            })
+            .catch(() => {
+                // Network error - password prompt stays visible
+            });
     });
 </script>
 </body>

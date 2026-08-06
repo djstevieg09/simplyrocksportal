@@ -2380,6 +2380,30 @@ def ios_player_authenticate():
     return jsonify({'success': True, 'token': token})
 
 
+@app.route('/ios_player/silent_auth', methods=['POST'])
+def ios_player_silent_auth():
+    """
+    Creates a fresh in-memory player session from the panel password stored
+    in the Flask session. Called on every player page load so restarts/
+    redeploys (which wipe _ios_player_sessions) never show the password
+    prompt to already-logged-in users.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False}), 401
+    password = session.get('panel_password')
+    if not password:
+        return jsonify({'success': False}), 404
+    _cleanup_expired_player_sessions()
+    token = secrets.token_urlsafe(24)
+    _ios_player_sessions[token] = {
+        'username': session.get('username'),
+        'password': password,
+        'created_at': time.time(),
+        'http_session': requests.Session()
+    }
+    return jsonify({'success': True, 'token': token, 'password': password})
+
+
 @app.route('/ios_player/session_password', methods=['POST'])
 def ios_player_session_password():
     """

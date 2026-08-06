@@ -70,6 +70,11 @@
             background-color: rgba(239, 68, 68, 0.05);
             font-size: 12px;
         }
+        .wn-tab { background:#334155; color:#94a3b8; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; }
+        .wn-tab.active { background:#7c3aed; color:#fff; }
+        .wn-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px; max-height:160px; overflow-y:auto; }
+        .wn-tile { background:#0f172a; border-radius:6px; padding:8px 6px; text-align:center; font-size:11px; color:#cbd5e1; }
+        .wn-tile .yr { color:#64748b; font-size:9px; display:block; }
         .expiry-pill {
             background-color: rgba(59, 130, 246, 0.15);
             border: 1px solid rgba(59, 130, 246, 0.4);
@@ -350,6 +355,46 @@
     </nav>
 
     <div class="main-wrapper">
+
+        <!-- Expiry Status Card -->
+        {% if days_left is not none %}
+        <div class="card" style="border:1px solid {% if days_left <= 7 %}rgba(239,68,68,0.6){% elif days_left <= 14 %}rgba(245,158,11,0.5){% else %}rgba(34,197,94,0.4){% endif %}; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div>
+                    <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold; margin-bottom:2px;">Subscription Expiry</div>
+                    <span style="font-size:20px; font-weight:900; color:{% if days_left <= 7 %}#f87171{% elif days_left <= 14 %}#fbbf24{% else %}#4ade80{% endif %};">{{ expiry_date }}</span>
+                    <span style="font-size:12px; color:#94a3b8; margin-left:8px;">
+                        {% if days_left <= 0 %}<span style="color:#f87171; font-weight:bold;">EXPIRED</span>
+                        {% elif days_left <= 7 %}<span style="color:#f87171; font-weight:bold;">{{ days_left }} day{{ 's' if days_left != 1 else '' }} left</span>
+                        {% elif days_left <= 14 %}<span style="color:#fbbf24; font-weight:bold;">{{ days_left }} days left</span>
+                        {% else %}{{ days_left }} days left{% endif %}
+                    </span>
+                </div>
+                {% if days_left <= 14 %}
+                <button onclick="document.getElementById('connection-tier-select').scrollIntoView({behavior:'smooth',block:'center'})"
+                    style="background:linear-gradient(90deg,#2563eb,#38bdf8);color:white;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;font-size:13px;cursor:pointer;white-space:nowrap;">
+                    Renew Now →
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- What's New -->
+        <div class="card" style="border:1px solid rgba(168,85,247,0.4); margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h2 style="color:#c084fc; margin:0; font-size:16px;">🆕 What's New</h2>
+                <span style="font-size:11px; color:#64748b;">Latest additions</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:10px;">
+                <button class="wn-tab active" onclick="switchWn('movies',this)">🎬 Movies</button>
+                <button class="wn-tab" onclick="switchWn('series',this)">📺 Series</button>
+            </div>
+            <div id="wn-movies" class="wn-grid"></div>
+            <div id="wn-series" class="wn-grid" style="display:none;"></div>
+            <p id="wn-loading" style="font-size:12px; color:#64748b; margin:0;">Loading...</p>
+        </div>
+
         <div class="grid">
             <!-- LEFT COLUMN -->
             <div>
@@ -2333,8 +2378,6 @@
         // INIT
         fetchWalletBalance();
         updatePricingDisplay();
-        // PayPal SDK loads asynchronously - wait until it's actually ready
-        // before trying to render buttons, otherwise we get "paypal is not defined"
         function initPayPalWhenReady() {
             if (typeof paypal !== 'undefined') {
                 renderPayPalButtons();
@@ -2347,6 +2390,33 @@
         initPayPalWhenReady();
         setTimeout(validateReferralFormInputs, 500);
         fetchReferralFriends();
+        loadWhatsNew();
+
+        // What's New
+        let wnData = {movies: [], series: []};
+        async function loadWhatsNew() {
+            try {
+                const resp = await fetch('/whats_new');
+                wnData = await resp.json();
+                renderWn('movies');
+                document.getElementById('wn-loading').style.display = 'none';
+            } catch(e) {
+                document.getElementById('wn-loading').textContent = 'Could not load.';
+            }
+        }
+        function switchWn(type, btn) {
+            document.querySelectorAll('.wn-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('wn-movies').style.display = type==='movies' ? 'grid' : 'none';
+            document.getElementById('wn-series').style.display = type==='series' ? 'grid' : 'none';
+            renderWn(type);
+        }
+        function renderWn(type) {
+            const grid = document.getElementById(`wn-${type}`);
+            const items = wnData[type] || [];
+            if (!items.length) { grid.innerHTML = '<p style="font-size:11px;color:#64748b;grid-column:1/-1;">Nothing yet — check back after the next sync.</p>'; return; }
+            grid.innerHTML = items.map(i => `<div class="wn-tile">${i.title}<span class="yr">${i.year||''}</span></div>`).join('');
+        }
     </script>
 </body>
 </html>

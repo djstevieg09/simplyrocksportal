@@ -8,7 +8,7 @@ import json
 import base64
 import urllib.parse
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from queue import Queue
 from threading import Thread
 
@@ -24,9 +24,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'simplyrocks_secure_master_portal_key_string_09')
 if app.secret_key == 'simplyrocks_secure_master_portal_key_string_09':
     print("SECURITY WARNING: FLASK_SECRET_KEY env var is not set. Using the built-in "
-          "fallback key is NOT safe for production - anyone who reads this source "
+          "fallback key. Anyone who has read access to this source "
           "code can forge session cookies. Set FLASK_SECRET_KEY to a long random "
-          "string in your environment.", flush=True)
+          "string in your Render environment variables.", flush=True)
+
+# Keep users logged in for 30 days - sessions survive browser restarts,
+# phone reboots, and app switches. Without this, Flask uses a browser-session
+# cookie that expires the moment the browser closes, forcing re-login every time.
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
@@ -1985,6 +1992,7 @@ def login():
 
     if secure_admin_username and secure_admin_password:
         if username.lower() == secure_admin_username.lower() and password == secure_admin_password:
+            session.permanent = True
             session['logged_in'] = True
             session['username'] = username
             session['is_admin'] = True
@@ -2007,6 +2015,7 @@ def login():
     success, user_info = verify_xtream_credentials(DEFAULT_DNS, username, password)
 
     if success and user_info:
+        session.permanent = True
         session['logged_in'] = True
         session['username'] = username
         session['is_admin'] = False
@@ -2328,6 +2337,7 @@ def player_login():
         else:
             success, user_info = verify_xtream_credentials(DEFAULT_DNS, username, password)
             if success and user_info:
+                session.permanent = True
                 session['logged_in'] = True
                 session['username'] = username
                 session['is_admin'] = False

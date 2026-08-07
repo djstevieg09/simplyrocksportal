@@ -72,9 +72,9 @@
         }
         .wn-tab { background:#334155; color:#94a3b8; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; }
         .wn-tab.active { background:#7c3aed; color:#fff; }
-        .wn-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px; max-height:160px; overflow-y:auto; }
-        .wn-tile { background:#0f172a; border-radius:6px; padding:8px 6px; text-align:center; font-size:11px; color:#cbd5e1; }
-        .wn-tile .yr { color:#64748b; font-size:9px; display:block; }
+        .wn-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:8px; max-height:280px; overflow-y:auto; }
+        .wn-tile { background:#0f172a; border-radius:6px; padding:6px; text-align:center; font-size:10px; color:#cbd5e1; }
+        .wn-tile .yr { color:#64748b; font-size:9px; display:block; margin-top:2px; }
         .expiry-pill {
             background-color: rgba(59, 130, 246, 0.15);
             border: 1px solid rgba(59, 130, 246, 0.4);
@@ -313,9 +313,10 @@
             nav h1 { font-size: 16px; }
             nav .logo-img { height: 36px; }
             .nav-right { flex-wrap: wrap; justify-content: flex-end; }
-            .dash-sidebar { width: 48px; }
-            .dash-sidebar-label { display: none; }
-            .dash-nav-item span:last-child { display: none; }
+            .dash-sidebar { width: 140px; }
+            .dash-sidebar-label { font-size: 9px; padding: 8px 10px 3px; }
+            .dash-nav-item { padding: 8px 10px; font-size: 12px; }
+            .dash-nav-item span:last-child { display: inline; }
             .dash-content { padding: 10px 8px; }
         }
     </style>
@@ -2524,7 +2525,14 @@
             const grid = document.getElementById(`wn-${type}`);
             const items = wnData[type] || [];
             if (!items.length) { grid.innerHTML = '<p style="font-size:11px;color:#64748b;grid-column:1/-1;">Nothing yet — check back after the next sync.</p>'; return; }
-            grid.innerHTML = items.map(i => `<div class="wn-tile">${i.title}<span class="yr">${i.year||''}</span></div>`).join('');
+            grid.innerHTML = items.map(i => `
+                <div class="wn-tile">
+                    ${i.poster
+                        ? `<img src="${i.poster}" alt="${i.title}" style="width:100%;border-radius:4px;margin-bottom:4px;display:block;">`
+                        : `<div style="width:100%;aspect-ratio:2/3;background:#1e293b;border-radius:4px;margin-bottom:4px;display:flex;align-items:center;justify-content:center;font-size:20px;">🎬</div>`
+                    }
+                    ${i.title}<span class="yr">${i.year||''}</span>
+                </div>`).join('');
         }
     </script>
 </body>

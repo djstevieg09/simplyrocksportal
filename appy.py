@@ -2960,19 +2960,43 @@ def submit_request():
 @app.route('/get_referral_balance')
 @app.route('/whats_new')
 def whats_new():
-    """Returns recently added VOD content for the dashboard What's New section."""
+    """Returns recently added VOD content with TMDB poster URLs."""
     if not session.get('logged_in'):
         return jsonify({'movies': [], 'series': []}), 401
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='movie' ORDER BY added_at DESC LIMIT 20")
-            movies = [dict(r) for r in cursor.fetchall()]
-            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='tv' ORDER BY added_at DESC LIMIT 20")
-            series = [dict(r) for r in cursor.fetchall()]
+            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='movie' ORDER BY added_at DESC LIMIT 12")
+            movies_raw = [dict(r) for r in cursor.fetchall()]
+            cursor.execute("SELECT title, year FROM vod_library WHERE media_type='tv' ORDER BY added_at DESC LIMIT 12")
+            series_raw = [dict(r) for r in cursor.fetchall()]
+
+        def fetch_poster(title, media_type):
+            if not TMDB_API_KEY:
+                return None
+            try:
+                endpoint = 'movie' if media_type == 'movie' else 'tv'
+                resp = requests.get(
+                    f'https://api.themoviedb.org/3/search/{endpoint}',
+                    params={'api_key': TMDB_API_KEY, 'query': title, 'page': 1},
+                    timeout=4
+                )
+                results = resp.json().get('results', [])
+                if results and results[0].get('poster_path'):
+                    return f"https://image.tmdb.org/t/p/w200{results[0]['poster_path']}"
+            except Exception:
+                pass
+            return None
+
+        movies = [{'title': m['title'], 'year': m['year'],
+                   'poster': fetch_poster(m['title'], 'movie')} for m in movies_raw]
+        series = [{'title': s['title'], 'year': s['year'],
+                   'poster': fetch_poster(s['title'], 'tv')} for s in series_raw]
+
         return jsonify({'movies': movies, 'series': series})
     except Exception as e:
+        print("WHATS_NEW ERROR:", e)
         return jsonify({'movies': [], 'series': []})
 
 

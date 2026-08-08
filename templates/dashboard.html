@@ -835,13 +835,15 @@
                             Copy this and send it to your friend however you like (text, WhatsApp, etc.) - it already has their username and password filled in.
                         </p>
                     </div>
-        </div>
-        </div>
+                </div>
+
                 <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
                     <h2>Friends You Referred</h2>
                     <p>Renew your friends' lines and earn <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong> wallet credit per renewal.</p>
                     <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
                 </div>
+
+        </div><!-- end dash-refer -->
 
         <div class="dash-section" id="dash-account">
             <!-- Wallet card -->

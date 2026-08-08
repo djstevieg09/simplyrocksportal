@@ -90,8 +90,9 @@
         /* Hamburger button - mobile only */
         .mob-menu-btn {
             display: none;
-            background: none; border: none; color: #94a3b8;
-            font-size: 22px; cursor: pointer; padding: 4px 8px;
+            background: #2563eb; border: none; color: white;
+            font-size: 18px; cursor: pointer; padding: 6px 12px;
+            border-radius: 6px; font-weight: bold;
         }
         /* Mobile overlay when menu is open */
         .mob-overlay {
@@ -836,6 +837,12 @@
                     </div>
         </div>
         </div>
+                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
+                    <h2>Friends You Referred</h2>
+                    <p>Renew your friends' lines and earn <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong> wallet credit per renewal.</p>
+                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
+                </div>
+
         <div class="dash-section" id="dash-account">
             <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
@@ -967,21 +974,7 @@
                     {% endif %}
                 </div>
 
-                <!-- Friends referred / managed -->
-                <div class="card" style="border:1px solid rgba(148,163,184,0.5);">
-                    <h2>Friends You Referred</h2>
-                    <p>
-                        Renew your friends’ lines and earn
-                        <strong>£{{ "%.2f"|format(friend_renewal_bonus or 0.0) }}</strong>
-                        wallet credit per renewal.
-                    </p>
-                    <div id="friends-list" style="max-height:320px; overflow-y:auto; font-size:12px;"></div>
-                
-
-            
-        
         </div><!-- end last section -->
-        </div><!-- end account section -->
         </div><!-- end dash-content -->
     </div><!-- end main-wrapper -->
 
@@ -2534,10 +2527,12 @@
             try { sessionStorage.setItem('dash_section', id); } catch(e) {}
             closeMobMenu(); // always close on mobile after selecting
         }
-        // Restore last section
+        // Home is always the landing page on fresh load.
         (function() {
-            const saved = sessionStorage.getItem('dash_section');
-            if (saved) {
+            const fromPortal = document.referrer &&
+                document.referrer.includes(window.location.hostname);
+            const saved = fromPortal ? sessionStorage.getItem('dash_section') : null;
+            if (saved && document.getElementById('dash-' + saved)) {
                 const item = document.querySelector(`.dash-nav-item[onclick*="'${saved}'"]`);
                 if (item) showDash(saved, item);
             }

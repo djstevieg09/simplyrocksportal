@@ -92,7 +92,11 @@
             display: none;
             background: #2563eb; border: none; color: white;
             font-size: 18px; cursor: pointer; padding: 6px 12px;
-            border-radius: 6px; font-weight: bold;
+            border-radius: 6px; font-weight: bold; z-index: 60;
+        }
+        .mob-section-title {
+            display: none;
+            font-size: 13px; color: #94a3b8; margin-left: 4px;
         }
         /* Mobile overlay when menu is open */
         .mob-overlay {
@@ -328,16 +332,17 @@
             nav .logo-img { height: 36px; }
             .nav-right { flex-wrap: wrap; justify-content: flex-end; }
             .mob-menu-btn { display: inline-block; }
+            .mob-section-title { display: inline-block; }
             #mob-menu-bar { display: block !important; }
             .main-wrapper { flex-direction: column; min-height: unset; }
             .dash-sidebar {
                 display: none;
                 position: fixed;
                 top: 0; left: 0; bottom: 0;
-                width: 220px;
+                width: 240px;
                 height: 100vh;
-                z-index: 35;
-                padding-top: 60px;
+                z-index: 50;
+                padding-top: 56px;
                 box-shadow: 4px 0 20px rgba(0,0,0,0.5);
             }
             .dash-sidebar.mob-open { display: block; }
@@ -393,6 +398,7 @@
     <nav>
         <div style="display:flex; align-items:center; gap:10px;">
             <button class="mob-menu-btn" onclick="toggleMobMenu()" aria-label="Menu">☰</button>
+            <span class="mob-section-title">Home</span>
             <img src="/static/logo.png" alt="Trotters Independent TV Streamers" class="logo-img">
         </div>
         <h1>SimplyRocks Portal</h1>
@@ -424,16 +430,16 @@
                 style="position:absolute;top:12px;right:12px;background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;">✕</button>
             <div class="dash-sidebar-label">Dashboard</div>
             <div class="dash-nav-item active" onclick="showDash('home',this)"><span>🏠</span><span>Home</span></div>
-            <div class="dash-nav-item" onclick="showDash('tv',this)"><span>📡</span><span>Live TV</span></div>
+            <div class="dash-nav-item" onclick="showDash('report',this)"><span>⚠️</span><span>Report an Issue</span></div>
             <div class="dash-nav-item" onclick="showDash('player',this)"><span>📺</span><span>TV Player</span></div>
             <div class="dash-nav-item" onclick="showDash('requests',this)"><span>🎬</span><span>Requests</span></div>
-            <div class="dash-nav-item" onclick="showDash('issues',this)"><span>⚠️</span><span>My Issues</span></div>
             <div class="dash-sidebar-label">Billing</div>
             <div class="dash-nav-item" onclick="showDash('renew',this)"><span>🔄</span><span>Renew IPTV</span></div>
             <div class="dash-nav-item" onclick="showDash('spotify',this)"><span>🎵</span><span>Spotify</span></div>
             <div class="dash-sidebar-label">Referrals</div>
             <div class="dash-nav-item" onclick="showDash('refer',this)"><span>👥</span><span>Refer a Friend</span></div>
             <div class="dash-sidebar-label">Account</div>
+            <div class="dash-nav-item" onclick="showDash('downloads',this)"><span>📲</span><span>Download Centre</span></div>
             <div class="dash-nav-item" onclick="showDash('account',this)"><span>👤</span><span>Account</span></div>
         </div>
 
@@ -489,7 +495,7 @@
             <p style="color:#94a3b8; font-size:13px; margin:0;">Use the menu on the left to navigate.</p>
         </div>
 
-        <div class="dash-section" id="dash-tv">
+        <div class="dash-section" id="dash-report">
             <!-- Channel fault report -->
                 <div class="card">
                     <h2>Report a Channel Issue</h2>
@@ -587,6 +593,53 @@
                     </div>
                 </div>
         </div>
+
+            <!-- My reported issues -->
+                <div class="card">
+                    <h2>My Reported Issues</h2>
+                    <p style="font-size:12px; color:#94a3b8; margin-top:-6px;">
+                        Channel, VOD, and app issues you've reported. Once fixed, they'll disappear from this list.
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 55%;">Item</th>
+                                <th>Issue</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for issue in my_reported_issues %}
+                            <tr>
+                                <td style="font-size:13px;">
+                                    {% if issue.kind == 'channel' %}📺{% elif issue.kind == 'vod' %}🎬{% else %}📱{% endif %}
+                                    {{ issue.label }}
+                                </td>
+                                <td style="font-size:12px; color:#9ca3af;">{{ issue.detail }}</td>
+                                <td><span class="status-badge">Pending</span></td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No issues reported.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Add to Home Screen instructions modal (iOS / unsupported browsers) -->
+                <div id="add-home-modal-overlay" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
+                    <div style="background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+                        <div style="font-size:38px; margin-bottom:6px;">📲</div>
+                        <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
+                        <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
+                        <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';"
+                                class="btn-secondary" style="width:100%;">
+                            Got it
+                        </button>
+
+        </div><!-- end dash-report -->
+
         <div class="dash-section" id="dash-player">
             <div class="card" style="border:1px solid rgba(220,38,38,0.4);">
                 <h2 style="color:#f87171;">📺 IPTV Player</h2>
@@ -647,53 +700,6 @@
                     </table>
                 </div>
         </div>
-        <div class="dash-section" id="dash-issues">
-            <!-- My reported issues -->
-                <div class="card">
-                    <h2>My Reported Issues</h2>
-                    <p style="font-size:12px; color:#94a3b8; margin-top:-6px;">
-                        Channel, VOD, and app issues you've reported. Once fixed, they'll disappear from this list.
-                    </p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 55%;">Item</th>
-                                <th>Issue</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for issue in my_reported_issues %}
-                            <tr>
-                                <td style="font-size:13px;">
-                                    {% if issue.kind == 'channel' %}📺{% elif issue.kind == 'vod' %}🎬{% else %}📱{% endif %}
-                                    {{ issue.label }}
-                                </td>
-                                <td style="font-size:12px; color:#9ca3af;">{{ issue.detail }}</td>
-                                <td><span class="status-badge">Pending</span></td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="3" style="text-align:center; color:#64748b; padding: 16px;">No issues reported.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Add to Home Screen instructions modal (iOS / unsupported browsers) -->
-                <div id="add-home-modal-overlay" style="display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
-                    <div style="background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
-                        <div style="font-size:38px; margin-bottom:6px;">📲</div>
-                        <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
-                        <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
-                        <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';"
-                                class="btn-secondary" style="width:100%;">
-                            Got it
-                        </button>
-                    </div>
-                </div>
-        </div>
         <div class="dash-section" id="dash-renew">
             <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
@@ -735,6 +741,17 @@
                     <div id="paypal-button-container"></div>
                 </div>
         </div>
+
+            <!-- Friend Renewal -->
+            <div class="card" style="border:1px solid rgba(251,191,36,0.4);">
+                <h2 style="color:#fbbf24;">Renew a Friend's Line</h2>
+                <p>Renew one of your referred friends' IPTV subscriptions.</p>
+                <div id="friend-renewal-section">
+                    <p style="font-size:12px; color:#94a3b8;">Loading your friends...</p>
+                </div>
+            </div>
+        </div>
+
         <div class="dash-section" id="dash-spotify">
             <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
@@ -845,7 +862,42 @@
 
         </div><!-- end dash-refer -->
 
+        <div class="dash-section" id="dash-downloads">
+            <!-- Download Centre -->
+                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
+                    <h2 style="color:#60a5fa;">Download Centre</h2>
+                    <p>Get the app directly on your phone to watch on the go.</p>
+                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
+                        📲 Download Sky Glass App
+                    </a>
+                    <div id="add-home-card" style="display:block; margin-top:10px;">
+                        <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
+                            📲 Add Portal to Home Screen
+                        </button>
+                    </div>
+                </div>
+
+        </div>
+
         <div class="dash-section" id="dash-account">
+            <!-- Account Details -->
+            <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
+                <h2 style="color:#818cf8;">Account Details</h2>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:4px;">
+                    <div>
+                        <div class="section-title">Username</div>
+                        <div style="font-size:15px; font-weight:bold; color:#fff; font-family:monospace; background:#0f172a; padding:8px 10px; border-radius:6px;">{{ username }}</div>
+                    </div>
+                    <div>
+                        <div class="section-title">Password</div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <div id="account-password-display" style="font-size:15px; font-weight:bold; color:#fff; font-family:monospace; background:#0f172a; padding:8px 10px; border-radius:6px; flex:1; letter-spacing:0.1em;">••••••••</div>
+                            <button onclick="toggleAccountPassword(this)" style="background:#334155; border:none; color:#94a3b8; padding:8px 10px; border-radius:6px; cursor:pointer; font-size:12px; white-space:nowrap;">Show</button>
+                        </div>
+                    </div>
+                </div>
+                <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">These are your IPTV credentials — use them in TiviMate, the TV Player, or any other compatible app.</p>
+            </div>
             <!-- Wallet card -->
                 <div class="card" style="border:1px solid rgba(34, 197, 94, 0.4);">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -950,20 +1002,6 @@
                         </table>
                     </div>
                 </div>
-            <!-- Download Centre -->
-                <div class="card" style="border:1px solid rgba(96,165,250,0.4);">
-                    <h2 style="color:#60a5fa;">Download Centre</h2>
-                    <p>Get the app directly on your phone to watch on the go.</p>
-                    <a href="https://aftv.news/1110553" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">
-                        📲 Download Sky Glass App
-                    </a>
-                    <div id="add-home-card" style="display:block; margin-top:10px;">
-                        <button type="button" onclick="handleAddToHomeScreen(this)" class="btn-secondary" style="width:100%;">
-                            📲 Add Portal to Home Screen
-                        </button>
-                    </div>
-                </div>
-
                 <!-- Telegram linking -->
                 <div class="card" style="border:1px solid rgba(37,99,235,0.4);">
                     <h2 style="color:#60a5fa;">Telegram Notifications</h2>
@@ -1427,13 +1465,19 @@
 
         async function fetchReferralFriends() {
             const container = document.getElementById('friends-list');
-            if (!container) return;
-            container.innerHTML = '<p style="color:#94a3b8;">Loading friends...</p>';
+            const renewSection = document.getElementById('friend-renewal-section');
+            if (container) {
+                container.innerHTML = '<p style="color:#94a3b8;">Loading friends...</p>';
+            }
+            if (renewSection) {
+                renewSection.innerHTML = '<p style="font-size:12px; color:#94a3b8;">Loading...</p>';
+            }
             try {
                 const response = await fetch('/get_referral_friends');
                 const list = await response.json();
                 if (!list.length) {
-                    container.innerHTML = '<p style="color:#64748b;">No referred friends yet.</p>';
+                    if (container) container.innerHTML = '<p style="color:#64748b;">No referred friends yet.</p>';
+                    if (renewSection) renewSection.innerHTML = '<p style="font-size:12px; color:#64748b;">No referred friends yet. Refer a friend to renew their line here.</p>';
                     return;
                 }
                 container.innerHTML = '';
@@ -1487,8 +1531,36 @@
                     `;
                     container.appendChild(wrapper);
                 });
+
+                // Also populate the friend renewal card in the Renew IPTV section
+                if (renewSection) {
+                    renewSection.innerHTML = '';
+                    list.forEach(friend => {
+                        const friendIdSafe = friend.friend_username.replace(/[^a-zA-Z0-9_-]/g, '_');
+                        const daysText = friend.days_left !== null ? ` — ${friend.days_left} days left` : '';
+                        const div = document.createElement('div');
+                        div.style.cssText = 'border-bottom:1px solid #334155; padding:8px 0;';
+                        div.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <div>
+                                    <strong>${friend.friend_username}</strong>
+                                    <span style="font-size:11px; color:#9ca3af;">${friend.expiry_date !== 'Unknown' ? friend.expiry_date : ''}${daysText}</span>
+                                </div>
+                                <button onclick="toggleFriendRenew('${friendIdSafe}', '${friend.friend_username}')"
+                                    style="background:transparent; color:#22c55e; border:1px solid rgba(34,197,94,0.6); padding:5px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">
+                                    Renew
+                                </button>
+                            </div>
+                            <div id="renew-container-${friendIdSafe}-r" style="margin-top:6px; display:none;">
+                                <div id="paypal-friend-${friendIdSafe}-r"></div>
+                            </div>`;
+                        renewSection.appendChild(div);
+                    });
+                }
+
             } catch (e) {
-                container.innerHTML = '<p style="color:#f87171;">Error loading friends list.</p>';
+                if (container) container.innerHTML = '<p style="color:#f87171;">Error loading friends list.</p>';
+                if (renewSection) renewSection.innerHTML = '<p style="font-size:12px; color:#f87171;">Error loading friends.</p>';
             }
         }
 
@@ -2525,9 +2597,35 @@
             document.querySelectorAll('.dash-nav-item').forEach(i => i.classList.remove('active'));
             const section = document.getElementById('dash-' + id);
             if (section) section.classList.add('active');
-            if (clickedItem) clickedItem.classList.add('active');
+            if (clickedItem) {
+                clickedItem.classList.add('active');
+                // Update mobile section title
+                const label = clickedItem.querySelector('span:last-child');
+                const mobTitle = document.querySelector('.mob-section-title');
+                if (mobTitle && label) mobTitle.textContent = label.textContent;
+            }
             try { sessionStorage.setItem('dash_section', id); } catch(e) {}
-            closeMobMenu(); // always close on mobile after selecting
+            closeMobMenu();
+        }
+
+        function toggleAccountPassword(btn) {
+            const disp = document.getElementById('account-password-display');
+            if (!disp) return;
+            if (disp.textContent === '••••••••') {
+                fetch('/ios_player/session_password', {method:'POST'})
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.password) {
+                            disp.textContent = data.password;
+                            btn.textContent = 'Hide';
+                        } else {
+                            disp.textContent = 'Not available';
+                        }
+                    }).catch(() => { disp.textContent = 'Not available'; });
+            } else {
+                disp.textContent = '••••••••';
+                btn.textContent = 'Show';
+            }
         }
         // Home is always the landing page on fresh load.
         (function() {

@@ -782,6 +782,18 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        try:
+            cursor.execute("ALTER TABLE live_channels ADD COLUMN category_id TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
+        try:
+            cursor.execute("ALTER TABLE live_channels ADD COLUMN category_name TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Channel logos, pulled from the panel's stream_icon field when
         # syncing, so channel reports can show a logo the same way movie/TV
         # requests show a poster.
@@ -3138,6 +3150,125 @@ def sports_unsubscribe():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/sports/channels')
+def sports_channels():
+    """
+    Return live channels that are in football/sports-related categories,
+    grouped by category name. Used to show users where to find matches
+    on their IPTV service.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'categories': []}), 401
+
+    FOOTBALL_KEYWORDS = [
+        'football', 'soccer', 'epl', 'premier league', 'efl',
+        'championship', 'sport', 'sky sport', 'tnt sport',
+        'live football', 'major event', 'bt sport'
+    ]
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT stream_id, name, logo_url, category_id, category_name
+                FROM live_channels
+                WHERE category_name != '' AND category_name IS NOT NULL
+                ORDER BY category_name, name
+            """)
+            all_channels = cursor.fetchall()
+
+        # Group by category, filtering to sports-relevant ones
+        from collections import defaultdict
+        categories = defaultdict(list)
+        for ch in all_channels:
+            cat = ch['category_name'] or ''
+            if any(kw in cat.lower() for kw in FOOTBALL_KEYWORDS):
+                categories[cat].append({
+                    'stream_id': ch['stream_id'],
+                    'name': ch['name'],
+                    'logo': ch['logo_url'] or '',
+                })
+
+        result = [
+            {'category': cat, 'channels': channels}
+            for cat, channels in sorted(categories.items())
+        ]
+        return jsonify({'categories': result})
+    except Exception as e:
+        print(f"SPORTS_CHANNELS ERROR: {e}")
+        return jsonify({'categories': []})
+
+
+def find_match_channel(home_name, away_name, match_utc_dt):
+    """
+    Search the EPG of known sports channels to find which one is showing
+    a specific match. Looks at channels whose names contain keywords like
+    'sky sports', 'tnt', 'bbc', 'itv' and checks their EPG around kick-off.
+    Returns a channel name string, or None if not found.
+    """
+    SPORT_CHANNEL_KEYWORDS = ['sky sports', 'tnt sports', 'bbc one', 'bbc two', 'itv', 'amazon prime']
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # Find sport channels from the live channels table
+            cursor.execute("SELECT stream_id, name, category_name FROM live_channels")
+            all_channels = cursor.fetchall()
+
+        # Filter to likely sports broadcast channels using name OR category
+        sport_channels = [
+            ch for ch in all_channels
+            if any(kw in ch['name'].lower() for kw in SPORT_CHANNEL_KEYWORDS)
+            or any(kw in (ch.get('category_name') or '').lower() for kw in ['football', 'sport', 'epl', 'premier league'])
+        ]
+
+        if not sport_channels:
+            return None
+
+        # Search terms — look for either team name or competition in EPG
+        search_terms = [
+            home_name.lower(), away_name.lower(),
+            'premier league', 'championship'
+        ]
+
+        # Check EPG for each candidate channel — limit to avoid too many API calls
+        for ch in sport_channels[:30]:
+            try:
+                result = fetch_xtream_api('get_short_epg', {
+                    'stream_id': ch['stream_id'],
+                    'limit': 8
+                })
+                listings = (result or {}).get('epg_listings', [])
+                for listing in listings:
+                    title = (listing.get('title') or '').lower()
+                    desc = (listing.get('description') or '').lower()
+                    text = title + ' ' + desc
+
+                    # Check if this EPG entry is around kick-off time
+                    try:
+                        start_ts = int(listing.get('start_timestamp', 0))
+                        end_ts = int(listing.get('stop_timestamp', 0))
+                        match_ts = int(match_utc_dt.timestamp())
+                        # Must start within 30 mins of kick-off and cover it
+                        if not (start_ts - 1800 <= match_ts <= end_ts):
+                            continue
+                    except Exception:
+                        continue
+
+                    # Check if the EPG entry mentions either team or the competition
+                    if any(term in text for term in search_terms):
+                        return ch['name']
+            except Exception:
+                continue
+
+    except Exception as e:
+        print(f"FIND_MATCH_CHANNEL ERROR: {e}", flush=True)
+
+    return None
+
+
 def send_sports_notifications():
     """
     Called from the background sync loop. Checks for matches starting in the
@@ -3189,6 +3320,17 @@ def send_sports_notifications():
             local_dt = match_dt + timedelta(hours=1)
             ko_str = local_dt.strftime('%H:%M')
 
+            # Try to find the channel from EPG
+            channel_line = ''
+            try:
+                channel = find_match_channel(home_name, away_name, match_dt)
+                if channel:
+                    channel_line = f"📺 Showing on: <b>{channel}</b>\n"
+                else:
+                    channel_line = "📺 Check your TV guide for the channel.\n"
+            except Exception:
+                channel_line = "📺 Check your TV guide for the channel.\n"
+
             # Find subscribed users for either team
             with sqlite3.connect(DB_FILE) as conn:
                 conn.row_factory = sqlite3.Row
@@ -3205,8 +3347,8 @@ def send_sports_notifications():
                 f"<b>{home_name} vs {away_name}</b>\n"
                 f"🏆 {comp}\n"
                 f"⏰ Kick-off: <b>{ko_str}</b>\n\n"
-                f"📺 Check your TV guide for broadcast details.\n"
-                f"🎬 Available on your IPTV service — search for the channel in the TV Player."
+                f"{channel_line}"
+                f"🎬 Open your IPTV Player to watch."
             )
 
             for username in subscribers:
@@ -5499,6 +5641,13 @@ def perform_live_channels_sync():
     if not isinstance(live_streams, list) or not live_streams:
         raise RuntimeError("Panel returned no live channels - nothing was changed.")
 
+    # Also fetch category names so we can store them alongside each channel
+    try:
+        categories_raw = fetch_xtream_api('get_live_categories') or []
+        category_map = {str(c.get('category_id')): c.get('category_name', '') for c in categories_raw}
+    except Exception:
+        category_map = {}
+
     channel_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
@@ -5508,14 +5657,20 @@ def perform_live_channels_sync():
             name = (item.get('name') or '').strip()
             raw_stream_id = item.get('stream_id')
             logo_url = (item.get('stream_icon') or '').strip()
+            category_id = str(item.get('category_id') or '')
+            category_name = category_map.get(category_id, '')
             if not name or raw_stream_id is None:
                 continue
 
             cursor.execute('''
-                INSERT INTO live_channels (stream_id, name, logo_url)
-                VALUES (?, ?, ?)
-                ON CONFLICT(stream_id) DO UPDATE SET name = excluded.name, logo_url = excluded.logo_url
-            ''', (str(raw_stream_id), name, logo_url or None))
+                INSERT INTO live_channels (stream_id, name, logo_url, category_id, category_name)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(stream_id) DO UPDATE SET
+                    name = excluded.name,
+                    logo_url = excluded.logo_url,
+                    category_id = excluded.category_id,
+                    category_name = excluded.category_name
+            ''', (str(raw_stream_id), name, logo_url or None, category_id, category_name))
             channel_count += 1
 
         conn.commit()

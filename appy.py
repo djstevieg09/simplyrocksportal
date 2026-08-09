@@ -3159,54 +3159,112 @@ def sports_unsubscribe():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-@app.route('/sports/channels')
-def sports_channels():
+@app.route('/sports/next_fixtures')
+def sports_next_fixtures():
     """
-    Return live channels that are in football/sports-related categories,
-    grouped by category name. Used to show users where to find matches
-    on their IPTV service.
+    For each team the logged-in user follows, return their next upcoming
+    fixture plus which channel it's on (looked up via EPG).
     """
     if not session.get('logged_in'):
-        return jsonify({'categories': []}), 401
+        return jsonify({'teams': []}), 401
 
-    FOOTBALL_KEYWORDS = [
-        'football', 'soccer', 'epl', 'premier league', 'efl',
-        'championship', 'sport', 'sky sport', 'tnt sport',
-        'live football', 'major event', 'bt sport'
-    ]
+    username = session.get('username')
 
+    # Get user's followed teams
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT stream_id, name, logo_url, category_id, category_name
-                FROM live_channels
-                WHERE category_name != '' AND category_name IS NOT NULL
-                ORDER BY category_name, name
-            """)
-            all_channels = cursor.fetchall()
-
-        # Group by category, filtering to sports-relevant ones
-        from collections import defaultdict
-        categories = defaultdict(list)
-        for ch in all_channels:
-            cat = ch['category_name'] or ''
-            if any(kw in cat.lower() for kw in FOOTBALL_KEYWORDS):
-                categories[cat].append({
-                    'stream_id': ch['stream_id'],
-                    'name': ch['name'],
-                    'logo': ch['logo_url'] or '',
-                })
-
-        result = [
-            {'category': cat, 'channels': channels}
-            for cat, channels in sorted(categories.items())
-        ]
-        return jsonify({'categories': result})
+            cursor.execute(
+                "SELECT team_id, team_name, league FROM sports_team_subscriptions WHERE username = ?",
+                (username,)
+            )
+            followed = cursor.fetchall()
     except Exception as e:
-        print(f"SPORTS_CHANNELS ERROR: {e}")
-        return jsonify({'categories': []})
+        return jsonify({'teams': [], 'error': str(e)})
+
+    if not followed:
+        return jsonify({'teams': []})
+
+    if not FOOTBALL_API_KEY:
+        return jsonify({'teams': [], 'error': 'FOOTBALL_API_KEY not configured'})
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    end = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+
+    # Fetch all upcoming fixtures for both competitions
+    all_matches = []
+    for comp_id in FOOTBALL_COMPETITIONS:
+        data = _football_api(
+            f'competitions/{comp_id}/matches?dateFrom={today}&dateTo={end}&status=SCHEDULED,TIMED'
+        )
+        if data:
+            all_matches.extend(data.get('matches', []))
+
+    results = []
+    for team in followed:
+        team_id = int(team['team_id'])
+
+        # Find the next fixture for this team
+        next_match = None
+        for m in sorted(all_matches, key=lambda x: x.get('utcDate', '')):
+            if int(m['homeTeam'].get('id', 0)) == team_id or int(m['awayTeam'].get('id', 0)) == team_id:
+                next_match = m
+                break
+
+        if not next_match:
+            results.append({
+                'team_name': team['team_name'],
+                'team_id': team_id,
+                'league': team['league'],
+                'fixture': None,
+                'channel': None,
+            })
+            continue
+
+        # Parse date/time
+        utc_date = next_match.get('utcDate', '')
+        try:
+            dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
+            dt_local = dt_utc + timedelta(hours=1)  # BST
+            date_display = dt_local.strftime('%A %d %B')
+            time_display = dt_local.strftime('%H:%M')
+        except Exception:
+            date_display = utc_date[:10]
+            time_display = utc_date[11:16]
+            dt_utc = None
+
+        home = next_match['homeTeam'].get('shortName') or next_match['homeTeam'].get('name', '')
+        away = next_match['awayTeam'].get('shortName') or next_match['awayTeam'].get('name', '')
+        comp = next_match.get('competition', {}).get('name', '')
+        home_crest = next_match['homeTeam'].get('crest', '')
+        away_crest = next_match['awayTeam'].get('crest', '')
+
+        # EPG channel lookup
+        channel = None
+        if dt_utc:
+            try:
+                channel = find_match_channel(home, away, dt_utc)
+            except Exception:
+                pass
+
+        results.append({
+            'team_name': team['team_name'],
+            'team_id': team_id,
+            'league': team['league'],
+            'fixture': {
+                'home': home,
+                'away': away,
+                'home_crest': home_crest,
+                'away_crest': away_crest,
+                'date': date_display,
+                'time': time_display,
+                'competition': comp,
+            },
+            'channel': channel,
+        })
+
+    return jsonify({'teams': results})
 
 
 def find_match_channel(home_name, away_name, match_utc_dt):

@@ -3005,6 +3005,9 @@ def sports_fixtures():
     if not session.get('logged_in'):
         return jsonify({'fixtures': []}), 401
 
+    if not FOOTBALL_API_KEY:
+        return jsonify({'fixtures': [], 'error': 'FOOTBALL_API_KEY not configured'})
+
     from datetime import timezone
     today = datetime.now().strftime('%Y-%m-%d')
     end = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')

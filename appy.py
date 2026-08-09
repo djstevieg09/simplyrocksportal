@@ -3163,14 +3163,14 @@ def sports_unsubscribe():
 def sports_next_fixtures():
     """
     For each team the logged-in user follows, return their next upcoming
-    fixture plus which channel it's on (looked up via EPG).
+    fixture. Channel lookup is done separately via /sports/channel_for_match
+    so this endpoint stays fast.
     """
     if not session.get('logged_in'):
         return jsonify({'teams': []}), 401
 
     username = session.get('username')
 
-    # Get user's followed teams
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
@@ -3187,12 +3187,11 @@ def sports_next_fixtures():
         return jsonify({'teams': []})
 
     if not FOOTBALL_API_KEY:
-        return jsonify({'teams': [], 'error': 'FOOTBALL_API_KEY not configured'})
+        return jsonify({'teams': [], 'error': 'FOOTBALL_API_KEY not configured — add it to Render env vars.'})
 
     today = datetime.now().strftime('%Y-%m-%d')
     end = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
 
-    # Fetch all upcoming fixtures for both competitions
     all_matches = []
     for comp_id in FOOTBALL_COMPETITIONS:
         data = _football_api(
@@ -3204,8 +3203,6 @@ def sports_next_fixtures():
     results = []
     for team in followed:
         team_id = int(team['team_id'])
-
-        # Find the next fixture for this team
         next_match = None
         for m in sorted(all_matches, key=lambda x: x.get('utcDate', '')):
             if int(m['homeTeam'].get('id', 0)) == team_id or int(m['awayTeam'].get('id', 0)) == team_id:
@@ -3213,20 +3210,14 @@ def sports_next_fixtures():
                 break
 
         if not next_match:
-            results.append({
-                'team_name': team['team_name'],
-                'team_id': team_id,
-                'league': team['league'],
-                'fixture': None,
-                'channel': None,
-            })
+            results.append({'team_name': team['team_name'], 'team_id': team_id,
+                            'league': team['league'], 'fixture': None})
             continue
 
-        # Parse date/time
         utc_date = next_match.get('utcDate', '')
         try:
             dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
-            dt_local = dt_utc + timedelta(hours=1)  # BST
+            dt_local = dt_utc + timedelta(hours=1)
             date_display = dt_local.strftime('%A %d %B')
             time_display = dt_local.strftime('%H:%M')
         except Exception:
@@ -3236,17 +3227,6 @@ def sports_next_fixtures():
 
         home = next_match['homeTeam'].get('shortName') or next_match['homeTeam'].get('name', '')
         away = next_match['awayTeam'].get('shortName') or next_match['awayTeam'].get('name', '')
-        comp = next_match.get('competition', {}).get('name', '')
-        home_crest = next_match['homeTeam'].get('crest', '')
-        away_crest = next_match['awayTeam'].get('crest', '')
-
-        # EPG channel lookup
-        channel = None
-        if dt_utc:
-            try:
-                channel = find_match_channel(home, away, dt_utc)
-            except Exception:
-                pass
 
         results.append({
             'team_name': team['team_name'],
@@ -3255,16 +3235,44 @@ def sports_next_fixtures():
             'fixture': {
                 'home': home,
                 'away': away,
-                'home_crest': home_crest,
-                'away_crest': away_crest,
+                'home_id': next_match['homeTeam'].get('id'),
+                'away_id': next_match['awayTeam'].get('id'),
+                'home_crest': next_match['homeTeam'].get('crest', ''),
+                'away_crest': next_match['awayTeam'].get('crest', ''),
                 'date': date_display,
                 'time': time_display,
-                'competition': comp,
+                'utc_date': utc_date,
+                'competition': next_match.get('competition', {}).get('name', ''),
             },
-            'channel': channel,
         })
 
     return jsonify({'teams': results})
+
+
+@app.route('/sports/channel_for_match')
+def sports_channel_for_match():
+    """
+    Look up which channel a specific match is on via EPG.
+    Called separately from next_fixtures so the main fixture load is instant.
+    Params: home, away, utc_date
+    """
+    if not session.get('logged_in'):
+        return jsonify({'channel': None}), 401
+
+    home = request.args.get('home', '')
+    away = request.args.get('away', '')
+    utc_date = request.args.get('utc_date', '')
+
+    if not home or not away or not utc_date:
+        return jsonify({'channel': None})
+
+    try:
+        dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
+        channel = find_match_channel(home, away, dt_utc)
+        return jsonify({'channel': channel})
+    except Exception as e:
+        print(f"CHANNEL_FOR_MATCH ERROR: {e}")
+        return jsonify({'channel': None})
 
 
 def find_match_channel(home_name, away_name, match_utc_dt):

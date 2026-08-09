@@ -2957,7 +2957,6 @@ def submit_request():
 
 # --- REFERRAL WALLET BALANCE ---
 
-@app.route('/get_referral_balance')
 @app.route('/whats_new')
 def whats_new():
     """Returns recently added VOD content with TMDB poster URLs."""

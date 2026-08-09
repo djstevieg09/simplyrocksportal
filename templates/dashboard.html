@@ -2730,7 +2730,7 @@
             try {
                 const resp = await fetch('/sports/my_teams');
                 const data = await resp.json();
-                myTeamIds = new Set(data.teams.map(t => t.team_id));
+                myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
                 renderMyTeams(data.teams);
             } catch(e) {
                 document.getElementById('my-teams-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load teams.</p>';
@@ -2761,6 +2761,10 @@
                 const resp = await fetch('/sports/fixtures');
                 const data = await resp.json();
                 allFixtures = data.fixtures;
+                if (data.error) {
+                    document.getElementById('fixtures-list').innerHTML = '<p style="font-size:12px; color:#f87171;">⚠️ Football API key not configured. Add FOOTBALL_API_KEY to your Render environment variables.</p>';
+                    return;
+                }
                 renderFixtures();
             } catch(e) {
                 document.getElementById('fixtures-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load fixtures.</p>';
@@ -2787,7 +2791,7 @@
                     el.appendChild(hdr);
                     lastDate = f.date;
                 }
-                const isFollowing = myTeamIds.has(f.home_id) || myTeamIds.has(f.away_id);
+                const isFollowing = myTeamIds.has(parseInt(f.home_id)) || myTeamIds.has(parseInt(f.away_id));
                 const row = document.createElement('div');
                 row.className = 'fixture-row';
                 row.dataset.comp = f.comp_id;
@@ -2837,7 +2841,7 @@
                     el.appendChild(hdr);
                     lastLeague = t.competition;
                 }
-                const following = myTeamIds.has(t.id);
+                const following = myTeamIds.has(parseInt(t.id));
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e293b;';
                 row.innerHTML = `
@@ -2859,7 +2863,7 @@
         }
 
         async function toggleTeamSub(teamId, teamName, league, btn) {
-            const following = myTeamIds.has(teamId);
+            const following = myTeamIds.has(parseInt(teamId));
             const url = following ? '/sports/unsubscribe' : '/sports/subscribe';
             try {
                 const resp = await fetch(url, {
@@ -2868,8 +2872,8 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    if (following) { myTeamIds.delete(teamId); }
-                    else { myTeamIds.add(teamId); }
+                    if (following) { myTeamIds.delete(parseInt(teamId)); }
+                    else { myTeamIds.add(parseInt(teamId)); }
                     // Refresh picker and my teams
                     renderTeamPicker(document.getElementById('team-search-input').value ? allTeams.filter(t => t.name.toLowerCase().includes(document.getElementById('team-search-input').value.toLowerCase())) : allTeams);
                     loadMyTeams();
@@ -2884,7 +2888,7 @@
                 body: JSON.stringify({team_id: teamId})
             });
             const data = await resp.json();
-            if (data.success) { myTeamIds.delete(teamId); loadMyTeams(); renderFixtures(); }
+            if (data.success) { myTeamIds.delete(parseInt(teamId)); loadMyTeams(); renderFixtures(); }
         }
 
         function showTeamPicker() {

@@ -666,14 +666,7 @@
 
             <!-- Upcoming Fixtures -->
             <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <h2 style="color:#818cf8; margin:0;">📅 Upcoming Fixtures</h2>
-                    <div style="display:flex; gap:6px;">
-                        <button onclick="filterFixtures('all', this)" class="fix-filter active-filter">All</button>
-                        <button onclick="filterFixtures('PL', this)" class="fix-filter">Premier League</button>
-                        <button onclick="filterFixtures('ELC', this)" class="fix-filter">Championship</button>
-                    </div>
-                </div>
+                <h2 style="color:#818cf8; margin:0 0 10px 0;">📅 Your Team's Upcoming Fixtures</h2>
                 <div id="fixtures-list">
                     <p style="font-size:12px; color:#64748b;">Loading fixtures...</p>
                 </div>
@@ -2740,12 +2733,18 @@
             await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams(), loadSportsChannels()]);
         }
 
+        async function loadSports() {
+            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams(), loadSportsChannels()]);
+        }
+
         async function loadMyTeams() {
             try {
                 const resp = await fetch('/sports/my_teams');
                 const data = await resp.json();
                 myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
                 renderMyTeams(data.teams);
+                // Re-render fixtures so following badges update
+                if (allFixtures.length) renderFixtures();
             } catch(e) {
                 document.getElementById('my-teams-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load teams.</p>';
             }
@@ -2787,17 +2786,22 @@
 
         function renderFixtures() {
             const el = document.getElementById('fixtures-list');
-            let fixtures = allFixtures;
-            if (activeFixtureFilter !== 'all') {
-                fixtures = fixtures.filter(f => f.comp_id === activeFixtureFilter);
+            // Only show fixtures for followed teams
+            const myFixtures = myTeamIds.size > 0
+                ? allFixtures.filter(f => myTeamIds.has(parseInt(f.home_id)) || myTeamIds.has(parseInt(f.away_id)))
+                : [];
+
+            if (!myTeamIds.size) {
+                el.innerHTML = '<p style="font-size:12px; color:#64748b;">Follow a team above to see their upcoming fixtures here.</p>';
+                return;
             }
-            if (!fixtures.length) {
-                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No upcoming fixtures in the next 14 days.</p>';
+            if (!myFixtures.length) {
+                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No upcoming fixtures in the next 14 days for your followed teams.</p>';
                 return;
             }
             let lastDate = '';
             el.innerHTML = '';
-            fixtures.forEach(f => {
+            myFixtures.forEach(f => {
                 if (f.date !== lastDate) {
                     const hdr = document.createElement('div');
                     hdr.style.cssText = 'font-size:11px; font-weight:bold; color:#94a3b8; text-transform:uppercase; padding:8px 0 4px 0; letter-spacing:0.05em;';
@@ -2805,31 +2809,20 @@
                     el.appendChild(hdr);
                     lastDate = f.date;
                 }
-                const isFollowing = myTeamIds.has(parseInt(f.home_id)) || myTeamIds.has(parseInt(f.away_id));
                 const row = document.createElement('div');
                 row.className = 'fixture-row';
-                row.dataset.comp = f.comp_id;
                 row.innerHTML = `
                     <div class="fixture-teams">
                         ${f.home_crest ? `<img src="${f.home_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
-                        ${f.home} <span style="color:#64748b; font-weight:normal;">vs</span>
+                        <span style="${myTeamIds.has(parseInt(f.home_id)) ? 'color:#4ade80;' : ''}">${f.home}</span>
+                        <span style="color:#64748b; font-weight:normal;"> vs </span>
                         ${f.away_crest ? `<img src="${f.away_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
-                        ${f.away}
-                        <div style="font-size:10px; color:#64748b; font-weight:normal;">${f.competition}</div>
+                        <span style="${myTeamIds.has(parseInt(f.away_id)) ? 'color:#4ade80;' : ''}">${f.away}</span>
+                        <div style="font-size:10px; color:#64748b; font-weight:normal; margin-top:2px;">${f.competition}</div>
                     </div>
-                    <div class="fixture-meta">
-                        ${f.time}<br>
-                        ${isFollowing ? '<span style="color:#4ade80; font-size:10px;">🔔 Following</span>' : ''}
-                    </div>`;
+                    <div class="fixture-meta">${f.time}</div>`;
                 el.appendChild(row);
             });
-        }
-
-        function filterFixtures(comp, btn) {
-            activeFixtureFilter = comp;
-            document.querySelectorAll('.fix-filter').forEach(b => b.classList.remove('active-filter'));
-            btn.classList.add('active-filter');
-            renderFixtures();
         }
 
         async function loadAllTeams() {

@@ -3000,6 +3000,7 @@ def whats_new():
         return jsonify({'movies': [], 'series': []})
 
 
+@app.route('/get_referral_balance')
 def get_referral_balance():
     """Return current referral wallet balance for logged in user."""
     if not session.get('logged_in'):

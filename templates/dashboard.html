@@ -72,6 +72,14 @@
         }
         .wn-tab { background:#334155; color:#94a3b8; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; }
         .wn-tab.active { background:#7c3aed; color:#fff; }
+        .fix-filter { background:#334155; color:#94a3b8; border:none; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; }
+        .fix-filter.active-filter { background:#2563eb; color:#fff; }
+        .fixture-row { display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid #1e293b; }
+        .fixture-crest { width:24px; height:24px; object-fit:contain; }
+        .fixture-teams { flex:1; font-size:13px; font-weight:bold; }
+        .fixture-meta { font-size:11px; color:#64748b; text-align:right; white-space:nowrap; }
+        .fixture-bell { background:none; border:1px solid #334155; border-radius:4px; padding:3px 7px; font-size:13px; cursor:pointer; }
+        .fixture-bell.following { border-color:#4ade80; }
         .wn-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:8px; max-height:280px; overflow-y:auto; }
         .wn-tile { background:#0f172a; border-radius:6px; padding:6px; text-align:center; font-size:10px; color:#cbd5e1; }
         .wn-tile .yr { color:#64748b; font-size:9px; display:block; margin-top:2px; }
@@ -432,6 +440,7 @@
             <div class="dash-nav-item active" onclick="showDash('home',this)"><span>🏠</span><span>Home</span></div>
             <div class="dash-nav-item" onclick="showDash('report',this)"><span>⚠️</span><span>Report an Issue</span></div>
             <div class="dash-nav-item" onclick="showDash('player',this)"><span>📺</span><span>TV Player</span></div>
+            <div class="dash-nav-item" onclick="showDash('sports',this)"><span>⚽</span><span>Sport</span></div>
             <div class="dash-nav-item" onclick="showDash('requests',this)"><span>🎬</span><span>Requests</span></div>
             <div class="dash-sidebar-label">Billing</div>
             <div class="dash-nav-item" onclick="showDash('renew',this)"><span>🔄</span><span>Renew IPTV</span></div>
@@ -455,20 +464,21 @@
 
         <div class="dash-section active" id="dash-home">
             <!-- Expiry Status Card -->
-        {% if days_left is not none %}
-        <div class="card" style="border:1px solid {% if days_left <= 7 %}rgba(239,68,68,0.6){% elif days_left <= 14 %}rgba(245,158,11,0.5){% else %}rgba(34,197,94,0.4){% endif %}; margin-bottom:12px;">
+        <div class="card" style="border:1px solid {% if days_left is not none %}{% if days_left <= 7 %}rgba(239,68,68,0.6){% elif days_left <= 14 %}rgba(245,158,11,0.5){% else %}rgba(34,197,94,0.4){% endif %}{% else %}rgba(34,197,94,0.4){% endif %}; margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                 <div>
                     <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold; margin-bottom:2px;">Subscription Expiry</div>
-                    <span style="font-size:20px; font-weight:900; color:{% if days_left <= 7 %}#f87171{% elif days_left <= 14 %}#fbbf24{% else %}#4ade80{% endif %};">{{ expiry_date }}</span>
+                    <span style="font-size:20px; font-weight:900; color:{% if days_left is not none %}{% if days_left <= 7 %}#f87171{% elif days_left <= 14 %}#fbbf24{% else %}#4ade80{% endif %}{% else %}#4ade80{% endif %};">{{ expiry_date }}</span>
+                    {% if days_left is not none %}
                     <span style="font-size:12px; color:#94a3b8; margin-left:8px;">
                         {% if days_left <= 0 %}<span style="color:#f87171; font-weight:bold;">EXPIRED</span>
                         {% elif days_left <= 7 %}<span style="color:#f87171; font-weight:bold;">{{ days_left }} day{{ 's' if days_left != 1 else '' }} left</span>
                         {% elif days_left <= 14 %}<span style="color:#fbbf24; font-weight:bold;">{{ days_left }} days left</span>
                         {% else %}{{ days_left }} days left{% endif %}
                     </span>
+                    {% endif %}
                 </div>
-                {% if days_left <= 14 %}
+                {% if days_left is not none and days_left <= 14 %}
                 <button onclick="showDash('renew', document.querySelector('.dash-nav-item[onclick*=\'renew\']'))"
                     style="background:linear-gradient(90deg,#2563eb,#38bdf8);color:white;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;font-size:13px;cursor:pointer;white-space:nowrap;">
                     Renew Now →
@@ -476,7 +486,6 @@
                 {% endif %}
             </div>
         </div>
-        {% endif %}
 
         <!-- What's New -->
         <div class="card" style="border:1px solid rgba(168,85,247,0.4); margin-bottom:12px;">
@@ -639,6 +648,53 @@
             </div>
         </div>
 
+        <!-- SPORTS -->
+        <div class="dash-section" id="dash-sports">
+            <!-- My Teams -->
+            <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h2 style="color:#4ade80; margin:0;">⚽ My Teams</h2>
+                    <button onclick="showTeamPicker()" style="background:#2563eb; color:white; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">+ Follow a Team</button>
+                </div>
+                <div id="my-teams-list">
+                    <p style="font-size:12px; color:#64748b;">Loading your teams...</p>
+                </div>
+                {% if not telegram_linked %}
+                <p style="font-size:11px; color:#f87171; margin:10px 0 0 0;">⚠️ Link your Telegram in Account settings to receive match alerts.</p>
+                {% endif %}
+            </div>
+
+            <!-- Upcoming Fixtures -->
+            <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                    <h2 style="color:#818cf8; margin:0;">📅 Upcoming Fixtures</h2>
+                    <div style="display:flex; gap:6px;">
+                        <button onclick="filterFixtures('all', this)" class="fix-filter active-filter">All</button>
+                        <button onclick="filterFixtures('PL', this)" class="fix-filter">Premier League</button>
+                        <button onclick="filterFixtures('ELC', this)" class="fix-filter">Championship</button>
+                    </div>
+                </div>
+                <div id="fixtures-list">
+                    <p style="font-size:12px; color:#64748b;">Loading fixtures...</p>
+                </div>
+            </div>
+
+            <!-- Team Picker Modal -->
+            <div id="team-picker-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
+                <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:20px; max-width:420px; width:100%; max-height:80vh; overflow-y:auto;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h3 style="margin:0; color:#fff;">Follow a Team</h3>
+                        <button onclick="closeTeamPicker()" style="background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer;">✕</button>
+                    </div>
+                    <input type="text" id="team-search-input" placeholder="Search teams..." oninput="filterTeamPicker(this.value)"
+                        style="width:100%; padding:9px; background:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:13px; margin-bottom:10px; box-sizing:border-box;">
+                    <div id="team-picker-list">
+                        <p style="font-size:12px; color:#64748b;">Loading teams...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="dash-section" id="dash-requests">
             <!-- Media search & requests -->
                 <div class="card">
@@ -745,7 +801,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
-                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display-2">0.00</span></span>
                         </div>
                     </div>
                     <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
@@ -783,7 +839,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
-                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display-3">0.00</span></span>
                         </div>
                     </div>
                     <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
@@ -890,7 +946,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <span class="section-title" style="color:#4ade80;">Referral Wallet</span>
-                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display">0.00</span></span>
+                            <span style="font-size:22px; font-weight:900;">£<span id="wallet-balance-display-4">0.00</span></span>
                         </div>
                     </div>
                     <p style="margin-top:8px; font-size:12px; color:#94a3b8;">
@@ -1040,8 +1096,13 @@
                 }
                 const data = await response.json();
                 maxAvailableWalletBalance = parseFloat(data.balance) || 0.00;
-                const walletDisp = document.getElementById('wallet-balance-display');
-                if (walletDisp) walletDisp.innerText = maxAvailableWalletBalance.toFixed(2);
+                const bal = maxAvailableWalletBalance.toFixed(2);
+
+                // Update ALL wallet balance display elements across all sections
+                ['wallet-balance-display','wallet-balance-display-2','wallet-balance-display-3','wallet-balance-display-4'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerText = bal;
+                });
 
                 // Show/hide the wallet input rows on each product
                 const renewalRow = document.getElementById('renewal-wallet-row');
@@ -1052,10 +1113,10 @@
                 // Update "available" labels
                 const renewalAvail = document.getElementById('renewal-wallet-avail');
                 const spotifyAvail = document.getElementById('spotify-wallet-avail');
-                if (renewalAvail) renewalAvail.textContent = maxAvailableWalletBalance.toFixed(2);
-                if (spotifyAvail) spotifyAvail.textContent = maxAvailableWalletBalance.toFixed(2);
+                if (renewalAvail) renewalAvail.textContent = bal;
+                if (spotifyAvail) spotifyAvail.textContent = bal;
 
-                // Update input maximums to the product price (capped at balance)
+                // Update input maximums
                 const renewalInput = document.getElementById('renewal-wallet-input');
                 if (renewalInput) renewalInput.max = Math.min(maxAvailableWalletBalance, basePrice).toFixed(2);
                 const spotifyInput = document.getElementById('spotify-wallet-input');
@@ -2654,6 +2715,192 @@
         setTimeout(validateReferralFormInputs, 500);
         fetchReferralFriends();
         loadWhatsNew();
+
+        // --- Sports ---
+        let allFixtures = [];
+        let allTeams = [];
+        let myTeamIds = new Set();
+        let activeFixtureFilter = 'all';
+
+        async function loadSports() {
+            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams()]);
+        }
+
+        async function loadMyTeams() {
+            try {
+                const resp = await fetch('/sports/my_teams');
+                const data = await resp.json();
+                myTeamIds = new Set(data.teams.map(t => t.team_id));
+                renderMyTeams(data.teams);
+            } catch(e) {
+                document.getElementById('my-teams-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load teams.</p>';
+            }
+        }
+
+        function renderMyTeams(teams) {
+            const el = document.getElementById('my-teams-list');
+            if (!teams.length) {
+                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No teams followed yet. Tap "+ Follow a Team" to get match alerts.</p>';
+                return;
+            }
+            el.innerHTML = teams.map(t => `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e293b;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:13px; font-weight:bold;">${t.team_name}</span>
+                        <span style="font-size:11px; color:#64748b;">${t.league}</span>
+                    </div>
+                    <button onclick="unsubscribeTeam(${t.team_id}, '${t.team_name}', this)"
+                        style="background:none; border:1px solid rgba(239,68,68,0.5); color:#f87171; padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer;">
+                        Unfollow
+                    </button>
+                </div>`).join('');
+        }
+
+        async function loadFixtures() {
+            try {
+                const resp = await fetch('/sports/fixtures');
+                const data = await resp.json();
+                allFixtures = data.fixtures;
+                renderFixtures();
+            } catch(e) {
+                document.getElementById('fixtures-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load fixtures.</p>';
+            }
+        }
+
+        function renderFixtures() {
+            const el = document.getElementById('fixtures-list');
+            let fixtures = allFixtures;
+            if (activeFixtureFilter !== 'all') {
+                fixtures = fixtures.filter(f => f.comp_id === activeFixtureFilter);
+            }
+            if (!fixtures.length) {
+                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No upcoming fixtures in the next 14 days.</p>';
+                return;
+            }
+            let lastDate = '';
+            el.innerHTML = '';
+            fixtures.forEach(f => {
+                if (f.date !== lastDate) {
+                    const hdr = document.createElement('div');
+                    hdr.style.cssText = 'font-size:11px; font-weight:bold; color:#94a3b8; text-transform:uppercase; padding:8px 0 4px 0; letter-spacing:0.05em;';
+                    hdr.textContent = f.date;
+                    el.appendChild(hdr);
+                    lastDate = f.date;
+                }
+                const isFollowing = myTeamIds.has(f.home_id) || myTeamIds.has(f.away_id);
+                const row = document.createElement('div');
+                row.className = 'fixture-row';
+                row.dataset.comp = f.comp_id;
+                row.innerHTML = `
+                    <div class="fixture-teams">
+                        ${f.home_crest ? `<img src="${f.home_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
+                        ${f.home} <span style="color:#64748b; font-weight:normal;">vs</span>
+                        ${f.away_crest ? `<img src="${f.away_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
+                        ${f.away}
+                        <div style="font-size:10px; color:#64748b; font-weight:normal;">${f.competition}</div>
+                    </div>
+                    <div class="fixture-meta">
+                        ${f.time}<br>
+                        ${isFollowing ? '<span style="color:#4ade80; font-size:10px;">🔔 Following</span>' : ''}
+                    </div>`;
+                el.appendChild(row);
+            });
+        }
+
+        function filterFixtures(comp, btn) {
+            activeFixtureFilter = comp;
+            document.querySelectorAll('.fix-filter').forEach(b => b.classList.remove('active-filter'));
+            btn.classList.add('active-filter');
+            renderFixtures();
+        }
+
+        async function loadAllTeams() {
+            if (allTeams.length) return;
+            try {
+                const resp = await fetch('/sports/teams');
+                const data = await resp.json();
+                allTeams = data.teams;
+                renderTeamPicker(allTeams);
+            } catch(e) {}
+        }
+
+        function renderTeamPicker(teams) {
+            const el = document.getElementById('team-picker-list');
+            if (!teams.length) { el.innerHTML = '<p style="font-size:12px;color:#64748b;">No teams found.</p>'; return; }
+            let lastLeague = '';
+            el.innerHTML = '';
+            teams.forEach(t => {
+                if (t.competition !== lastLeague) {
+                    const hdr = document.createElement('div');
+                    hdr.style.cssText = 'font-size:10px; font-weight:bold; color:#64748b; text-transform:uppercase; padding:8px 0 4px; letter-spacing:0.05em;';
+                    hdr.textContent = t.competition;
+                    el.appendChild(hdr);
+                    lastLeague = t.competition;
+                }
+                const following = myTeamIds.has(t.id);
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e293b;';
+                row.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        ${t.crest ? `<img src="${t.crest}" style="width:20px;height:20px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                        <span style="font-size:13px;">${t.name}</span>
+                    </div>
+                    <button onclick="toggleTeamSub(${t.id}, '${t.name.replace(/'/g,"\\'")}', '${t.competition}', this)"
+                        style="background:${following ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)'}; border:1px solid ${following ? 'rgba(239,68,68,0.5)' : 'rgba(34,197,94,0.5)'}; color:${following ? '#f87171' : '#4ade80'}; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;">
+                        ${following ? 'Unfollow' : 'Follow'}
+                    </button>`;
+                el.appendChild(row);
+            });
+        }
+
+        function filterTeamPicker(q) {
+            const filtered = q ? allTeams.filter(t => t.name.toLowerCase().includes(q.toLowerCase()) || t.full_name.toLowerCase().includes(q.toLowerCase())) : allTeams;
+            renderTeamPicker(filtered);
+        }
+
+        async function toggleTeamSub(teamId, teamName, league, btn) {
+            const following = myTeamIds.has(teamId);
+            const url = following ? '/sports/unsubscribe' : '/sports/subscribe';
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({team_id: teamId, team_name: teamName, league: league})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (following) { myTeamIds.delete(teamId); }
+                    else { myTeamIds.add(teamId); }
+                    // Refresh picker and my teams
+                    renderTeamPicker(document.getElementById('team-search-input').value ? allTeams.filter(t => t.name.toLowerCase().includes(document.getElementById('team-search-input').value.toLowerCase())) : allTeams);
+                    loadMyTeams();
+                    renderFixtures();
+                }
+            } catch(e) {}
+        }
+
+        async function unsubscribeTeam(teamId, teamName, btn) {
+            const resp = await fetch('/sports/unsubscribe', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({team_id: teamId})
+            });
+            const data = await resp.json();
+            if (data.success) { myTeamIds.delete(teamId); loadMyTeams(); renderFixtures(); }
+        }
+
+        function showTeamPicker() {
+            document.getElementById('team-picker-overlay').style.display = 'flex';
+            loadAllTeams();
+        }
+        function closeTeamPicker() {
+            document.getElementById('team-picker-overlay').style.display = 'none';
+        }
+
+        // Load sports data when the sports tab is first opened
+        const _origShowDash = showDash;
+        showDash = function(id, clickedItem) {
+            _origShowDash(id, clickedItem);
+            if (id === 'sports' && !allFixtures.length) loadSports();
+        };
 
         // What's New
         let wnData = {movies: [], series: []};

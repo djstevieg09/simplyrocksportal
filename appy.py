@@ -3009,6 +3009,7 @@ def get_referral_balance():
     username = session.get('username')
     try:
         balance = get_wallet_balance(username)
+        print(f"WALLET BALANCE: user={username} balance={balance}", flush=True)
         return jsonify({'balance': balance})
     except Exception as e:
         print("GET_REFERRAL_BALANCE ERROR:", e)

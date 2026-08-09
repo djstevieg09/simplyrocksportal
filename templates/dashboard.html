@@ -679,6 +679,17 @@
                 </div>
             </div>
 
+            <!-- IPTV Sports Channels -->
+            <div class="card" style="border:1px solid rgba(234,179,8,0.4);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                    <h2 style="color:#facc15; margin:0;">📡 Sports Channels on Your IPTV</h2>
+                    <span style="font-size:11px; color:#64748b;">Open TV Player to watch</span>
+                </div>
+                <div id="sports-channels-list">
+                    <p style="font-size:12px; color:#64748b;">Loading channels...</p>
+                </div>
+            </div>
+
             <!-- Team Picker Modal -->
             <div id="team-picker-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px;">
                 <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:20px; max-width:420px; width:100%; max-height:80vh; overflow-y:auto;">
@@ -2726,7 +2737,7 @@
         let activeFixtureFilter = 'all';
 
         async function loadSports() {
-            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams()]);
+            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams(), loadSportsChannels()]);
         }
 
         async function loadMyTeams() {
@@ -2900,6 +2911,34 @@
         }
         function closeTeamPicker() {
             document.getElementById('team-picker-overlay').style.display = 'none';
+        }
+
+        async function loadSportsChannels() {
+            const el = document.getElementById('sports-channels-list');
+            try {
+                const resp = await fetch('/sports/channels');
+                const data = await resp.json();
+                if (!data.categories.length) {
+                    el.innerHTML = '<p style="font-size:12px; color:#64748b;">No sports channels found. Try syncing channels from the admin panel first.</p>';
+                    return;
+                }
+                el.innerHTML = data.categories.map(cat => `
+                    <div style="margin-bottom:14px;">
+                        <div style="font-size:11px; font-weight:bold; color:#facc15; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; padding-bottom:4px; border-bottom:1px solid #334155;">
+                            ${cat.category}
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                            ${cat.channels.slice(0,20).map(ch => `
+                                <div style="display:flex; align-items:center; gap:5px; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:5px 8px; font-size:12px; color:#cbd5e1;">
+                                    ${ch.logo ? `<img src="${ch.logo}" style="width:18px;height:18px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                                    ${ch.name}
+                                </div>`).join('')}
+                            ${cat.channels.length > 20 ? `<div style="font-size:11px; color:#64748b; padding:5px 8px;">+${cat.channels.length - 20} more</div>` : ''}
+                        </div>
+                    </div>`).join('');
+            } catch(e) {
+                el.innerHTML = '<p style="font-size:12px; color:#f87171;">Could not load channels.</p>';
+            }
         }
 
         // Sports tab lazy-loads on first open (handled inside showDash below)

@@ -650,36 +650,18 @@
 
         <!-- SPORTS -->
         <div class="dash-section" id="dash-sports">
-            <!-- My Teams -->
+
+            <!-- My Teams + Next Fixture -->
             <div class="card" style="border:1px solid rgba(34,197,94,0.4);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                     <h2 style="color:#4ade80; margin:0;">⚽ My Teams</h2>
                     <button onclick="showTeamPicker()" style="background:#2563eb; color:white; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer;">+ Follow a Team</button>
                 </div>
-                <div id="my-teams-list">
-                    <p style="font-size:12px; color:#64748b;">Loading your teams...</p>
-                </div>
                 {% if not telegram_linked %}
-                <p style="font-size:11px; color:#f87171; margin:10px 0 0 0;">⚠️ Link your Telegram in Account settings to receive match alerts.</p>
+                <p style="font-size:11px; color:#f87171; margin:0 0 10px 0;">⚠️ Link your Telegram in Account settings to receive match alerts 30 mins before kick-off.</p>
                 {% endif %}
-            </div>
-
-            <!-- Upcoming Fixtures -->
-            <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
-                <h2 style="color:#818cf8; margin:0 0 10px 0;">📅 Your Team's Upcoming Fixtures</h2>
-                <div id="fixtures-list">
-                    <p style="font-size:12px; color:#64748b;">Loading fixtures...</p>
-                </div>
-            </div>
-
-            <!-- IPTV Sports Channels -->
-            <div class="card" style="border:1px solid rgba(234,179,8,0.4);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <h2 style="color:#facc15; margin:0;">📡 Sports Channels on Your IPTV</h2>
-                    <span style="font-size:11px; color:#64748b;">Open TV Player to watch</span>
-                </div>
-                <div id="sports-channels-list">
-                    <p style="font-size:12px; color:#64748b;">Loading channels...</p>
+                <div id="my-teams-list">
+                    <p style="font-size:12px; color:#64748b;">Loading...</p>
                 </div>
             </div>
 
@@ -2724,105 +2706,87 @@
         loadWhatsNew();
 
         // --- Sports ---
-        let allFixtures = [];
         let allTeams = [];
         let myTeamIds = new Set();
-        let activeFixtureFilter = 'all';
 
         async function loadSports() {
-            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams(), loadSportsChannels()]);
+            await Promise.all([loadNextFixtures(), loadAllTeams()]);
         }
 
-        async function loadSports() {
-            await Promise.all([loadMyTeams(), loadFixtures(), loadAllTeams(), loadSportsChannels()]);
-        }
-
-        async function loadMyTeams() {
-            try {
-                const resp = await fetch('/sports/my_teams');
-                const data = await resp.json();
-                myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
-                renderMyTeams(data.teams);
-                // Re-render fixtures so following badges update
-                if (allFixtures.length) renderFixtures();
-            } catch(e) {
-                document.getElementById('my-teams-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load teams.</p>';
-            }
-        }
-
-        function renderMyTeams(teams) {
+        async function loadNextFixtures() {
             const el = document.getElementById('my-teams-list');
-            if (!teams.length) {
-                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No teams followed yet. Tap "+ Follow a Team" to get match alerts.</p>';
-                return;
-            }
-            el.innerHTML = teams.map(t => `
-                <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #1e293b;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:13px; font-weight:bold;">${t.team_name}</span>
-                        <span style="font-size:11px; color:#64748b;">${t.league}</span>
-                    </div>
-                    <button onclick="unsubscribeTeam(${t.team_id}, '${t.team_name}', this)"
-                        style="background:none; border:1px solid rgba(239,68,68,0.5); color:#f87171; padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer;">
-                        Unfollow
-                    </button>
-                </div>`).join('');
-        }
-
-        async function loadFixtures() {
             try {
-                const resp = await fetch('/sports/fixtures');
+                const resp = await fetch('/sports/next_fixtures');
                 const data = await resp.json();
-                allFixtures = data.fixtures;
+
                 if (data.error) {
-                    document.getElementById('fixtures-list').innerHTML = '<p style="font-size:12px; color:#f87171;">⚠️ Football API key not configured. Add FOOTBALL_API_KEY to your Render environment variables.</p>';
+                    el.innerHTML = `<p style="font-size:12px; color:#f87171;">⚠️ ${data.error}</p>`;
                     return;
                 }
-                renderFixtures();
-            } catch(e) {
-                document.getElementById('fixtures-list').innerHTML = '<p style="font-size:12px;color:#f87171;">Could not load fixtures.</p>';
-            }
-        }
-
-        function renderFixtures() {
-            const el = document.getElementById('fixtures-list');
-            // Only show fixtures for followed teams
-            const myFixtures = myTeamIds.size > 0
-                ? allFixtures.filter(f => myTeamIds.has(parseInt(f.home_id)) || myTeamIds.has(parseInt(f.away_id)))
-                : [];
-
-            if (!myTeamIds.size) {
-                el.innerHTML = '<p style="font-size:12px; color:#64748b;">Follow a team above to see their upcoming fixtures here.</p>';
-                return;
-            }
-            if (!myFixtures.length) {
-                el.innerHTML = '<p style="font-size:12px; color:#64748b;">No upcoming fixtures in the next 14 days for your followed teams.</p>';
-                return;
-            }
-            let lastDate = '';
-            el.innerHTML = '';
-            myFixtures.forEach(f => {
-                if (f.date !== lastDate) {
-                    const hdr = document.createElement('div');
-                    hdr.style.cssText = 'font-size:11px; font-weight:bold; color:#94a3b8; text-transform:uppercase; padding:8px 0 4px 0; letter-spacing:0.05em;';
-                    hdr.textContent = f.date;
-                    el.appendChild(hdr);
-                    lastDate = f.date;
+                if (!data.teams.length) {
+                    el.innerHTML = '<p style="font-size:12px; color:#64748b;">No teams followed yet. Tap "+ Follow a Team" to get match alerts.</p>';
+                    myTeamIds = new Set();
+                    return;
                 }
-                const row = document.createElement('div');
-                row.className = 'fixture-row';
-                row.innerHTML = `
-                    <div class="fixture-teams">
-                        ${f.home_crest ? `<img src="${f.home_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
-                        <span style="${myTeamIds.has(parseInt(f.home_id)) ? 'color:#4ade80;' : ''}">${f.home}</span>
-                        <span style="color:#64748b; font-weight:normal;"> vs </span>
-                        ${f.away_crest ? `<img src="${f.away_crest}" class="fixture-crest" onerror="this.style.display='none'">` : ''}
-                        <span style="${myTeamIds.has(parseInt(f.away_id)) ? 'color:#4ade80;' : ''}">${f.away}</span>
-                        <div style="font-size:10px; color:#64748b; font-weight:normal; margin-top:2px;">${f.competition}</div>
-                    </div>
-                    <div class="fixture-meta">${f.time}</div>`;
-                el.appendChild(row);
-            });
+
+                myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
+
+                el.innerHTML = data.teams.map(t => {
+                    const unfollowBtn = `<button onclick="unsubscribeTeam(${t.team_id}, '${t.team_name.replace(/'/g,"\\'")}', this)"
+                        style="background:none; border:1px solid rgba(239,68,68,0.5); color:#f87171; padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; white-space:nowrap;">
+                        Unfollow
+                    </button>`;
+
+                    if (!t.fixture) {
+                        return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <span style="font-size:14px; font-weight:bold; color:#fff;">${t.team_name}</span>
+                                    <span style="font-size:11px; color:#64748b; margin-left:6px;">${t.league}</span>
+                                </div>
+                                ${unfollowBtn}
+                            </div>
+                            <p style="font-size:12px; color:#64748b; margin:8px 0 0 0;">No fixtures in the next 30 days.</p>
+                        </div>`;
+                    }
+
+                    const f = t.fixture;
+                    const channelHtml = t.channel
+                        ? `<div style="margin-top:8px; background:#0f172a; border-radius:6px; padding:8px 10px; display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:16px;">📺</span>
+                            <div>
+                                <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Showing on</div>
+                                <div style="font-size:13px; font-weight:bold; color:#4ade80;">${t.channel}</div>
+                            </div>
+                           </div>`
+                        : `<div style="margin-top:8px; font-size:11px; color:#64748b;">📺 Channel not found in EPG — check TV guide</div>`;
+
+                    return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <div>
+                                <span style="font-size:14px; font-weight:bold; color:#fff;">${t.team_name}</span>
+                                <span style="font-size:11px; color:#64748b; margin-left:6px;">${t.league}</span>
+                            </div>
+                            ${unfollowBtn}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            ${f.home_crest ? `<img src="${f.home_crest}" style="width:28px;height:28px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                            <span style="font-size:15px; font-weight:bold; color:#fff;">${f.home}</span>
+                            <span style="color:#64748b;">vs</span>
+                            ${f.away_crest ? `<img src="${f.away_crest}" style="width:28px;height:28px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                            <span style="font-size:15px; font-weight:bold; color:#fff;">${f.away}</span>
+                        </div>
+                        <div style="margin-top:6px; font-size:12px; color:#94a3b8;">
+                            🗓 ${f.date} &nbsp;⏰ <strong style="color:#fff;">${f.time}</strong>
+                            &nbsp;·&nbsp; ${f.competition}
+                        </div>
+                        ${channelHtml}
+                    </div>`;
+                }).join('');
+
+            } catch(e) {
+                el.innerHTML = '<p style="font-size:12px; color:#f87171;">Could not load fixtures.</p>';
+            }
         }
 
         async function loadAllTeams() {
@@ -2865,7 +2829,7 @@
         }
 
         function filterTeamPicker(q) {
-            const filtered = q ? allTeams.filter(t => t.name.toLowerCase().includes(q.toLowerCase()) || t.full_name.toLowerCase().includes(q.toLowerCase())) : allTeams;
+            const filtered = q ? allTeams.filter(t => t.name.toLowerCase().includes(q.toLowerCase())) : allTeams;
             renderTeamPicker(filtered);
         }
 
@@ -2879,23 +2843,24 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    if (following) { myTeamIds.delete(parseInt(teamId)); }
-                    else { myTeamIds.add(parseInt(teamId)); }
-                    // Refresh picker and my teams
-                    renderTeamPicker(document.getElementById('team-search-input').value ? allTeams.filter(t => t.name.toLowerCase().includes(document.getElementById('team-search-input').value.toLowerCase())) : allTeams);
-                    loadMyTeams();
-                    renderFixtures();
+                    if (following) myTeamIds.delete(parseInt(teamId));
+                    else myTeamIds.add(parseInt(teamId));
+                    const q = document.getElementById('team-search-input').value;
+                    renderTeamPicker(q ? allTeams.filter(t => t.name.toLowerCase().includes(q.toLowerCase())) : allTeams);
+                    loadNextFixtures();
                 }
             } catch(e) {}
         }
 
         async function unsubscribeTeam(teamId, teamName, btn) {
-            const resp = await fetch('/sports/unsubscribe', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({team_id: teamId})
-            });
-            const data = await resp.json();
-            if (data.success) { myTeamIds.delete(parseInt(teamId)); loadMyTeams(); renderFixtures(); }
+            try {
+                const resp = await fetch('/sports/unsubscribe', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({team_id: teamId})
+                });
+                const data = await resp.json();
+                if (data.success) { myTeamIds.delete(parseInt(teamId)); loadNextFixtures(); }
+            } catch(e) {}
         }
 
         function showTeamPicker() {
@@ -2906,35 +2871,6 @@
             document.getElementById('team-picker-overlay').style.display = 'none';
         }
 
-        async function loadSportsChannels() {
-            const el = document.getElementById('sports-channels-list');
-            try {
-                const resp = await fetch('/sports/channels');
-                const data = await resp.json();
-                if (!data.categories.length) {
-                    el.innerHTML = '<p style="font-size:12px; color:#64748b;">No sports channels found. Try syncing channels from the admin panel first.</p>';
-                    return;
-                }
-                el.innerHTML = data.categories.map(cat => `
-                    <div style="margin-bottom:14px;">
-                        <div style="font-size:11px; font-weight:bold; color:#facc15; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px; padding-bottom:4px; border-bottom:1px solid #334155;">
-                            ${cat.category}
-                        </div>
-                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                            ${cat.channels.slice(0,20).map(ch => `
-                                <div style="display:flex; align-items:center; gap:5px; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:5px 8px; font-size:12px; color:#cbd5e1;">
-                                    ${ch.logo ? `<img src="${ch.logo}" style="width:18px;height:18px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
-                                    ${ch.name}
-                                </div>`).join('')}
-                            ${cat.channels.length > 20 ? `<div style="font-size:11px; color:#64748b; padding:5px 8px;">+${cat.channels.length - 20} more</div>` : ''}
-                        </div>
-                    </div>`).join('');
-            } catch(e) {
-                el.innerHTML = '<p style="font-size:12px; color:#f87171;">Could not load channels.</p>';
-            }
-        }
-
-        // Sports tab lazy-loads on first open (handled inside showDash below)
 
         // What's New
         let wnData = {movies: [], series: []};

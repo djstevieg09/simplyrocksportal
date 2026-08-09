@@ -2109,6 +2109,15 @@ def login():
         except Exception as db_err:
             print(f"LOCAL CACHE ERROR: {db_err}")
 
+        # Keep channel categories fresh so the Sports tab always shows
+        # up-to-date channel listings. Runs in background, never delays login.
+        def _user_login_channel_sync():
+            try:
+                perform_live_channels_sync()
+            except Exception as e:
+                print(f"USER LOGIN CHANNEL SYNC ERROR: {type(e).__name__}: {e}", flush=True)
+        Thread(target=_user_login_channel_sync, daemon=True).start()
+
         return redirect(url_for('dashboard'))
     else:
         return render_template('login.html', error="Invalid username/password, or your account is not yet approved.")

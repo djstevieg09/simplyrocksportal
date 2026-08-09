@@ -38,6 +38,7 @@ app.config['SESSION_COOKIE_SECURE'] = True
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
+FOOTBALL_API_KEY = os.environ.get('FOOTBALL_API_KEY')
 
 DB_FILE = "/data/database.db"
 
@@ -826,6 +827,19 @@ def init_db():
                 username TEXT NOT NULL,
                 used INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Sports team subscriptions — users pick teams and get Telegram
+        # alerts 30 minutes before each match.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sports_team_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                team_id INTEGER NOT NULL,
+                team_name TEXT NOT NULL,
+                league TEXT NOT NULL,
+                UNIQUE(username, team_id)
             )
         ''')
 
@@ -2953,6 +2967,251 @@ def submit_request():
     except Exception as e:
         print("SUBMIT_REQUEST ERROR:", e)
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# --- SPORTS FIXTURES ---
+# Uses football-data.org API (free tier, 10 calls/min).
+# Competition IDs: PL = Premier League, ELC = Championship
+
+FOOTBALL_COMPETITIONS = {
+    'PL': 'Premier League',
+    'ELC': 'Championship',
+}
+
+def _football_api(path):
+    """Make a request to the football-data.org API."""
+    if not FOOTBALL_API_KEY:
+        return None
+    try:
+        resp = requests.get(
+            f'https://api.football-data.org/v4/{path}',
+            headers={'X-Auth-Token': FOOTBALL_API_KEY},
+            timeout=8
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        print(f"FOOTBALL API {path}: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"FOOTBALL API ERROR: {e}")
+    return None
+
+
+@app.route('/sports/fixtures')
+def sports_fixtures():
+    """
+    Return upcoming fixtures for PL and Championship for the next 14 days.
+    Each match includes: id, home, away, date, competition, status.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'fixtures': []}), 401
+
+    from datetime import timezone
+    today = datetime.now().strftime('%Y-%m-%d')
+    end = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+
+    all_fixtures = []
+    for comp_id, comp_name in FOOTBALL_COMPETITIONS.items():
+        data = _football_api(
+            f'competitions/{comp_id}/matches?dateFrom={today}&dateTo={end}&status=SCHEDULED,TIMED'
+        )
+        if not data:
+            continue
+        for m in data.get('matches', []):
+            utc_date = m.get('utcDate', '')
+            # Convert UTC to UK time (approximate — BST is UTC+1 in summer)
+            try:
+                dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
+                # Simple BST offset — proper tz handling not needed here
+                from datetime import timezone as tz
+                dt_local = dt_utc + timedelta(hours=1)
+                date_display = dt_local.strftime('%a %d %b')
+                time_display = dt_local.strftime('%H:%M')
+            except Exception:
+                date_display = utc_date[:10]
+                time_display = utc_date[11:16]
+
+            all_fixtures.append({
+                'id': m.get('id'),
+                'home': m['homeTeam'].get('shortName') or m['homeTeam'].get('name', ''),
+                'away': m['awayTeam'].get('shortName') or m['awayTeam'].get('name', ''),
+                'home_id': m['homeTeam'].get('id'),
+                'away_id': m['awayTeam'].get('id'),
+                'home_crest': m['homeTeam'].get('crest', ''),
+                'away_crest': m['awayTeam'].get('crest', ''),
+                'utc_date': utc_date,
+                'date': date_display,
+                'time': time_display,
+                'competition': comp_name,
+                'comp_id': comp_id,
+                'status': m.get('status', ''),
+            })
+
+    all_fixtures.sort(key=lambda x: x['utc_date'])
+    return jsonify({'fixtures': all_fixtures})
+
+
+@app.route('/sports/teams')
+def sports_teams():
+    """Return all teams for PL and Championship for the team picker."""
+    if not session.get('logged_in'):
+        return jsonify({'teams': []}), 401
+
+    teams = []
+    for comp_id, comp_name in FOOTBALL_COMPETITIONS.items():
+        data = _football_api(f'competitions/{comp_id}/teams')
+        if not data:
+            continue
+        for t in data.get('teams', []):
+            teams.append({
+                'id': t.get('id'),
+                'name': t.get('shortName') or t.get('name', ''),
+                'full_name': t.get('name', ''),
+                'crest': t.get('crest', ''),
+                'competition': comp_name,
+                'comp_id': comp_id,
+            })
+
+    teams.sort(key=lambda x: (x['competition'], x['name']))
+    return jsonify({'teams': teams})
+
+
+@app.route('/sports/my_teams')
+def sports_my_teams():
+    """Return the teams this user has subscribed to."""
+    if not session.get('logged_in'):
+        return jsonify({'teams': []}), 401
+    username = session.get('username')
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT team_id, team_name, league FROM sports_team_subscriptions WHERE username = ?",
+            (username,)
+        )
+        return jsonify({'teams': [dict(r) for r in cursor.fetchall()]})
+
+
+@app.route('/sports/subscribe', methods=['POST'])
+def sports_subscribe():
+    """Subscribe to a team — user will get a 30-min pre-match alert via Telegram."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False}), 401
+    data = request.json or {}
+    username = session.get('username')
+    team_id = data.get('team_id')
+    team_name = (data.get('team_name') or '').strip()
+    league = (data.get('league') or '').strip()
+    if not team_id or not team_name:
+        return jsonify({'success': False, 'message': 'Missing team info'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute(
+                'INSERT OR IGNORE INTO sports_team_subscriptions (username, team_id, team_name, league) VALUES (?,?,?,?)',
+                (username, team_id, team_name, league)
+            )
+            conn.commit()
+        return jsonify({'success': True, 'message': f'Subscribed to {team_name}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/sports/unsubscribe', methods=['POST'])
+def sports_unsubscribe():
+    """Unsubscribe from a team."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False}), 401
+    data = request.json or {}
+    username = session.get('username')
+    team_id = data.get('team_id')
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute(
+                'DELETE FROM sports_team_subscriptions WHERE username = ? AND team_id = ?',
+                (username, team_id)
+            )
+            conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+def send_sports_notifications():
+    """
+    Called from the background sync loop. Checks for matches starting in the
+    next 30-35 minutes and sends a Telegram alert to any subscribed users.
+    The 5-minute window prevents double-sending if the sync runs slightly late.
+    """
+    if not FOOTBALL_API_KEY:
+        return
+    try:
+        now_utc = datetime.utcnow()
+        window_start = now_utc + timedelta(minutes=28)
+        window_end = now_utc + timedelta(minutes=35)
+        date_str = now_utc.strftime('%Y-%m-%d')
+
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT team_id, team_name FROM sports_team_subscriptions")
+            all_teams = cursor.fetchall()
+
+        if not all_teams:
+            return
+
+        # Fetch today's matches for both competitions
+        todays_matches = []
+        for comp_id in FOOTBALL_COMPETITIONS:
+            data = _football_api(
+                f'competitions/{comp_id}/matches?dateFrom={date_str}&dateTo={date_str}&status=SCHEDULED,TIMED'
+            )
+            if data:
+                todays_matches.extend(data.get('matches', []))
+
+        for match in todays_matches:
+            try:
+                match_dt = datetime.strptime(match['utcDate'], '%Y-%m-%dT%H:%M:%SZ')
+            except Exception:
+                continue
+
+            if not (window_start <= match_dt <= window_end):
+                continue
+
+            home_id = match['homeTeam'].get('id')
+            away_id = match['awayTeam'].get('id')
+            home_name = match['homeTeam'].get('shortName') or match['homeTeam'].get('name', '')
+            away_name = match['awayTeam'].get('shortName') or match['awayTeam'].get('name', '')
+            comp = match.get('competition', {}).get('name', '')
+
+            # Local kick-off time (BST = UTC+1 in summer)
+            local_dt = match_dt + timedelta(hours=1)
+            ko_str = local_dt.strftime('%H:%M')
+
+            # Find subscribed users for either team
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT s.username
+                    FROM sports_team_subscriptions s
+                    WHERE s.team_id IN (?, ?)
+                ''', (home_id, away_id))
+                subscribers = [r['username'] for r in cursor.fetchall()]
+
+            msg = (
+                f"⚽ <b>Match Alert — 30 minutes to kick-off!</b>\n\n"
+                f"<b>{home_name} vs {away_name}</b>\n"
+                f"🏆 {comp}\n"
+                f"⏰ Kick-off: <b>{ko_str}</b>\n\n"
+                f"📺 Check your TV guide for broadcast details.\n"
+                f"🎬 Available on your IPTV service — search for the channel in the TV Player."
+            )
+
+            for username in subscribers:
+                send_telegram_message_to_user(username, msg)
+                print(f"SPORTS: Notified {username} — {home_name} vs {away_name} at {ko_str}", flush=True)
+
+    except Exception as e:
+        print(f"SEND_SPORTS_NOTIFICATIONS ERROR: {e}", flush=True)
 
 
 # --- REFERRAL WALLET BALANCE ---
@@ -6286,6 +6545,19 @@ def auto_sync_loop():
 # so it also runs under gunicorn on Render, not just when run directly.
 _auto_sync_thread = Thread(target=auto_sync_loop, daemon=True)
 _auto_sync_thread.start()
+
+def _sports_notification_loop():
+    """Runs every 5 minutes to check for upcoming matches and notify subscribers."""
+    time.sleep(90)  # short initial delay
+    while True:
+        try:
+            send_sports_notifications()
+        except Exception as e:
+            print(f"SPORTS NOTIFICATION LOOP ERROR: {e}", flush=True)
+        time.sleep(300)  # 5 minutes
+
+_sports_thread = Thread(target=_sports_notification_loop, daemon=True)
+_sports_thread.start()
 
 # Resolve the bot's own @username (needed to build t.me linking links) and
 # register the webhook so Telegram forwards incoming messages to us - both

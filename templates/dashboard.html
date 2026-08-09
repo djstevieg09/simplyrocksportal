@@ -2660,13 +2660,16 @@
             if (section) section.classList.add('active');
             if (clickedItem) {
                 clickedItem.classList.add('active');
-                // Update mobile section title
                 const label = clickedItem.querySelector('span:last-child');
                 const mobTitle = document.querySelector('.mob-section-title');
                 if (mobTitle && label) mobTitle.textContent = label.textContent;
             }
             try { sessionStorage.setItem('dash_section', id); } catch(e) {}
             closeMobMenu();
+            // Lazy-load sports data on first open
+            if (id === 'sports' && !allFixtures.length && typeof loadSports === 'function') {
+                loadSports();
+            }
         }
 
         function toggleAccountPassword(btn) {
@@ -2899,12 +2902,7 @@
             document.getElementById('team-picker-overlay').style.display = 'none';
         }
 
-        // Load sports data when the sports tab is first opened
-        const _origShowDash = showDash;
-        showDash = function(id, clickedItem) {
-            _origShowDash(id, clickedItem);
-            if (id === 'sports' && !allFixtures.length) loadSports();
-        };
+        // Sports tab lazy-loads on first open (handled inside showDash below)
 
         // What's New
         let wnData = {movies: [], series: []};

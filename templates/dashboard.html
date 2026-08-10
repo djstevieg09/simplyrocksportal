@@ -2653,7 +2653,7 @@
             try { sessionStorage.setItem('dash_section', id); } catch(e) {}
             closeMobMenu();
             // Lazy-load sports data on first open
-            if (id === 'sports' && !allFixtures.length && typeof loadSports === 'function') {
+            if (id === 'sports' && !sportsLoaded && typeof loadSports === 'function') {
                 loadSports();
             }
         }
@@ -2708,8 +2708,10 @@
         // --- Sports ---
         let allTeams = [];
         let myTeamIds = new Set();
+        let sportsLoaded = false;
 
         async function loadSports() {
+            sportsLoaded = true;
             await Promise.all([loadNextFixtures(), loadAllTeams()]);
         }
 
@@ -2860,7 +2862,7 @@
                     body: JSON.stringify({team_id: teamId})
                 });
                 const data = await resp.json();
-                if (data.success) { myTeamIds.delete(parseInt(teamId)); loadNextFixtures(); }
+                if (data.success) { myTeamIds.delete(parseInt(teamId)); sportsLoaded = false; loadNextFixtures(); }
             } catch(e) {}
         }
 

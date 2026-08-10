@@ -3049,23 +3049,22 @@ def submit_request():
 FOOTBALL_COMPETITIONS = {
     'PL': 'Premier League',
     'FAC': 'FA Cup',
-    'ELC': 'Carabao Cup',
+    'COC': 'Carabao Cup',
     'CL': 'Champions League',
     'EL': 'Europa League',
     'EC': 'European Championship',
     'WC': 'World Cup',
+    'ELC': 'Championship',
 }
 
-# Competitions shown in the team picker (excludes Carabao Cup — users
-# don't follow teams "in the Carabao Cup", they follow their club and
-# we show Carabao Cup fixtures automatically if the team is in one)
+# Competitions shown in the team picker
 TEAM_PICKER_COMPETITIONS = {
     'PL': 'Premier League',
-    'ELC2': 'Championship',  # football-data.org uses ELC2 for Championship
+    'ELC': 'Championship',
 }
 
-# Competitions where we skip the EPG channel lookup (non-mainstream TV)
-NO_CHANNEL_LOOKUP_COMPS = {'ELC', 'EC', 'WC'}
+# Competitions where we skip the EPG channel lookup
+NO_CHANNEL_LOOKUP_COMPS = {'COC', 'EC', 'WC'}
 
 def _football_api(path):
     """Make a request to the football-data.org API."""
@@ -3253,18 +3252,23 @@ def sports_next_fixtures():
 
         teams = []
         for row in rows:
-            fixture = None
+            fixtures = []
             if row['next_fixture_json']:
                 try:
-                    fixture = json.loads(row['next_fixture_json'])
+                    parsed = json.loads(row['next_fixture_json'])
+                    # Handle both old single-fixture format and new list format
+                    if isinstance(parsed, list):
+                        fixtures = parsed
+                    elif isinstance(parsed, dict):
+                        parsed['channel'] = row['next_channel']
+                        fixtures = [parsed]
                 except Exception:
                     pass
             teams.append({
                 'team_id': row['team_id'],
                 'team_name': row['team_name'],
                 'league': row['league'],
-                'fixture': fixture,
-                'channel': row['next_channel'],
+                'fixtures': fixtures,
             })
 
         return jsonify({'teams': teams})
@@ -3310,47 +3314,49 @@ def refresh_team_fixture(team_id, team_name):
     else:
         print(f"SPORTS: No upcoming match found for {team_name}", flush=True)
 
-    fixture_json = None
-    channel = None
-
-    if next_match:
-        utc_date = next_match.get('utcDate', '')
+    def parse_match(m):
+        utc_date = m.get('utcDate', '')
         try:
             dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
             dt_local = dt_utc + timedelta(hours=1)
             date_display = dt_local.strftime('%A %d %B')
             time_display = dt_local.strftime('%H:%M')
         except Exception:
+            dt_utc = None
             date_display = utc_date[:10]
             time_display = utc_date[11:16]
-            dt_utc = None
 
-        home = next_match['homeTeam'].get('shortName') or next_match['homeTeam'].get('name', '')
-        away = next_match['awayTeam'].get('shortName') or next_match['awayTeam'].get('name', '')
+        home = m['homeTeam'].get('shortName') or m['homeTeam'].get('name', '')
+        away = m['awayTeam'].get('shortName') or m['awayTeam'].get('name', '')
+        comp_code = m.get('competition', {}).get('code', '')
 
-        fixture_data = {
-            'home': home,
-            'away': away,
-            'home_id': next_match['homeTeam'].get('id'),
-            'away_id': next_match['awayTeam'].get('id'),
-            'home_crest': next_match['homeTeam'].get('crest', ''),
-            'away_crest': next_match['awayTeam'].get('crest', ''),
-            'date': date_display,
-            'time': time_display,
-            'utc_date': utc_date,
-            'competition': next_match.get('competition', {}).get('name', ''),
-            'comp_code': next_match.get('competition', {}).get('code', ''),
-        }
-        fixture_json = json.dumps(fixture_data)
-
-        comp_id = next_match.get('competition', {}).get('code', '')
-        if dt_utc and comp_id not in NO_CHANNEL_LOOKUP_COMPS:
+        channel = None
+        if dt_utc and comp_code not in NO_CHANNEL_LOOKUP_COMPS:
             try:
                 channel = find_match_channel(home, away, dt_utc)
             except Exception:
                 pass
-        elif comp_id in NO_CHANNEL_LOOKUP_COMPS:
-            channel = None  # Will show "Check TV guide" on the card
+
+        return {
+            'home': home,
+            'away': away,
+            'home_id': m['homeTeam'].get('id'),
+            'away_id': m['awayTeam'].get('id'),
+            'home_crest': m['homeTeam'].get('crest', ''),
+            'away_crest': m['awayTeam'].get('crest', ''),
+            'date': date_display,
+            'time': time_display,
+            'utc_date': utc_date,
+            'competition': m.get('competition', {}).get('name', ''),
+            'comp_code': comp_code,
+            'channel': channel,
+        }
+
+    # Take next 3 matches
+    next_3 = [parse_match(m) for m in upcoming[:3]]
+    fixtures_json = json.dumps(next_3) if next_3 else None
+    # Keep next_channel as the channel for the very next match (for notifications)
+    first_channel = next_3[0]['channel'] if next_3 else None
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -3358,9 +3364,9 @@ def refresh_team_fixture(team_id, team_name):
                 UPDATE sports_team_subscriptions
                 SET next_fixture_json = ?, next_channel = ?, fixture_updated_at = CURRENT_TIMESTAMP
                 WHERE team_id = ?
-            ''', (fixture_json, channel, team_id))
+            ''', (fixtures_json, first_channel, team_id))
             conn.commit()
-        print(f"SPORTS: Cached fixture for {team_name}: {channel or 'no channel'}", flush=True)
+        print(f"SPORTS: Cached {len(next_3)} fixture(s) for {team_name}", flush=True)
     except Exception as e:
         print(f"SPORTS CACHE ERROR: {e}", flush=True)
 

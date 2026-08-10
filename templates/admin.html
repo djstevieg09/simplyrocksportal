@@ -188,6 +188,8 @@
                                 <td style="white-space:nowrap;">
                                     {% if item.kind == 'renewal_job' %}
                                         <button class="btn btn-success btn-small" onclick="acceptRenewalJob({{ item.id }})">✓ Accept</button>
+                                    {% elif item.kind == 'connection_upgrade' %}
+                                        <button class="btn btn-success btn-small" onclick="acceptConnectionUpgrade({{ item.id }})">✓ Done</button>
                                     {% elif item.kind == 'new_line_job' %}
                                         <button class="btn btn-success btn-small" onclick="acceptNewLineJob({{ item.id }})">✓ Accept</button>
                                     {% elif item.kind == 'request' %}
@@ -965,6 +967,19 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => alert("Server timeout while accepting renewal job."));
+        }
+
+        function acceptConnectionUpgrade(jobId) {
+            if (!confirm("Confirm you've added the extra connection on your IPTV panel?")) return;
+            fetch('/admin/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'accept_connection_upgrade', id: jobId })
+            }).then(r => r.json())
+            .then(data => {
+                if (data.success) { alert(data.message || 'Done!'); window.location.reload(); }
+                else { alert('Error: ' + data.message); }
+            }).catch(() => alert("Server timeout."));
         }
 
         function acceptNewLineJob(jobId) {

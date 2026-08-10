@@ -864,6 +864,21 @@ def init_db():
             )
         ''')
 
+        # Connection upgrade jobs — separate from renewal_jobs since adding
+        # a connection doesn't extend the subscription, it just increases
+        # the number of simultaneous streams on the line.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS connection_upgrade_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                order_id TEXT,
+                amount REAL NOT NULL,
+                discount_used REAL DEFAULT 0.0,
+                status TEXT DEFAULT 'Pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Unique index on referral_friends to prevent duplicates
         try:
             cursor.execute('''
@@ -1375,6 +1390,33 @@ def handle_telegram_callback(callback_query):
                 result_text = f"Renewed {result['username']} -> {result['new_expiry_date']}"
             else:
                 success = False
+
+        elif action == 'accept_connection_upgrade':
+            job_id = int(raw_id)
+            try:
+                with sqlite3.connect(DB_FILE) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor2 = conn.cursor()
+                    cursor2.execute("SELECT * FROM connection_upgrade_jobs WHERE id = ?", (job_id,))
+                    job = cursor2.fetchone()
+                    if not job:
+                        success = False
+                        result_text = "Job not found"
+                    else:
+                        cursor2.execute(
+                            "UPDATE connection_upgrade_jobs SET status = 'Done' WHERE id = ?",
+                            (job_id,)
+                        )
+                        conn.commit()
+                        send_telegram_message_to_user(
+                            job['username'],
+                            "➕ Your extra connection has been added! You can now stream on an additional device."
+                        )
+                        log_activity(admin_username, f"Connection upgrade applied for {job['username']}")
+                        result_text = f"Connection upgrade marked done for {job['username']}"
+            except Exception as e:
+                success = False
+                result_text = str(e)
                 result_text = str(result)
 
         elif action == 'accept_newline':
@@ -3648,10 +3690,10 @@ def add_connection():
         # Create a job for the admin to action
         with sqlite3.connect(DB_FILE) as conn:
             conn.execute('''
-                INSERT INTO renewal_jobs
-                    (username, renewal_type, connections, order_id, amount, status)
-                VALUES (?, 'add_connection', 1, ?, ?, 'Pending')
-            ''', (username, order_id, total))
+                INSERT INTO connection_upgrade_jobs
+                    (username, order_id, amount, discount_used, status)
+                VALUES (?, ?, ?, ?, 'Pending')
+            ''', (username, order_id, total, discount_redeemed))
             conn.commit()
 
         log_activity(username, f"Add connection request — £{total:.2f} (wallet: £{discount_redeemed:.2f})")
@@ -4561,22 +4603,23 @@ def build_admin_todo_list():
 
         cursor.execute("SELECT * FROM renewal_jobs WHERE status = 'Pending'")
         for row in cursor.fetchall():
-            if row['renewal_type'] == 'add_connection':
-                scope = 'add connection'
-                label = f"Add Connection - {row['username']}"
-            elif row['renewal_type'] == 'friend':
-                scope = 'friend line'
-                label = f"Renewal - {row['username']} (friend line)"
-            else:
-                scope = 'own line'
-                label = f"Renewal - {row['username']} (own line)"
-            detail = f"{row['connections']} connection(s) - £{row['amount']}"
             if row['renewal_type'] == 'friend':
-                detail += f" - referred by {row['referrer_username']}"
+                label = f"Renewal - {row['username']} (friend line)"
+                detail = f"{row['connections']} connection(s) - £{row['amount']} - referred by {row['referrer_username']}"
+            else:
+                label = f"Renewal - {row['username']} (own line)"
+                detail = f"{row['connections']} connection(s) - £{row['amount']}"
             todo_items.append({
                 'kind': 'renewal_job', 'id': row['id'],
-                'label': label,
-                'detail': detail,
+                'label': label, 'detail': detail, 'timestamp': row['created_at']
+            })
+
+        cursor.execute("SELECT * FROM connection_upgrade_jobs WHERE status = 'Pending'")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'connection_upgrade', 'id': row['id'],
+                'label': f"Add Connection - {row['username']}",
+                'detail': f"£{row['amount']:.2f} paid — add 1 extra simultaneous stream to their line",
                 'timestamp': row['created_at']
             })
 

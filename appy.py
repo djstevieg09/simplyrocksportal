@@ -778,8 +778,7 @@ def init_db():
             try:
                 cursor.execute(f"ALTER TABLE sports_team_subscriptions ADD COLUMN {col}")
             except sqlite3.OperationalError:
-                pass
-                print(f"DATABASE UPDATE NOTICE: {e}")
+                pass  # Column already exists
 
         # Free-text notes field so the admin can record things like
         # "changed password on 01/08/2026" against a specific order.

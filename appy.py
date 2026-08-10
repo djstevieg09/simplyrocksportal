@@ -774,6 +774,13 @@ def init_db():
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
 
+        for col in ['next_fixture_json TEXT', 'next_channel TEXT', 'fixture_updated_at DATETIME']:
+            try:
+                cursor.execute(f"ALTER TABLE sports_team_subscriptions ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
+                print(f"DATABASE UPDATE NOTICE: {e}")
+
         # Free-text notes field so the admin can record things like
         # "changed password on 01/08/2026" against a specific order.
         try:
@@ -851,6 +858,9 @@ def init_db():
                 team_id INTEGER NOT NULL,
                 team_name TEXT NOT NULL,
                 league TEXT NOT NULL,
+                next_fixture_json TEXT DEFAULT NULL,
+                next_channel TEXT DEFAULT NULL,
+                fixture_updated_at DATETIME DEFAULT NULL,
                 UNIQUE(username, team_id)
             )
         ''')
@@ -2114,8 +2124,9 @@ def login():
         def _user_login_channel_sync():
             try:
                 perform_live_channels_sync()
+                refresh_all_user_fixtures(username)
             except Exception as e:
-                print(f"USER LOGIN CHANNEL SYNC ERROR: {type(e).__name__}: {e}", flush=True)
+                print(f"USER LOGIN SYNC ERROR: {type(e).__name__}: {e}", flush=True)
         Thread(target=_user_login_channel_sync, daemon=True).start()
 
         return redirect(url_for('dashboard'))
@@ -3134,6 +3145,8 @@ def sports_subscribe():
                 (username, team_id, team_name, league)
             )
             conn.commit()
+        # Refresh fixture cache in background — don't block the response
+        Thread(target=refresh_team_fixture, args=(team_id, team_name), daemon=True).start()
         return jsonify({'success': True, 'message': f'Subscribed to {team_name}'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -3161,33 +3174,51 @@ def sports_unsubscribe():
 
 @app.route('/sports/next_fixtures')
 def sports_next_fixtures():
-    """
-    For each team the logged-in user follows, return their next upcoming
-    fixture. Channel lookup is done separately via /sports/channel_for_match
-    so this endpoint stays fast.
-    """
+    """Read cached fixtures from DB — instant response, no API calls."""
     if not session.get('logged_in'):
         return jsonify({'teams': []}), 401
 
     username = session.get('username')
-
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT team_id, team_name, league FROM sports_team_subscriptions WHERE username = ?",
+                "SELECT team_id, team_name, league, next_fixture_json, next_channel FROM sports_team_subscriptions WHERE username = ?",
                 (username,)
             )
-            followed = cursor.fetchall()
+            rows = cursor.fetchall()
+
+        teams = []
+        for row in rows:
+            fixture = None
+            if row['next_fixture_json']:
+                try:
+                    fixture = json.loads(row['next_fixture_json'])
+                except Exception:
+                    pass
+            teams.append({
+                'team_id': row['team_id'],
+                'team_name': row['team_name'],
+                'league': row['league'],
+                'fixture': fixture,
+                'channel': row['next_channel'],
+            })
+
+        return jsonify({'teams': teams})
     except Exception as e:
         return jsonify({'teams': [], 'error': str(e)})
 
-    if not followed:
-        return jsonify({'teams': []})
 
+def refresh_team_fixture(team_id, team_name):
+    """
+    Fetch the next fixture for a team from the football API and look up
+    the channel via EPG. Stores the result in sports_team_subscriptions
+    so the Sports tab can load instantly from the DB.
+    Called on follow and on login.
+    """
     if not FOOTBALL_API_KEY:
-        return jsonify({'teams': [], 'error': 'FOOTBALL_API_KEY not configured — add it to Render env vars.'})
+        return
 
     today = datetime.now().strftime('%Y-%m-%d')
     end = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
@@ -3200,20 +3231,17 @@ def sports_next_fixtures():
         if data:
             all_matches.extend(data.get('matches', []))
 
-    results = []
-    for team in followed:
-        team_id = int(team['team_id'])
-        next_match = None
-        for m in sorted(all_matches, key=lambda x: x.get('utcDate', '')):
-            if int(m['homeTeam'].get('id', 0)) == team_id or int(m['awayTeam'].get('id', 0)) == team_id:
-                next_match = m
-                break
+    next_match = None
+    for m in sorted(all_matches, key=lambda x: x.get('utcDate', '')):
+        if int(m['homeTeam'].get('id', 0)) == int(team_id) or \
+           int(m['awayTeam'].get('id', 0)) == int(team_id):
+            next_match = m
+            break
 
-        if not next_match:
-            results.append({'team_name': team['team_name'], 'team_id': team_id,
-                            'league': team['league'], 'fixture': None})
-            continue
+    fixture_json = None
+    channel = None
 
+    if next_match:
         utc_date = next_match.get('utcDate', '')
         try:
             dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
@@ -3228,51 +3256,54 @@ def sports_next_fixtures():
         home = next_match['homeTeam'].get('shortName') or next_match['homeTeam'].get('name', '')
         away = next_match['awayTeam'].get('shortName') or next_match['awayTeam'].get('name', '')
 
-        results.append({
-            'team_name': team['team_name'],
-            'team_id': team_id,
-            'league': team['league'],
-            'fixture': {
-                'home': home,
-                'away': away,
-                'home_id': next_match['homeTeam'].get('id'),
-                'away_id': next_match['awayTeam'].get('id'),
-                'home_crest': next_match['homeTeam'].get('crest', ''),
-                'away_crest': next_match['awayTeam'].get('crest', ''),
-                'date': date_display,
-                'time': time_display,
-                'utc_date': utc_date,
-                'competition': next_match.get('competition', {}).get('name', ''),
-            },
-        })
+        fixture_data = {
+            'home': home,
+            'away': away,
+            'home_id': next_match['homeTeam'].get('id'),
+            'away_id': next_match['awayTeam'].get('id'),
+            'home_crest': next_match['homeTeam'].get('crest', ''),
+            'away_crest': next_match['awayTeam'].get('crest', ''),
+            'date': date_display,
+            'time': time_display,
+            'utc_date': utc_date,
+            'competition': next_match.get('competition', {}).get('name', ''),
+        }
+        fixture_json = json.dumps(fixture_data)
 
-    return jsonify({'teams': results})
-
-
-@app.route('/sports/channel_for_match')
-def sports_channel_for_match():
-    """
-    Look up which channel a specific match is on via EPG.
-    Called separately from next_fixtures so the main fixture load is instant.
-    Params: home, away, utc_date
-    """
-    if not session.get('logged_in'):
-        return jsonify({'channel': None}), 401
-
-    home = request.args.get('home', '')
-    away = request.args.get('away', '')
-    utc_date = request.args.get('utc_date', '')
-
-    if not home or not away or not utc_date:
-        return jsonify({'channel': None})
+        if dt_utc:
+            try:
+                channel = find_match_channel(home, away, dt_utc)
+            except Exception:
+                pass
 
     try:
-        dt_utc = datetime.strptime(utc_date, '%Y-%m-%dT%H:%M:%SZ')
-        channel = find_match_channel(home, away, dt_utc)
-        return jsonify({'channel': channel})
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute('''
+                UPDATE sports_team_subscriptions
+                SET next_fixture_json = ?, next_channel = ?, fixture_updated_at = CURRENT_TIMESTAMP
+                WHERE team_id = ?
+            ''', (fixture_json, channel, team_id))
+            conn.commit()
+        print(f"SPORTS: Cached fixture for {team_name}: {channel or 'no channel'}", flush=True)
     except Exception as e:
-        print(f"CHANNEL_FOR_MATCH ERROR: {e}")
-        return jsonify({'channel': None})
+        print(f"SPORTS CACHE ERROR: {e}", flush=True)
+
+
+def refresh_all_user_fixtures(username):
+    """Refresh cached fixtures for all teams a user follows. Called on login."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT team_id, team_name FROM sports_team_subscriptions WHERE username = ?",
+                (username,)
+            )
+            teams = cursor.fetchall()
+        for team in teams:
+            refresh_team_fixture(team['team_id'], team['team_name'])
+    except Exception as e:
+        print(f"REFRESH_ALL_USER_FIXTURES ERROR: {e}", flush=True)
 
 
 def find_match_channel(home_name, away_name, match_utc_dt):

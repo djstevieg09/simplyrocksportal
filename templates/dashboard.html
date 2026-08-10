@@ -2738,6 +2738,11 @@
         });
 
         // --- Dashboard sidebar navigation ---
+        // Sports state — declared here so showDash can reference sportsLoaded
+        let allTeams = [];
+        let myTeamIds = new Set();
+        let sportsLoaded = false;
+
         function toggleMobMenu() {
             const sidebar = document.getElementById('dash-sidebar');
             const overlay = document.getElementById('mob-overlay');
@@ -2820,11 +2825,6 @@
         setTimeout(validateReferralFormInputs, 500);
         fetchReferralFriends();
         loadWhatsNew();
-
-        // --- Sports ---
-        let allTeams = [];
-        let myTeamIds = new Set();
-        let sportsLoaded = false;
 
         async function loadSports() {
             sportsLoaded = true;

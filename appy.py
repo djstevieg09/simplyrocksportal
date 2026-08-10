@@ -3830,7 +3830,32 @@ def renew_friend_line():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-@app.route('/admin/reassign_referral_friend', methods=['POST'])
+@app.route('/admin/accept_connection_upgrade/<int:job_id>', methods=['POST'])
+def admin_accept_connection_upgrade(job_id):
+    """Admin: mark a connection upgrade job as done after applying it on the panel."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM connection_upgrade_jobs WHERE id = ?", (job_id,))
+            job = cursor.fetchone()
+            if not job:
+                return jsonify({'success': False, 'message': 'Job not found'}), 404
+            cursor.execute("UPDATE connection_upgrade_jobs SET status = 'Done' WHERE id = ?", (job_id,))
+            conn.commit()
+        send_telegram_message_to_user(
+            job['username'],
+            "➕ Your extra connection has been added! You can now stream on an additional device."
+        )
+        log_activity(session.get('username', 'admin'), f"Connection upgrade applied for {job['username']}")
+        return jsonify({'success': True, 'message': f"Connection upgrade marked done for {job['username']}"})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
 def admin_reassign_referral_friend():
     """
     Admin: move ANY portal user under ANY referrer so they appear as a managed friend.

@@ -3006,7 +3006,12 @@ def submit_request():
 
 FOOTBALL_COMPETITIONS = {
     'PL': 'Premier League',
-    'ELC': 'Championship',
+    'FAC': 'FA Cup',
+    'ELC': 'Carabao Cup',
+    'CL': 'Champions League',
+    'EL': 'Europa League',
+    'EC': 'European Championship',
+    'WC': 'World Cup',
 }
 
 def _football_api(path):
@@ -3211,31 +3216,41 @@ def sports_next_fixtures():
 
 def refresh_team_fixture(team_id, team_name):
     """
-    Fetch the next fixture for a team from the football API and look up
-    the channel via EPG. Stores the result in sports_team_subscriptions
-    so the Sports tab can load instantly from the DB.
-    Called on follow and on login.
+    Fetch the next fixture for a team across ALL competitions using the
+    team-specific endpoint (one API call instead of one per competition).
     """
     if not FOOTBALL_API_KEY:
+        print(f"SPORTS: No FOOTBALL_API_KEY set", flush=True)
         return
 
     today = datetime.now().strftime('%Y-%m-%d')
-    end = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+    end = (datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d')
+
+    # Single call gets matches across all competitions for this team
+    data = _football_api(
+        f'teams/{team_id}/matches?dateFrom={today}&dateTo={end}&status=SCHEDULED,TIMED'
+    )
+
+    if not data:
+        # Fallback without status filter
+        data = _football_api(f'teams/{team_id}/matches?dateFrom={today}&dateTo={end}')
 
     all_matches = []
-    for comp_id in FOOTBALL_COMPETITIONS:
-        data = _football_api(
-            f'competitions/{comp_id}/matches?dateFrom={today}&dateTo={end}&status=SCHEDULED,TIMED'
-        )
-        if data:
-            all_matches.extend(data.get('matches', []))
+    if data:
+        all_matches = data.get('matches', [])
+        print(f"SPORTS: {team_name} has {len(all_matches)} upcoming matches", flush=True)
+    else:
+        print(f"SPORTS: No match data for {team_name} (id={team_id})", flush=True)
 
-    next_match = None
-    for m in sorted(all_matches, key=lambda x: x.get('utcDate', '')):
-        if int(m['homeTeam'].get('id', 0)) == int(team_id) or \
-           int(m['awayTeam'].get('id', 0)) == int(team_id):
-            next_match = m
-            break
+    # Find the earliest upcoming match
+    upcoming = [m for m in all_matches if m.get('utcDate', '') >= today + 'T00:00:00Z']
+    upcoming.sort(key=lambda x: x.get('utcDate', ''))
+    next_match = upcoming[0] if upcoming else None
+
+    if next_match:
+        print(f"SPORTS: Next match for {team_name}: {next_match['homeTeam'].get('name')} vs {next_match['awayTeam'].get('name')} on {next_match.get('utcDate')}", flush=True)
+    else:
+        print(f"SPORTS: No upcoming match found for {team_name}", flush=True)
 
     fixture_json = None
     channel = None

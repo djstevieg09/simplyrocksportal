@@ -2733,17 +2733,15 @@
             }
 
             const f = t.fixture;
-            const channelHtml = channel === undefined
-                ? `<div id="ch-${t.team_id}" style="margin-top:8px; font-size:11px; color:#64748b;">📺 Looking up channel...</div>`
-                : channel
-                    ? `<div style="margin-top:8px; background:#0f172a; border-radius:6px; padding:8px 10px; display:flex; align-items:center; gap:6px;">
-                        <span style="font-size:16px;">📺</span>
-                        <div>
-                            <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Showing on</div>
-                            <div style="font-size:13px; font-weight:bold; color:#4ade80;">${channel}</div>
-                        </div>
-                       </div>`
-                    : `<div style="margin-top:8px; font-size:11px; color:#64748b;">📺 Channel not found in EPG — check TV guide</div>`;
+            const channelHtml = channel
+                ? `<div style="margin-top:8px; background:#0f172a; border-radius:6px; padding:8px 10px; display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:16px;">📺</span>
+                    <div>
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Showing on</div>
+                        <div style="font-size:13px; font-weight:bold; color:#4ade80;">${channel}</div>
+                    </div>
+                   </div>`
+                : `<div style="margin-top:8px; font-size:11px; color:#64748b;">📺 Channel TBC — check TV guide</div>`;
 
             return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:10px;" id="team-card-${t.team_id}">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -2785,46 +2783,7 @@
                 }
 
                 myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
-
-                // Render immediately with "Looking up channel..." placeholders
-                el.innerHTML = data.teams.map(t => renderTeamCard(t, undefined)).join('');
-
-                // Fetch channel for each fixture in the background
-                data.teams.forEach(t => {
-                    if (!t.fixture || !t.fixture.utc_date) {
-                        const ch = document.getElementById(`ch-${t.team_id}`);
-                        if (ch) ch.remove();
-                        return;
-                    }
-                    const params = new URLSearchParams({
-                        home: t.fixture.home,
-                        away: t.fixture.away,
-                        utc_date: t.fixture.utc_date
-                    });
-                    fetch(`/sports/channel_for_match?${params}`)
-                        .then(r => r.json())
-                        .then(d => {
-                            const card = document.getElementById(`team-card-${t.team_id}`);
-                            if (!card) return;
-                            const placeholder = document.getElementById(`ch-${t.team_id}`);
-                            const channel = d.channel;
-                            const newChannelHtml = channel
-                                ? `<div style="margin-top:8px; background:#0f172a; border-radius:6px; padding:8px 10px; display:flex; align-items:center; gap:6px;">
-                                    <span style="font-size:16px;">📺</span>
-                                    <div>
-                                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Showing on</div>
-                                        <div style="font-size:13px; font-weight:bold; color:#4ade80;">${channel}</div>
-                                    </div>
-                                   </div>`
-                                : `<div style="margin-top:8px; font-size:11px; color:#64748b;">📺 Channel not found in EPG — check TV guide</div>`;
-                            if (placeholder) {
-                                placeholder.outerHTML = newChannelHtml;
-                            }
-                        }).catch(() => {
-                            const ch = document.getElementById(`ch-${t.team_id}`);
-                            if (ch) ch.textContent = '📺 Could not look up channel';
-                        });
-                });
+                el.innerHTML = data.teams.map(t => renderTeamCard(t, t.channel)).join('');
 
             } catch(e) {
                 el.innerHTML = '<p style="font-size:12px; color:#f87171;">Could not load fixtures.</p>';

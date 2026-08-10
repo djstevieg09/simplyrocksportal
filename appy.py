@@ -3605,6 +3605,75 @@ def get_referral_friends():
     return jsonify(results)
 
 
+@app.route('/add_connection', methods=['POST'])
+def add_connection():
+    """
+    User purchases an extra simultaneous connection for £25.
+    Creates a job in renewal_jobs for the admin to manually apply on the panel,
+    same pattern as line renewals. Wallet credit is deducted server-side.
+    """
+    if not session.get('logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    username = session.get('username')
+    order_id = (data.get('orderID') or '').strip()
+    amount_str = (data.get('amount') or '0').strip()
+    discount_str = (data.get('discount_redeemed') or '0').strip()
+
+    try:
+        amount = float(amount_str)
+        discount_redeemed = float(discount_str)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid amount.'}), 400
+
+    total = round(amount + discount_redeemed, 2)
+    if total < 24.99:
+        return jsonify({'success': False, 'message': 'Invalid payment amount.'}), 400
+
+    try:
+        # Deduct wallet credit
+        if discount_redeemed > 0:
+            real_balance = get_wallet_balance(username)
+            if discount_redeemed > real_balance + 0.01:
+                return jsonify({'success': False, 'message': 'Insufficient wallet credit.'}), 400
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute('''
+                    INSERT INTO referral_wallets (username, earned_balance, spent_balance)
+                    VALUES (?, 0.0, ?)
+                    ON CONFLICT(username) DO UPDATE SET spent_balance = spent_balance + ?
+                ''', (username, discount_redeemed, discount_redeemed))
+                conn.commit()
+
+        # Create a job for the admin to action
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute('''
+                INSERT INTO renewal_jobs
+                    (username, renewal_type, connections, order_id, amount, status)
+                VALUES (?, 'add_connection', 1, ?, ?, 'Pending')
+            ''', (username, order_id, total))
+            conn.commit()
+
+        log_activity(username, f"Add connection request — £{total:.2f} (wallet: £{discount_redeemed:.2f})")
+
+        send_telegram_alert_direct(
+            f"<b>➕ ADD CONNECTION REQUEST</b>\n"
+            f"<b>User:</b> <code>{username}</code>\n"
+            f"<b>Amount:</b> £{total:.2f} (wallet credit: £{discount_redeemed:.2f})\n"
+            f"<b>Order ID:</b> <code>{order_id}</code>"
+        )
+        send_telegram_message_to_user(
+            username,
+            "➕ Your request to add an extra connection has been received! "
+            "We'll apply it to your account shortly."
+        )
+
+        return jsonify({'success': True, 'message': 'Request submitted! We\'ll add your extra connection shortly.'})
+    except Exception as e:
+        print(f"ADD_CONNECTION ERROR: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/renew_friend_line', methods=['POST'])
 def renew_friend_line():
     """
@@ -4492,13 +4561,21 @@ def build_admin_todo_list():
 
         cursor.execute("SELECT * FROM renewal_jobs WHERE status = 'Pending'")
         for row in cursor.fetchall():
-            scope = "friend line" if row['renewal_type'] == 'friend' else "own line"
+            if row['renewal_type'] == 'add_connection':
+                scope = 'add connection'
+                label = f"Add Connection - {row['username']}"
+            elif row['renewal_type'] == 'friend':
+                scope = 'friend line'
+                label = f"Renewal - {row['username']} (friend line)"
+            else:
+                scope = 'own line'
+                label = f"Renewal - {row['username']} (own line)"
             detail = f"{row['connections']} connection(s) - £{row['amount']}"
             if row['renewal_type'] == 'friend':
                 detail += f" - referred by {row['referrer_username']}"
             todo_items.append({
                 'kind': 'renewal_job', 'id': row['id'],
-                'label': f"Renewal - {row['username']} ({scope})",
+                'label': label,
                 'detail': detail,
                 'timestamp': row['created_at']
             })

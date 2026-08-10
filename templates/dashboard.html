@@ -443,7 +443,7 @@
             <div class="dash-nav-item" onclick="showDash('sports',this)"><span>⚽</span><span>Sport</span></div>
             <div class="dash-nav-item" onclick="showDash('requests',this)"><span>🎬</span><span>Requests</span></div>
             <div class="dash-sidebar-label">Billing</div>
-            <div class="dash-nav-item" onclick="showDash('renew',this)"><span>🔄</span><span>Renew IPTV</span></div>
+            <div class="dash-nav-item" onclick="showDash('renew',this)"><span>🔄</span><span>Renew / Upgrade</span></div>
             <div class="dash-nav-item" onclick="showDash('spotify',this)"><span>🎵</span><span>Spotify</span></div>
             <div class="dash-sidebar-label">Referrals</div>
             <div class="dash-nav-item" onclick="showDash('refer',this)"><span>👥</span><span>Refer a Friend</span></div>
@@ -745,7 +745,7 @@
                 </div>
             <!-- IPTV Renewal -->
                 <div class="card" style="border:1px solid rgba(234,179,8,0.3);">
-                    <h2 style="color:#facc15;">Renew IPTV Subscription</h2>
+                    <h2 style="color:#facc15;">Renew / Upgrade IPTV Subscription</h2>
                     <p>Extend your IPTV line. Choose how many devices you want to connect.</p>
                     <label class="section-title">Connections:</label>
                     <select id="connection-tier-select" onchange="updatePricingDisplay()" class="form-field">
@@ -769,6 +769,27 @@
                         <span id="discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
                     </div>
                     <div id="paypal-button-container"></div>
+                </div>
+
+            <!-- Add a Connection -->
+                <div class="card" style="border:1px solid rgba(99,102,241,0.4);">
+                    <h2 style="color:#818cf8;">➕ Add an Extra Connection</h2>
+                    <p style="font-size:13px; color:#94a3b8;">Add one additional simultaneous connection to your existing line — £25.00.</p>
+                    <div id="add-conn-wallet-row" style="display:none; margin-bottom:10px;">
+                        <label class="section-title" style="color:#4ade80;">Use Wallet Credit (available: £<span id="add-conn-wallet-avail">0.00</span>):</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="number" id="add-conn-wallet-input" min="0" step="0.01" max="25.00"
+                                   class="form-field" style="margin-bottom:0; flex:1;"
+                                   placeholder="0.00" oninput="applyAddConnWalletInput()">
+                            <button onclick="applyMaxAddConnWallet()" style="background-color:#16a34a; color:white; border:none; padding:10px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">Use Max</button>
+                        </div>
+                    </div>
+                    <div style="background-color:#020617; padding:12px; border-radius:8px; border:1px solid #334155; text-align:center; margin-bottom:10px;">
+                        <span style="font-size:12px; text-transform:uppercase; color:#94a3b8;">Extra Connection (One-Off)</span><br>
+                        <span id="add-conn-price-display" style="font-size:24px; font-weight:900; color:#ffffff;">£25.00</span>
+                        <span id="add-conn-discount-note" style="display:none; font-size:11px; color:#4ade80; margin-top:4px; font-weight:bold;"></span>
+                    </div>
+                    <div id="paypal-add-conn-container"></div>
                 </div>
 
             <!-- Friend Renewal -->
@@ -1091,7 +1112,10 @@
                 });
 
                 // Show/hide the wallet input rows on each product
-                const renewalRow = document.getElementById('renewal-wallet-row');
+                const addConnRow = document.getElementById('add-conn-wallet-row');
+                if (addConnRow) addConnRow.style.display = maxAvailableWalletBalance > 0 ? 'block' : 'none';
+                const addConnAvail = document.getElementById('add-conn-wallet-avail');
+                if (addConnAvail) addConnAvail.textContent = bal;
                 const spotifyRow = document.getElementById('spotify-wallet-row');
                 if (renewalRow) renewalRow.style.display = maxAvailableWalletBalance > 0 ? 'block' : 'none';
                 if (spotifyRow) spotifyRow.style.display = maxAvailableWalletBalance > 0 ? 'block' : 'none';
@@ -1178,6 +1202,97 @@
             if (!input) return;
             input.value = Math.min(maxAvailableWalletBalance, 45.00).toFixed(2);
             applySpotifyWalletInput();
+        }
+
+        function applyMaxSpotifyWallet() {
+            const input = document.getElementById('spotify-wallet-input');
+            if (!input) return;
+            input.value = Math.min(maxAvailableWalletBalance, 45.00).toFixed(2);
+            applySpotifyWalletInput();
+        }
+
+        // --- Add a Connection ---
+        let addConnDiscount = 0.0;
+        const ADD_CONN_BASE = 25.00;
+
+        function applyAddConnWalletInput() {
+            const input = document.getElementById('add-conn-wallet-input');
+            if (!input) return;
+            const cap = Math.min(maxAvailableWalletBalance, ADD_CONN_BASE);
+            let val = parseFloat(input.value || 0);
+            if (isNaN(val) || val < 0) val = 0;
+            if (val > cap) { val = cap; input.value = val.toFixed(2); }
+            addConnDiscount = parseFloat(val.toFixed(2));
+            const noteSpan = document.getElementById('add-conn-discount-note');
+            const priceSpan = document.getElementById('add-conn-price-display');
+            const finalAmt = Math.max(0, ADD_CONN_BASE - addConnDiscount).toFixed(2);
+            if (priceSpan) priceSpan.innerText = `£${finalAmt}`;
+            if (noteSpan) {
+                if (addConnDiscount > 0) {
+                    noteSpan.innerText = `Wallet: -£${addConnDiscount.toFixed(2)}`;
+                    noteSpan.style.display = 'block';
+                } else { noteSpan.style.display = 'none'; }
+            }
+            renderAddConnPayPal();
+        }
+
+        function applyMaxAddConnWallet() {
+            const input = document.getElementById('add-conn-wallet-input');
+            if (!input) return;
+            input.value = Math.min(maxAvailableWalletBalance, ADD_CONN_BASE).toFixed(2);
+            applyAddConnWalletInput();
+        }
+
+        function renderAddConnPayPal() {
+            const cont = document.getElementById('paypal-add-conn-container');
+            if (!cont) return;
+            cont.innerHTML = '';
+            const finalAmt = parseFloat((ADD_CONN_BASE - addConnDiscount).toFixed(2));
+
+            if (finalAmt <= 0) {
+                const btn = document.createElement('button');
+                btn.className = 'btn-secondary';
+                btn.textContent = 'Claim Free Connection Upgrade';
+                btn.onclick = async function() {
+                    btn.disabled = true; btn.textContent = 'Processing...';
+                    try {
+                        const resp = await fetch('/add_connection', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({orderID: 'WALLET_FULL', amount: '0.00', discount_redeemed: addConnDiscount.toString()})
+                        });
+                        const data = await resp.json();
+                        if (data.success) { alert(data.message); await fetchWalletBalance(); }
+                        else { alert('Error: ' + data.message); }
+                    } catch(e) { alert('Server error.'); }
+                    finally { btn.disabled = false; btn.textContent = 'Claim Free Connection Upgrade'; }
+                };
+                cont.appendChild(btn);
+                return;
+            }
+
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { currency_code: 'GBP', value: finalAmt.toFixed(2) },
+                            description: `Extra Connection Upgrade for {{ username }} (Discount: £${addConnDiscount.toFixed(2)})`,
+                            custom_id: '{{ username }}'
+                        }]
+                    });
+                },
+                onApprove: function(data, actions) {
+                    return actions.order.capture().then(async function(details) {
+                        const resp = await fetch('/add_connection', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({orderID: details.id, amount: finalAmt.toFixed(2), discount_redeemed: addConnDiscount.toString()})
+                        });
+                        const res = await resp.json();
+                        if (res.success) { alert(res.message); await fetchWalletBalance(); addConnDiscount = 0; renderAddConnPayPal(); }
+                        else { alert('Error: ' + res.message); }
+                    });
+                },
+                onError: function(err) { console.error('PayPal error:', err); }
+            }).render('#paypal-add-conn-container');
         }
 
         function calculateFinalPrice() {
@@ -2696,6 +2811,7 @@
                 renderPayPalButtons();
                 renderReferralPayPalButtons();
                 renderSpotifyPayPalButtons();
+                renderAddConnPayPal();
             } else {
                 setTimeout(initPayPalWhenReady, 100);
             }

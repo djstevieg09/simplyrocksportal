@@ -3056,6 +3056,17 @@ FOOTBALL_COMPETITIONS = {
     'WC': 'World Cup',
 }
 
+# Competitions shown in the team picker (excludes Carabao Cup — users
+# don't follow teams "in the Carabao Cup", they follow their club and
+# we show Carabao Cup fixtures automatically if the team is in one)
+TEAM_PICKER_COMPETITIONS = {
+    'PL': 'Premier League',
+    'ELC2': 'Championship',  # football-data.org uses ELC2 for Championship
+}
+
+# Competitions where we skip the EPG channel lookup (non-mainstream TV)
+NO_CHANNEL_LOOKUP_COMPS = {'ELC', 'EC', 'WC'}
+
 def _football_api(path):
     """Make a request to the football-data.org API."""
     if not FOOTBALL_API_KEY:
@@ -3138,13 +3149,18 @@ def sports_teams():
         return jsonify({'teams': []}), 401
 
     teams = []
-    for comp_id, comp_name in FOOTBALL_COMPETITIONS.items():
+    seen_ids = set()
+    for comp_id, comp_name in TEAM_PICKER_COMPETITIONS.items():
         data = _football_api(f'competitions/{comp_id}/teams')
         if not data:
             continue
         for t in data.get('teams', []):
+            team_id = t.get('id')
+            if team_id in seen_ids:
+                continue
+            seen_ids.add(team_id)
             teams.append({
-                'id': t.get('id'),
+                'id': team_id,
                 'name': t.get('shortName') or t.get('name', ''),
                 'full_name': t.get('name', ''),
                 'crest': t.get('crest', ''),
@@ -3323,14 +3339,18 @@ def refresh_team_fixture(team_id, team_name):
             'time': time_display,
             'utc_date': utc_date,
             'competition': next_match.get('competition', {}).get('name', ''),
+            'comp_code': next_match.get('competition', {}).get('code', ''),
         }
         fixture_json = json.dumps(fixture_data)
 
-        if dt_utc:
+        comp_id = next_match.get('competition', {}).get('code', '')
+        if dt_utc and comp_id not in NO_CHANNEL_LOOKUP_COMPS:
             try:
                 channel = find_match_channel(home, away, dt_utc)
             except Exception:
                 pass
+        elif comp_id in NO_CHANNEL_LOOKUP_COMPS:
+            channel = None  # Will show "Check TV guide" on the card
 
     try:
         with sqlite3.connect(DB_FILE) as conn:

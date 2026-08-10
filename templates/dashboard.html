@@ -2831,56 +2831,49 @@
             await Promise.all([loadNextFixtures(), loadAllTeams()]);
         }
 
-        function renderTeamCard(t, channel) {
+        function renderFixtureRow(f) {
+            const channelHtml = f.channel
+                ? `<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:14px;">📺</span>
+                    <span style="font-size:12px; font-weight:bold; color:#4ade80;">${f.channel}</span>
+                   </div>`
+                : `<div style="margin-top:4px; font-size:11px; color:#64748b;">📺 Channel TBC</div>`;
+
+            return `<div style="padding:10px 0; border-bottom:1px solid #1e293b;">
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                    ${f.home_crest ? `<img src="${f.home_crest}" style="width:22px;height:22px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                    <span style="font-size:14px; font-weight:bold; color:#fff;">${f.home}</span>
+                    <span style="color:#64748b; font-size:12px;">vs</span>
+                    ${f.away_crest ? `<img src="${f.away_crest}" style="width:22px;height:22px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
+                    <span style="font-size:14px; font-weight:bold; color:#fff;">${f.away}</span>
+                </div>
+                <div style="font-size:12px; color:#94a3b8;">
+                    🗓 ${f.date} &nbsp;⏰ <strong style="color:#fff;">${f.time}</strong>
+                    &nbsp;·&nbsp; <span style="color:#818cf8;">${f.competition}</span>
+                </div>
+                ${channelHtml}
+            </div>`;
+        }
+
+        function renderTeamCard(t) {
             const unfollowBtn = `<button onclick="unsubscribeTeam(${t.team_id}, '${t.team_name.replace(/'/g,"\\'")}', this)"
                 style="background:none; border:1px solid rgba(239,68,68,0.5); color:#f87171; padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; white-space:nowrap;">
                 Unfollow
             </button>`;
 
-            if (!t.fixture) {
-                return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <span style="font-size:14px; font-weight:bold; color:#fff;">${t.team_name}</span>
-                            <span style="font-size:11px; color:#64748b; margin-left:6px;">${t.league}</span>
-                        </div>
-                        ${unfollowBtn}
-                    </div>
-                    <p style="font-size:12px; color:#64748b; margin:8px 0 0 0;">No fixtures in the next 30 days.</p>
-                </div>`;
-            }
+            const fixturesHtml = (t.fixtures && t.fixtures.length)
+                ? t.fixtures.map(f => renderFixtureRow(f)).join('')
+                : `<p style="font-size:12px; color:#64748b; margin:8px 0 0 0;">No fixtures in the next 30 days.</p>`;
 
-            const f = t.fixture;
-            const channelHtml = channel
-                ? `<div style="margin-top:8px; background:#0f172a; border-radius:6px; padding:8px 10px; display:flex; align-items:center; gap:6px;">
-                    <span style="font-size:16px;">📺</span>
-                    <div>
-                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Showing on</div>
-                        <div style="font-size:13px; font-weight:bold; color:#4ade80;">${channel}</div>
-                    </div>
-                   </div>`
-                : `<div style="margin-top:8px; font-size:11px; color:#64748b;">📺 Channel TBC — check TV guide</div>`;
-
-            return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:10px;" id="team-card-${t.team_id}">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            return `<div style="border:1px solid #334155; border-radius:8px; padding:12px; margin-bottom:12px;" id="team-card-${t.team_id}">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <div>
                         <span style="font-size:14px; font-weight:bold; color:#fff;">${t.team_name}</span>
                         <span style="font-size:11px; color:#64748b; margin-left:6px;">${t.league}</span>
                     </div>
                     ${unfollowBtn}
                 </div>
-                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    ${f.home_crest ? `<img src="${f.home_crest}" style="width:28px;height:28px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
-                    <span style="font-size:15px; font-weight:bold; color:#fff;">${f.home}</span>
-                    <span style="color:#64748b;">vs</span>
-                    ${f.away_crest ? `<img src="${f.away_crest}" style="width:28px;height:28px;object-fit:contain;" onerror="this.style.display='none'">` : ''}
-                    <span style="font-size:15px; font-weight:bold; color:#fff;">${f.away}</span>
-                </div>
-                <div style="margin-top:6px; font-size:12px; color:#94a3b8;">
-                    🗓 ${f.date} &nbsp;⏰ <strong style="color:#fff;">${f.time}</strong>
-                    &nbsp;·&nbsp; ${f.competition}
-                </div>
-                ${channelHtml}
+                ${fixturesHtml}
             </div>`;
         }
 
@@ -2901,7 +2894,7 @@
                 }
 
                 myTeamIds = new Set(data.teams.map(t => parseInt(t.team_id)));
-                el.innerHTML = data.teams.map(t => renderTeamCard(t, t.channel)).join('');
+                el.innerHTML = data.teams.map(t => renderTeamCard(t)).join('');
 
             } catch(e) {
                 el.innerHTML = '<p style="font-size:12px; color:#f87171;">Could not load fixtures.</p>';

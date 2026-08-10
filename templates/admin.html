@@ -971,10 +971,9 @@
 
         function acceptConnectionUpgrade(jobId) {
             if (!confirm("Confirm you've added the extra connection on your IPTV panel?")) return;
-            fetch('/admin/action', {
+            fetch('/admin/accept_connection_upgrade/' + jobId, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'accept_connection_upgrade', id: jobId })
+                headers: { 'Content-Type': 'application/json' }
             }).then(r => r.json())
             .then(data => {
                 if (data.success) { alert(data.message || 'Done!'); window.location.reload(); }

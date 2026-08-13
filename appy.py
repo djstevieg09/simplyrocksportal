@@ -6082,7 +6082,73 @@ def admin_sync_live_channels_from_panel():
         return jsonify({'success': False, 'message': "An unexpected error occurred during sync."}), 500
 
 
-@app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])
+@app.route('/admin/get_panel_users')
+def admin_get_panel_users():
+    """
+    Fetch all user accounts from the Xtream Codes reseller panel.
+    Returns username, password, expiry, connections, status.
+    Used in the admin Portal Accounts section to cross-reference
+    panel users with portal users and import credentials.
+    """
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    if not RESELLER_USERNAME or not RESELLER_PASSWORD:
+        return jsonify({'success': False, 'message': 'RESELLER_USER/RESELLER_PASS not configured.'}), 400
+
+    try:
+        # The reseller API uses /api.php with action=get_lines
+        url = f"{RESELLER_PANEL_URL.rstrip('/')}/api.php"
+        resp = requests.get(url, params={
+            'action': 'get_lines',
+            'username': RESELLER_USERNAME,
+            'password': RESELLER_PASSWORD,
+        }, timeout=30)
+
+        if resp.status_code != 200:
+            return jsonify({'success': False, 'message': f'Panel returned HTTP {resp.status_code}'}), 502
+
+        data = resp.json()
+
+        # Normalise the response — different panel versions return slightly
+        # different structures. Usually it's a list or a dict with a 'lines' key.
+        if isinstance(data, dict):
+            users = data.get('lines', data.get('users', data.get('data', [])))
+        elif isinstance(data, list):
+            users = data
+        else:
+            users = []
+
+        # Get existing portal usernames for cross-reference
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT LOWER(username) FROM portal_users")
+            portal_users = {row[0] for row in cursor.fetchall()}
+
+        result = []
+        for u in users:
+            username = u.get('username', '')
+            result.append({
+                'username': username,
+                'password': u.get('password', ''),
+                'expiry': u.get('exp_date') or u.get('expiry_date') or u.get('expiry') or '',
+                'connections': u.get('max_connections') or u.get('connections') or 1,
+                'status': u.get('status', 'active'),
+                'in_portal': username.lower() in portal_users,
+            })
+
+        result.sort(key=lambda x: x['username'].lower())
+        return jsonify({'success': True, 'users': result, 'count': len(result)})
+
+    except requests.exceptions.RequestException:
+        return jsonify({'success': False, 'message': 'Could not reach your IPTV panel.'}), 502
+    except Exception as e:
+        print(f"ADMIN_GET_PANEL_USERS ERROR: {type(e).__name__}: {e}")
+        return jsonify({'success': False, 'message': 'Error fetching panel users.'}), 500
+
+
+
 def complete_manual_renewal(payment_id):
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403

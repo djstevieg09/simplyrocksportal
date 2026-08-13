@@ -601,6 +601,19 @@
         <!-- Portal user management -->
 </div><!-- end prev -->
         <div class="admin-section" id="section-portal-users">
+
+        <!-- Pull users from panel -->
+        <div class="card" style="border:1px solid rgba(168,85,247,0.4);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                <h2 style="color:#c084fc; margin:0;">📡 Panel Users</h2>
+                <button class="btn btn-blue" onclick="loadPanelUsers(this)">Pull from Panel</button>
+            </div>
+            <p style="font-size:12px; color:#94a3b8; margin:0 0 10px 0;">All accounts on your IPTV panel. Green = already in portal. Red = not in portal yet.</p>
+            <input type="text" id="panel-user-search" placeholder="Search username..." oninput="filterPanelUsers(this.value)"
+                style="width:100%; padding:8px; background:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:12px; margin-bottom:8px; box-sizing:border-box; display:none;">
+            <div id="panel-users-list" style="max-height:320px; overflow-y:auto;"></div>
+        </div>
+
         <div class="card" style="border:1px solid rgba(59,130,246,0.4);">
             <h2 style="color:#60a5fa;">Portal Access Accounts</h2>
             <p style="font-size:12px; color:#94a3b8;">
@@ -967,6 +980,50 @@
                     alert('Error: ' + data.message);
                 }
             }).catch(() => alert("Server timeout while accepting renewal job."));
+        }
+
+        let _panelUsers = [];
+
+        async function loadPanelUsers(btn) {
+            const el = document.getElementById('panel-users-list');
+            const searchEl = document.getElementById('panel-user-search');
+            const orig = btn.innerText; btn.disabled = true; btn.innerText = 'Loading...';
+            el.innerHTML = '<p style="font-size:12px; color:#64748b;">Fetching from panel...</p>';
+            try {
+                const resp = await fetch('/admin/get_panel_users');
+                const data = await resp.json();
+                if (!data.success) { el.innerHTML = `<p style="font-size:12px; color:#f87171;">${data.message}</p>`; return; }
+                _panelUsers = data.users;
+                searchEl.style.display = 'block';
+                renderPanelUsers(_panelUsers);
+            } catch(e) {
+                el.innerHTML = '<p style="font-size:12px; color:#f87171;">Server error.</p>';
+            } finally { btn.disabled = false; btn.innerText = orig; }
+        }
+
+        function filterPanelUsers(q) {
+            const filtered = q ? _panelUsers.filter(u => u.username.toLowerCase().includes(q.toLowerCase())) : _panelUsers;
+            renderPanelUsers(filtered);
+        }
+
+        function renderPanelUsers(users) {
+            const el = document.getElementById('panel-users-list');
+            if (!users.length) { el.innerHTML = '<p style="font-size:12px; color:#64748b;">No users found.</p>'; return; }
+            el.innerHTML = `<table>
+                <thead><tr>
+                    <th>Username</th><th>Password</th><th>Expiry</th><th>Conns</th><th>Status</th><th>Portal</th>
+                </tr></thead>
+                <tbody>${users.map(u => `<tr>
+                    <td style="font-weight:bold;">${u.username}</td>
+                    <td style="font-family:monospace; font-size:11px;">${u.password}</td>
+                    <td style="font-size:11px;">${u.expiry || '—'}</td>
+                    <td style="text-align:center;">${u.connections}</td>
+                    <td><span class="badge ${u.status === 'Active' ? 'badge-done' : 'badge-pending'}">${u.status}</span></td>
+                    <td style="text-align:center;">${u.in_portal
+                        ? '<span style="color:#4ade80;">✓</span>'
+                        : '<span style="color:#f87171;">✗</span>'}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
         }
 
         function acceptConnectionUpgrade(jobId) {

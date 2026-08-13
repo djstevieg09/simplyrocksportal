@@ -46,7 +46,7 @@ DB_FILE = "/data/database.db"
 NOTIFICATION_QUEUE = Queue()
 
 # --- MASTER RESELLER CONFIG ---
-RESELLER_PANEL_URL = "http://simplyapple.xyz"
+RESELLER_PANEL_URL = "http://theservice.rocks"
 
 # Many Xtream panels reject requests that don't look like they're coming
 # from a real player app (TiviMate, VLC, IPTV Smarters, etc.) as a basic
@@ -6084,12 +6084,7 @@ def admin_sync_live_channels_from_panel():
 
 @app.route('/admin/get_panel_users')
 def admin_get_panel_users():
-    """
-    Fetch all user accounts from the Xtream Codes reseller panel.
-    Returns username, password, expiry, connections, status.
-    Used in the admin Portal Accounts section to cross-reference
-    panel users with portal users and import credentials.
-    """
+    """Fetch all user accounts from the IPTV panel reseller API."""
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
@@ -6097,79 +6092,86 @@ def admin_get_panel_users():
         return jsonify({'success': False, 'message': 'RESELLER_USER/RESELLER_PASS not configured.'}), 400
 
     try:
-        # Try multiple endpoint patterns used by different Xtream panel versions
-        endpoints = [
-            f"{RESELLER_PANEL_URL.rstrip('/')}/api.php",
-            f"{RESELLER_PANEL_URL.rstrip('/')}/streaming/api.php",
-            f"{RESELLER_PANEL_URL.rstrip('/')}/reseller_api.php",
+        # Try all known panel URL + endpoint combinations
+        base_urls = [
+            RESELLER_PANEL_URL.rstrip('/'),
+            DEFAULT_DNS.rstrip('/'),
         ]
-        actions = ['get_lines', 'get_users', 'getlines']
+        attempts = []
+        for base in base_urls:
+            for path in ['/api.php', '/streaming/api.php']:
+                for action in ['get_lines', 'get_users', 'getlines']:
+                    attempts.append((f"{base}{path}", action))
 
-        resp = None
         data = None
-        for endpoint in endpoints:
-            for action in actions:
+        for url, action in attempts:
+            try:
+                r = requests.get(url, params={
+                    'action': action,
+                    'username': RESELLER_USERNAME,
+                    'password': RESELLER_PASSWORD,
+                }, timeout=10)
+                print(f"PANEL_USERS: {url} action={action} -> HTTP {r.status_code} len={len(r.text)}", flush=True)
+                if r.status_code != 200:
+                    continue
                 try:
-                    r = requests.get(endpoint, params={
-                        'action': action,
-                        'username': RESELLER_USERNAME,
-                        'password': RESELLER_PASSWORD,
-                    }, timeout=15)
-                    if r.status_code == 200:
-                        try:
-                            parsed = r.json()
-                            # Accept if it looks like user data
-                            if isinstance(parsed, list) and parsed:
-                                resp = r; data = parsed
-                                print(f"PANEL_USERS: Found users via {endpoint} action={action}, count={len(parsed)}", flush=True)
-                                break
-                            elif isinstance(parsed, dict):
-                                for key in ['lines', 'users', 'data', 'result']:
-                                    if key in parsed and isinstance(parsed[key], list):
-                                        resp = r; data = parsed[key]
-                                        print(f"PANEL_USERS: Found users via {endpoint} action={action} key={key}, count={len(data)}", flush=True)
-                                        break
-                                if data is not None:
-                                    break
-                                print(f"PANEL_USERS: {endpoint} action={action} returned dict keys: {list(parsed.keys())}", flush=True)
-                        except Exception:
-                            print(f"PANEL_USERS: {endpoint} action={action} returned non-JSON", flush=True)
-                except Exception as e:
-                    print(f"PANEL_USERS: {endpoint} action={action} error: {e}", flush=True)
-            if data is not None:
+                    parsed = r.json()
+                except Exception:
+                    print(f"PANEL_USERS: non-JSON: {r.text[:200]}", flush=True)
+                    continue
+
+                # Check if it looks like user data
+                if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                    if 'username' in parsed[0] or 'user' in parsed[0]:
+                        data = parsed
+                        print(f"PANEL_USERS: SUCCESS via {url} action={action}, {len(data)} users", flush=True)
+                        break
+                elif isinstance(parsed, dict):
+                    print(f"PANEL_USERS: dict keys={list(parsed.keys())}", flush=True)
+                    for key in ['lines', 'users', 'data', 'result', 'output']:
+                        if key in parsed and isinstance(parsed[key], list) and parsed[key]:
+                            data = parsed[key]
+                            print(f"PANEL_USERS: SUCCESS via {url} action={action} key={key}, {len(data)} users", flush=True)
+                            break
+                    if data:
+                        break
+            except requests.exceptions.RequestException as e:
+                print(f"PANEL_USERS: {url} connection error: {type(e).__name__}", flush=True)
+                continue
+            if data:
                 break
 
-        if data is None:
-            return jsonify({'success': False, 'message': 'Could not find users — check Render logs for details on what the panel returned.'}), 502
+        if not data:
+            return jsonify({
+                'success': False,
+                'message': 'Could not retrieve users from panel. Check Render logs for details — the panel API endpoint may need to be confirmed with your panel provider.'
+            }), 502
 
-        # Get existing portal usernames for cross-reference
+        # Get portal usernames for cross-reference
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT LOWER(username) FROM portal_users")
-            portal_users = {row[0] for row in cursor.fetchall()}
+            portal_users_set = {row[0] for row in cursor.fetchall()}
 
         result = []
         for u in data:
-            username = u.get('username', '')
+            username = u.get('username') or u.get('user', '')
             result.append({
                 'username': username,
-                'password': u.get('password', ''),
+                'password': u.get('password') or u.get('pass', ''),
                 'expiry': u.get('exp_date') or u.get('expiry_date') or u.get('expiry') or '',
                 'connections': u.get('max_connections') or u.get('connections') or 1,
-                'status': u.get('status', 'active'),
-                'in_portal': username.lower() in portal_users,
+                'status': u.get('status', 'Active'),
+                'in_portal': username.lower() in portal_users_set,
             })
 
         result.sort(key=lambda x: x['username'].lower())
         return jsonify({'success': True, 'users': result, 'count': len(result)})
 
-    except requests.exceptions.RequestException:
-        return jsonify({'success': False, 'message': 'Could not reach your IPTV panel.'}), 502
     except Exception as e:
-        print(f"ADMIN_GET_PANEL_USERS ERROR: {type(e).__name__}: {e}")
-        return jsonify({'success': False, 'message': 'Error fetching panel users.'}), 500
-
+        print(f"ADMIN_GET_PANEL_USERS ERROR: {type(e).__name__}: {e}", flush=True)
+        return jsonify({'success': False, 'message': f'Error: {type(e).__name__}'}), 500
 
 
 def complete_manual_renewal(payment_id):

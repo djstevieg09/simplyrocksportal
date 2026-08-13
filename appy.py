@@ -6097,27 +6097,50 @@ def admin_get_panel_users():
         return jsonify({'success': False, 'message': 'RESELLER_USER/RESELLER_PASS not configured.'}), 400
 
     try:
-        # The reseller API uses /api.php with action=get_lines
-        url = f"{RESELLER_PANEL_URL.rstrip('/')}/api.php"
-        resp = requests.get(url, params={
-            'action': 'get_lines',
-            'username': RESELLER_USERNAME,
-            'password': RESELLER_PASSWORD,
-        }, timeout=30)
+        # Try multiple endpoint patterns used by different Xtream panel versions
+        endpoints = [
+            f"{RESELLER_PANEL_URL.rstrip('/')}/api.php",
+            f"{RESELLER_PANEL_URL.rstrip('/')}/streaming/api.php",
+            f"{RESELLER_PANEL_URL.rstrip('/')}/reseller_api.php",
+        ]
+        actions = ['get_lines', 'get_users', 'getlines']
 
-        if resp.status_code != 200:
-            return jsonify({'success': False, 'message': f'Panel returned HTTP {resp.status_code}'}), 502
+        resp = None
+        data = None
+        for endpoint in endpoints:
+            for action in actions:
+                try:
+                    r = requests.get(endpoint, params={
+                        'action': action,
+                        'username': RESELLER_USERNAME,
+                        'password': RESELLER_PASSWORD,
+                    }, timeout=15)
+                    if r.status_code == 200:
+                        try:
+                            parsed = r.json()
+                            # Accept if it looks like user data
+                            if isinstance(parsed, list) and parsed:
+                                resp = r; data = parsed
+                                print(f"PANEL_USERS: Found users via {endpoint} action={action}, count={len(parsed)}", flush=True)
+                                break
+                            elif isinstance(parsed, dict):
+                                for key in ['lines', 'users', 'data', 'result']:
+                                    if key in parsed and isinstance(parsed[key], list):
+                                        resp = r; data = parsed[key]
+                                        print(f"PANEL_USERS: Found users via {endpoint} action={action} key={key}, count={len(data)}", flush=True)
+                                        break
+                                if data is not None:
+                                    break
+                                print(f"PANEL_USERS: {endpoint} action={action} returned dict keys: {list(parsed.keys())}", flush=True)
+                        except Exception:
+                            print(f"PANEL_USERS: {endpoint} action={action} returned non-JSON", flush=True)
+                except Exception as e:
+                    print(f"PANEL_USERS: {endpoint} action={action} error: {e}", flush=True)
+            if data is not None:
+                break
 
-        data = resp.json()
-
-        # Normalise the response — different panel versions return slightly
-        # different structures. Usually it's a list or a dict with a 'lines' key.
-        if isinstance(data, dict):
-            users = data.get('lines', data.get('users', data.get('data', [])))
-        elif isinstance(data, list):
-            users = data
-        else:
-            users = []
+        if data is None:
+            return jsonify({'success': False, 'message': 'Could not find users — check Render logs for details on what the panel returned.'}), 502
 
         # Get existing portal usernames for cross-reference
         with sqlite3.connect(DB_FILE) as conn:
@@ -6127,7 +6150,7 @@ def admin_get_panel_users():
             portal_users = {row[0] for row in cursor.fetchall()}
 
         result = []
-        for u in users:
+        for u in data:
             username = u.get('username', '')
             result.append({
                 'username': username,

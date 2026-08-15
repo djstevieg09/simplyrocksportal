@@ -46,7 +46,7 @@ DB_FILE = "/data/database.db"
 NOTIFICATION_QUEUE = Queue()
 
 # --- MASTER RESELLER CONFIG ---
-RESELLER_PANEL_URL = "http://theservice.rocks"
+RESELLER_PANEL_URL = "http://simplyapple.xyz"
 
 # Many Xtream panels reject requests that don't look like they're coming
 # from a real player app (TiviMate, VLC, IPTV Smarters, etc.) as a basic

@@ -6174,6 +6174,7 @@ def admin_get_panel_users():
         return jsonify({'success': False, 'message': f'Error: {type(e).__name__}'}), 500
 
 
+@app.route('/complete_manual_renewal/<int:payment_id>', methods=['POST'])
 def complete_manual_renewal(payment_id):
     if not is_admin():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403

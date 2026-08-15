@@ -3857,6 +3857,7 @@ def renew_friend_line():
 
 
 @app.route('/admin/accept_connection_upgrade/<int:job_id>', methods=['POST'])
+@app.route('/admin/accept_connection_upgrade/<int:job_id>', methods=['POST'])
 def admin_accept_connection_upgrade(job_id):
     """Admin: mark a connection upgrade job as done after applying it on the panel."""
     if not is_admin():
@@ -3882,6 +3883,7 @@ def admin_accept_connection_upgrade(job_id):
 
 
 
+@app.route('/admin/reassign_referral_friend', methods=['POST'])
 def admin_reassign_referral_friend():
     """
     Admin: move ANY portal user under ANY referrer so they appear as a managed friend.

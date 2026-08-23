@@ -335,28 +335,40 @@
         @media (prefers-reduced-motion: reduce) {
             .announcement-track { animation: none; }
         }
-        @media (max-width: 700px) {
-            nav h1 { font-size: 16px; }
-            nav .logo-img { height: 36px; }
-            .nav-right { flex-wrap: wrap; justify-content: flex-end; }
+                /* Mobile — portrait and landscape */
+        @media (max-width: 900px) {
             .mob-menu-btn { display: inline-block; }
             .mob-section-title { display: inline-block; }
             #mob-menu-bar { display: block !important; }
-            .main-wrapper { flex-direction: column; min-height: unset; }
             .dash-sidebar {
                 display: none;
                 position: fixed;
                 top: 0; left: 0; bottom: 0;
-                width: 240px;
+                width: 220px;
                 height: 100vh;
                 z-index: 50;
                 padding-top: 56px;
                 box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+                overflow-y: auto;
             }
             .dash-sidebar.mob-open { display: block; }
-            .dash-content { padding: 10px 10px; }
+            .main-wrapper { flex-direction: column; min-height: unset; }
+            .dash-content { padding: 10px; width: 100%; max-width: 100%; box-sizing: border-box; }
         }
-    </style>
+        @media (max-width: 500px) {
+            nav h1 { font-size: 14px; }
+            nav .logo-img { height: 32px; }
+            .nav-right { flex-wrap: wrap; justify-content: flex-end; }
+            .card { padding: 12px; }
+        }
+        @media (max-height: 500px) and (orientation: landscape) {
+            nav { padding: 6px 16px; }
+            nav .logo-img { height: 28px; }
+            .dash-sidebar { padding-top: 44px; }
+            .dash-content { padding: 6px 10px; }
+            .card { padding: 10px; margin-bottom: 8px; }
+        }
+</style>
 </head>
 <body>
 

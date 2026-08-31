@@ -3251,12 +3251,12 @@ def sports_next_fixtures():
             rows = cursor.fetchall()
 
         teams = []
-        needs_refresh = []
         for row in rows:
             fixtures = []
             if row['next_fixture_json']:
                 try:
                     parsed = json.loads(row['next_fixture_json'])
+                    # Handle both old single-fixture format and new list format
                     if isinstance(parsed, list):
                         fixtures = parsed
                     elif isinstance(parsed, dict):
@@ -3264,10 +3264,6 @@ def sports_next_fixtures():
                         fixtures = [parsed]
                 except Exception:
                     pass
-            else:
-                # No cached fixture — queue a background refresh
-                needs_refresh.append((row['team_id'], row['team_name']))
-
             teams.append({
                 'team_id': row['team_id'],
                 'team_name': row['team_name'],
@@ -3275,14 +3271,7 @@ def sports_next_fixtures():
                 'fixtures': fixtures,
             })
 
-        # Trigger background refresh for any teams with no cached data
-        if needs_refresh:
-            def _refresh():
-                for tid, tname in needs_refresh:
-                    refresh_team_fixture(tid, tname)
-            Thread(target=_refresh, daemon=True).start()
-
-        return jsonify({'teams': teams, 'refreshing': len(needs_refresh) > 0})
+        return jsonify({'teams': teams})
     except Exception as e:
         return jsonify({'teams': [], 'error': str(e)})
 
@@ -3374,10 +3363,10 @@ def refresh_team_fixture(team_id, team_name):
             conn.execute('''
                 UPDATE sports_team_subscriptions
                 SET next_fixture_json = ?, next_channel = ?, fixture_updated_at = CURRENT_TIMESTAMP
-                WHERE CAST(team_id AS TEXT) = CAST(? AS TEXT)
+                WHERE team_id = ?
             ''', (fixtures_json, first_channel, team_id))
             conn.commit()
-            print(f"SPORTS: Cached {len(next_3)} fixture(s) for {team_name} (all subscribers)", flush=True)
+        print(f"SPORTS: Cached {len(next_3)} fixture(s) for {team_name}", flush=True)
     except Exception as e:
         print(f"SPORTS CACHE ERROR: {e}", flush=True)
 
@@ -3456,11 +3445,24 @@ def find_match_channel(home_name, away_name, match_utc_dt):
                 listings = (result or {}).get('epg_listings', [])
                 # Log titles for first few channels to help debug
                 if listings and ch == sport_channels[0]:
-                    titles = [l.get('title', '') for l in listings[:3]]
+                    import base64
+                    def _d(s):
+                        try: return base64.b64decode(s).decode('utf-8', errors='replace')
+                        except: return s
+                    titles = [_d(l.get('title', '')) for l in listings[:3]]
                     print(f"EPG LOOKUP: Sample titles from '{ch['name']}': {titles}", flush=True)
                 for listing in listings:
-                    title = (listing.get('title') or '').lower()
-                    desc = (listing.get('description') or '').lower()
+                    import base64
+                    def decode_epg(s):
+                        try:
+                            return base64.b64decode(s).decode('utf-8', errors='replace')
+                        except Exception:
+                            return s
+
+                    raw_title = listing.get('title') or ''
+                    raw_desc = listing.get('description') or ''
+                    title = decode_epg(raw_title).lower()
+                    desc = decode_epg(raw_desc).lower()
                     text = title + ' ' + desc
 
                     try:

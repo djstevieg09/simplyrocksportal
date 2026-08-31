@@ -3417,11 +3417,20 @@ def find_match_channel(home_name, away_name, match_utc_dt):
             print("EPG LOOKUP: No sport channels in DB — sync channels first", flush=True)
             return None
 
-        search_terms = [
-            home_name.lower(), away_name.lower(),
-            'premier league', 'championship', 'fa cup', 'carabao',
-            'champions league', 'europa league'
-        ]
+        # Build search terms — include full names, first words, and common
+        # EPG formats like "Aston Villa v Arsenal" or "AVFC"
+        home_words = home_name.lower().split()
+        away_words = away_name.lower().split()
+        search_terms = list(set([
+            home_name.lower(),
+            away_name.lower(),
+            home_words[0] if home_words else '',   # e.g. "aston"
+            away_words[0] if away_words else '',
+            'premier league', 'championship', 'fa cup',
+            'carabao', 'champions league', 'europa league',
+            'epl', 'football',
+        ]))
+        search_terms = [t for t in search_terms if len(t) > 2]
 
         match_ts = int(match_utc_dt.timestamp())
         window_start = match_ts - 3600
@@ -3434,6 +3443,10 @@ def find_match_channel(home_name, away_name, match_utc_dt):
                     'limit': 10
                 })
                 listings = (result or {}).get('epg_listings', [])
+                # Log titles for first few channels to help debug
+                if listings and ch == sport_channels[0]:
+                    titles = [l.get('title', '') for l in listings[:3]]
+                    print(f"EPG LOOKUP: Sample titles from '{ch['name']}': {titles}", flush=True)
                 for listing in listings:
                     title = (listing.get('title') or '').lower()
                     desc = (listing.get('description') or '').lower()

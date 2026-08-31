@@ -3462,7 +3462,16 @@ def find_match_channel(home_name, away_name, match_utc_dt):
                     except Exception:
                         continue
 
-                    if any(term in text for term in search_terms):
+                    # Must match a team name AND something football-related
+                    team_terms = [home_name.lower(), away_name.lower()]
+                    football_terms = [
+                        'premier league', 'championship', 'fa cup', 'carabao',
+                        'champions league', 'europa league', 'epl', 'football',
+                        ' v ', ' vs ', 'match', 'kick'
+                    ]
+                    has_team = any(t in text for t in team_terms)
+                    has_football = any(t in text for t in football_terms)
+                    if has_team and has_football:
                         print(f"EPG LOOKUP: Found '{ch['name']}' — title: '{listing.get('title')}'", flush=True)
                         return ch['name']
             except Exception:

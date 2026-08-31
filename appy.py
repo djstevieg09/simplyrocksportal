@@ -3251,12 +3251,12 @@ def sports_next_fixtures():
             rows = cursor.fetchall()
 
         teams = []
+        needs_refresh = []
         for row in rows:
             fixtures = []
             if row['next_fixture_json']:
                 try:
                     parsed = json.loads(row['next_fixture_json'])
-                    # Handle both old single-fixture format and new list format
                     if isinstance(parsed, list):
                         fixtures = parsed
                     elif isinstance(parsed, dict):
@@ -3264,6 +3264,10 @@ def sports_next_fixtures():
                         fixtures = [parsed]
                 except Exception:
                     pass
+            else:
+                # No cached fixture — queue a background refresh
+                needs_refresh.append((row['team_id'], row['team_name']))
+
             teams.append({
                 'team_id': row['team_id'],
                 'team_name': row['team_name'],
@@ -3271,7 +3275,14 @@ def sports_next_fixtures():
                 'fixtures': fixtures,
             })
 
-        return jsonify({'teams': teams})
+        # Trigger background refresh for any teams with no cached data
+        if needs_refresh:
+            def _refresh():
+                for tid, tname in needs_refresh:
+                    refresh_team_fixture(tid, tname)
+            Thread(target=_refresh, daemon=True).start()
+
+        return jsonify({'teams': teams, 'refreshing': len(needs_refresh) > 0})
     except Exception as e:
         return jsonify({'teams': [], 'error': str(e)})
 
@@ -3363,10 +3374,10 @@ def refresh_team_fixture(team_id, team_name):
             conn.execute('''
                 UPDATE sports_team_subscriptions
                 SET next_fixture_json = ?, next_channel = ?, fixture_updated_at = CURRENT_TIMESTAMP
-                WHERE team_id = ?
+                WHERE CAST(team_id AS TEXT) = CAST(? AS TEXT)
             ''', (fixtures_json, first_channel, team_id))
             conn.commit()
-        print(f"SPORTS: Cached {len(next_3)} fixture(s) for {team_name}", flush=True)
+            print(f"SPORTS: Cached {len(next_3)} fixture(s) for {team_name} (all subscribers)", flush=True)
     except Exception as e:
         print(f"SPORTS CACHE ERROR: {e}", flush=True)
 

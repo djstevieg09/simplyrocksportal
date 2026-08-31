@@ -3432,37 +3432,40 @@ def find_match_channel(home_name, away_name, match_utc_dt):
         ]))
         search_terms = [t for t in search_terms if len(t) > 2]
 
+        # Sort channels — put the most likely broadcast channels first
+        # to find the match quickly without burning through API rate limits
+        PRIORITY_KEYWORDS = ['sky sports main', 'sky sports premier', 'tnt sports 1',
+                             'bbc one', 'sky sports football', 'sky sports 1',
+                             'sky sports 2', 'sky sports 3', 'sky sports 4',
+                             'tnt sport', 'bt sport 1', 'itv1', 'itv 1']
+        def channel_priority(ch):
+            name = ch['name'].lower()
+            for i, kw in enumerate(PRIORITY_KEYWORDS):
+                if kw in name:
+                    return i
+            return 999
+        sport_channels.sort(key=channel_priority)
+
+        print(f"EPG LOOKUP: Top channels to check: {[ch['name'] for ch in sport_channels[:5]]}", flush=True)
+
         match_ts = int(match_utc_dt.timestamp())
         window_start = match_ts - 3600
         window_end = match_ts + 7200
 
-        for ch in sport_channels[:40]:
+        for ch in sport_channels[:20]:  # Limit to 20 to avoid rate limiting
             try:
-                result = fetch_xtream_api('get_short_epg', {
-                    'stream_id': ch['stream_id'],
-                    'limit': 10
-                })
+                result = fetch_xtream_api_as_user(
+                    DEFAULT_DNS, RESELLER_USERNAME, RESELLER_PASSWORD,
+                    'get_short_epg', {'stream_id': ch['stream_id'], 'limit': 10}
+                )
                 listings = (result or {}).get('epg_listings', [])
                 # Log titles for first few channels to help debug
                 if listings and ch == sport_channels[0]:
-                    import base64
-                    def _d(s):
-                        try: return base64.b64decode(s).decode('utf-8', errors='replace')
-                        except: return s
-                    titles = [_d(l.get('title', '')) for l in listings[:3]]
+                    titles = [l.get('title', '') for l in listings[:3]]
                     print(f"EPG LOOKUP: Sample titles from '{ch['name']}': {titles}", flush=True)
                 for listing in listings:
-                    import base64
-                    def decode_epg(s):
-                        try:
-                            return base64.b64decode(s).decode('utf-8', errors='replace')
-                        except Exception:
-                            return s
-
-                    raw_title = listing.get('title') or ''
-                    raw_desc = listing.get('description') or ''
-                    title = decode_epg(raw_title).lower()
-                    desc = decode_epg(raw_desc).lower()
+                    title = (listing.get('title') or '').lower()
+                    desc = (listing.get('description') or '').lower()
                     text = title + ' ' + desc
 
                     try:

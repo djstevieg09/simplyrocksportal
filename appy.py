@@ -3389,44 +3389,49 @@ def refresh_all_user_fixtures(username):
 
 
 def find_match_channel(home_name, away_name, match_utc_dt):
-    """
-    Search the EPG of known sports channels to find which one is showing
-    a specific match. Looks at channels whose names contain keywords like
-    'sky sports', 'tnt', 'bbc', 'itv' and checks their EPG around kick-off.
-    Returns a channel name string, or None if not found.
-    """
-    SPORT_CHANNEL_KEYWORDS = ['sky sports', 'tnt sports', 'bbc one', 'bbc two', 'itv', 'amazon prime']
+    """Search EPG of sports channels to find which one is showing a match."""
+    SPORT_CHANNEL_KEYWORDS = [
+        'sky sport', 'tnt sport', 'bt sport', 'bbc one', 'bbc two',
+        'itv', 'amazon', 'dazn', 'premier sport', 'the sports'
+    ]
+    SPORT_CATEGORY_KEYWORDS = [
+        'football', 'sport', 'epl', 'premier league', 'sky', 'tnt'
+    ]
 
     try:
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Find sport channels from the live channels table
             cursor.execute("SELECT stream_id, name, category_name FROM live_channels")
             all_channels = cursor.fetchall()
 
-        # Filter to likely sports broadcast channels using name OR category
         sport_channels = [
             ch for ch in all_channels
             if any(kw in ch['name'].lower() for kw in SPORT_CHANNEL_KEYWORDS)
-            or any(kw in (ch.get('category_name') or '').lower() for kw in ['football', 'sport', 'epl', 'premier league'])
+            or any(kw in (ch['category_name'] or '').lower() for kw in SPORT_CATEGORY_KEYWORDS)
         ]
+
+        print(f"EPG LOOKUP: {home_name} vs {away_name} — {len(sport_channels)} sport channels", flush=True)
 
         if not sport_channels:
+            print("EPG LOOKUP: No sport channels in DB — sync channels first", flush=True)
             return None
 
-        # Search terms — look for either team name or competition in EPG
         search_terms = [
             home_name.lower(), away_name.lower(),
-            'premier league', 'championship'
+            'premier league', 'championship', 'fa cup', 'carabao',
+            'champions league', 'europa league'
         ]
 
-        # Check EPG for each candidate channel — limit to avoid too many API calls
-        for ch in sport_channels[:30]:
+        match_ts = int(match_utc_dt.timestamp())
+        window_start = match_ts - 3600
+        window_end = match_ts + 7200
+
+        for ch in sport_channels[:40]:
             try:
                 result = fetch_xtream_api('get_short_epg', {
                     'stream_id': ch['stream_id'],
-                    'limit': 8
+                    'limit': 10
                 })
                 listings = (result or {}).get('epg_listings', [])
                 for listing in listings:
@@ -3434,28 +3439,28 @@ def find_match_channel(home_name, away_name, match_utc_dt):
                     desc = (listing.get('description') or '').lower()
                     text = title + ' ' + desc
 
-                    # Check if this EPG entry is around kick-off time
                     try:
                         start_ts = int(listing.get('start_timestamp', 0))
                         end_ts = int(listing.get('stop_timestamp', 0))
-                        match_ts = int(match_utc_dt.timestamp())
-                        # Must start within 30 mins of kick-off and cover it
-                        if not (start_ts - 1800 <= match_ts <= end_ts):
+                        if not (window_start <= start_ts <= window_end or
+                                window_start <= end_ts <= window_end or
+                                (start_ts <= window_start and end_ts >= window_end)):
                             continue
                     except Exception:
                         continue
 
-                    # Check if the EPG entry mentions either team or the competition
                     if any(term in text for term in search_terms):
+                        print(f"EPG LOOKUP: Found '{ch['name']}' — title: '{listing.get('title')}'", flush=True)
                         return ch['name']
             except Exception:
                 continue
+
+        print(f"EPG LOOKUP: No channel found for {home_name} vs {away_name}", flush=True)
 
     except Exception as e:
         print(f"FIND_MATCH_CHANNEL ERROR: {e}", flush=True)
 
     return None
-
 
 def send_sports_notifications():
     """

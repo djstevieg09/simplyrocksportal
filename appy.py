@@ -31,9 +31,11 @@ if app.secret_key == 'simplyrocks_secure_master_portal_key_string_09':
 # Keep users logged in for 30 days - sessions survive browser restarts,
 # phone reboots, and app switches. Without this, Flask uses a browser-session
 # cookie that expires the moment the browser closes, forcing re-login every time.
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=60)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_NAME'] = 'simplyrocks_session'
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
@@ -3432,32 +3434,16 @@ def find_match_channel(home_name, away_name, match_utc_dt):
         ]))
         search_terms = [t for t in search_terms if len(t) > 2]
 
-        # Sort channels — put the most likely broadcast channels first
-        # to find the match quickly without burning through API rate limits
-        PRIORITY_KEYWORDS = ['sky sports main', 'sky sports premier', 'tnt sports 1',
-                             'bbc one', 'sky sports football', 'sky sports 1',
-                             'sky sports 2', 'sky sports 3', 'sky sports 4',
-                             'tnt sport', 'bt sport 1', 'itv1', 'itv 1']
-        def channel_priority(ch):
-            name = ch['name'].lower()
-            for i, kw in enumerate(PRIORITY_KEYWORDS):
-                if kw in name:
-                    return i
-            return 999
-        sport_channels.sort(key=channel_priority)
-
-        print(f"EPG LOOKUP: Top channels to check: {[ch['name'] for ch in sport_channels[:5]]}", flush=True)
-
         match_ts = int(match_utc_dt.timestamp())
         window_start = match_ts - 3600
         window_end = match_ts + 7200
 
-        for ch in sport_channels[:20]:  # Limit to 20 to avoid rate limiting
+        for ch in sport_channels[:40]:
             try:
-                result = fetch_xtream_api_as_user(
-                    DEFAULT_DNS, RESELLER_USERNAME, RESELLER_PASSWORD,
-                    'get_short_epg', {'stream_id': ch['stream_id'], 'limit': 10}
-                )
+                result = fetch_xtream_api('get_short_epg', {
+                    'stream_id': ch['stream_id'],
+                    'limit': 10
+                })
                 listings = (result or {}).get('epg_listings', [])
                 # Log titles for first few channels to help debug
                 if listings and ch == sport_channels[0]:

@@ -31,14 +31,13 @@ if app.secret_key == 'simplyrocks_secure_master_portal_key_string_09':
 # Keep users logged in for 30 days - sessions survive browser restarts,
 # phone reboots, and app switches. Without this, Flask uses a browser-session
 # cookie that expires the moment the browser closes, forcing re-login every time.
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=60)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_NAME'] = 'simplyrocks_session'
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
+BACKUP_DNS = "http://simplyapple.xyz"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 FOOTBALL_API_KEY = os.environ.get('FOOTBALL_API_KEY')
 
@@ -1486,20 +1485,36 @@ def verify_xtream_credentials(dns, username, password):
         print("VERIFY_XTREAM_CREDENTIALS ERROR: no DNS configured to check against.")
         return False, None
 
-    try:
-        url = f"{dns_base.rstrip('/')}/player_api.php"
-        resp = requests.get(
-            url,
-            params={'username': username.strip(), 'password': password.strip()},
-            headers={'User-Agent': XTREAM_USER_AGENT},
-            timeout=15
-        )
-    except requests.exceptions.RequestException:
-        print("VERIFY_XTREAM_CREDENTIALS ERROR: could not reach the panel.")
-        return False, None
+    # Try primary DNS first, fall back to backup if it fails
+    dns_candidates = [dns_base]
+    if BACKUP_DNS and BACKUP_DNS.rstrip('/') != dns_base.rstrip('/'):
+        dns_candidates.append(BACKUP_DNS.rstrip('/'))
 
-    if resp.status_code != 200:
-        print(f"VERIFY_XTREAM_CREDENTIALS: panel returned HTTP {resp.status_code}.")
+    resp = None
+    used_dns = dns_base
+    for candidate in dns_candidates:
+        try:
+            url = f"{candidate.rstrip('/')}/player_api.php"
+            r = requests.get(
+                url,
+                params={'username': username.strip(), 'password': password.strip()},
+                headers={'User-Agent': XTREAM_USER_AGENT},
+                timeout=10
+            )
+            if r.status_code == 200:
+                resp = r
+                used_dns = candidate
+                if candidate != dns_base:
+                    print(f"VERIFY_XTREAM_CREDENTIALS: using backup DNS {candidate}", flush=True)
+                break
+            else:
+                print(f"VERIFY_XTREAM_CREDENTIALS: {candidate} returned HTTP {r.status_code}, trying next...", flush=True)
+        except requests.exceptions.RequestException as e:
+            print(f"VERIFY_XTREAM_CREDENTIALS: {candidate} unreachable ({type(e).__name__}), trying next...", flush=True)
+            continue
+
+    if resp is None:
+        print("VERIFY_XTREAM_CREDENTIALS ERROR: all DNS endpoints failed.", flush=True)
         return False, None
 
     try:
@@ -1515,9 +1530,6 @@ def verify_xtream_credentials(dns, username, password):
     if not (auth_ok and status_ok):
         return False, None
 
-    # Real, active line confirmed by the panel itself - auto-provision the
-    # local portal_users record so the rest of the portal's features
-    # (wallet, referrals, requests, admin visibility) work for this user.
     upsert_portal_user_from_panel(username.strip(), password.strip(), user_info)
 
     return True, user_info

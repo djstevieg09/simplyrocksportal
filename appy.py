@@ -5924,7 +5924,10 @@ def perform_vod_library_sync():
     series_updated = 0
 
     # --- Movies (VOD) ---
-    vod_streams = fetch_xtream_api('get_vod_streams')
+    epg_user, epg_pass = get_epg_credentials()
+    if not epg_user:
+        raise RuntimeError('No customer credentials available for VOD sync.')
+    vod_streams = fetch_xtream_api_as_user(DEFAULT_DNS, epg_user, epg_pass, 'get_vod_streams')
     if isinstance(vod_streams, list):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
@@ -5960,7 +5963,7 @@ def perform_vod_library_sync():
             conn.commit()
 
     # --- Series ---
-    series_list = fetch_xtream_api('get_series')
+    series_list = fetch_xtream_api_as_user(DEFAULT_DNS, epg_user, epg_pass, 'get_series')
     if isinstance(series_list, list):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
@@ -6194,20 +6197,25 @@ def send_renewal_reminders():
 
 def perform_live_channels_sync():
     """
-    Core live channels sync logic - fully replaces live_channels with the
-    real list from the panel. No Flask/session dependency, so this can be
-    called both from the admin "Sync" button and the automatic background
-    sync task. Returns a stats dict. Raises RuntimeError if the panel
-    returns nothing (so a failed call can't wipe the existing list).
+    Core live channels sync logic. Uses customer credentials from portal_users
+    since the reseller panel doesn't expose get_live_streams.
     """
-    live_streams = fetch_xtream_api('get_live_streams')
+    # Get a valid customer credential
+    epg_user, epg_pass = get_epg_credentials()
+    if not epg_user or not epg_pass:
+        raise RuntimeError("No customer credentials available. A user must log in first before syncing channels.")
+
+    try:
+        live_streams = fetch_xtream_api_as_user(DEFAULT_DNS, epg_user, epg_pass, 'get_live_streams')
+    except Exception as e:
+        raise RuntimeError(f"Could not fetch live streams: {e}")
 
     if not isinstance(live_streams, list) or not live_streams:
         raise RuntimeError("Panel returned no live channels - nothing was changed.")
 
-    # Also fetch category names so we can store them alongside each channel
+    # Also fetch category names
     try:
-        categories_raw = fetch_xtream_api('get_live_categories') or []
+        categories_raw = fetch_xtream_api_as_user(DEFAULT_DNS, epg_user, epg_pass, 'get_live_categories') or []
         category_map = {str(c.get('category_id')): c.get('category_name', '') for c in categories_raw}
     except Exception:
         category_map = {}
@@ -6239,6 +6247,7 @@ def perform_live_channels_sync():
 
         conn.commit()
 
+    print(f"CHANNEL SYNC: {channel_count} channels synced using {epg_user}", flush=True)
     return {'channel_count': channel_count}
 
 

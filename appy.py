@@ -5111,44 +5111,6 @@ def build_client_expiration_list(max_days=31):
 
 
 @app.route('/admin')
-@app.route('/admin/debug_football_channels')
-def admin_debug_football_channels():
-    """Show channels in football-related categories so we can see what's in the DB."""
-    if not is_admin():
-        return "Unauthorized", 403
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT name, category_name FROM live_channels
-                WHERE LOWER(category_name) LIKE '%football%'
-                OR LOWER(category_name) LIKE '%sport%'
-                OR LOWER(category_name) LIKE '%sky%'
-                OR LOWER(category_name) LIKE '%tnt%'
-                OR LOWER(category_name) LIKE '%major%'
-                ORDER BY category_name, name
-            """)
-            rows = cursor.fetchall()
-
-        from collections import defaultdict
-        cats = defaultdict(list)
-        for r in rows:
-            cats[r['category_name']].append(r['name'])
-
-        out = []
-        for cat, channels in sorted(cats.items()):
-            out.append(f"\n=== {cat} ({len(channels)} channels) ===")
-            out.extend(channels[:50])
-            if len(channels) > 50:
-                out.append(f"... and {len(channels)-50} more")
-
-        total = sum(len(v) for v in cats.values())
-        return f"Total: {total} channels across {len(cats)} categories\n" + "\n".join(out), 200, {'Content-Type': 'text/plain'}
-    except Exception as e:
-        return str(e), 500
-
-
 def admin_panel():
     if not is_admin():
         return "<h3>Access Denied</h3>", 403

@@ -2107,7 +2107,7 @@ def login():
         # the browser session - it's never written to disk or logged.
         session['panel_password'] = password
 
-        # Save plaintext IPTV password so silent_auth works after remember-me restore
+        # Persist plaintext IPTV password so TV player works after session restore
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 conn.execute(
@@ -2490,7 +2490,7 @@ def ios_player_authenticate():
         'http_session': requests.Session()
     }
 
-    return jsonify({'success': True, 'token': token})
+    return jsonify({'success': True, 'token': token, 'password': password})
 
 
 @app.route('/ios_player/silent_auth', methods=['POST'])
@@ -2506,28 +2506,25 @@ def ios_player_silent_auth():
 
     password = session.get('panel_password')
 
-    # If password not in session (e.g. restored via remember-me cookie),
-    # look it up from the iptv_password column in portal_users
+    # Not in session — look up from DB (happens after remember-me restore)
     if not password:
-        username = session.get('username')
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT iptv_password FROM portal_users WHERE LOWER(username) = LOWER(?)",
-                    (username.lower(),)
+                    (session.get('username', '').lower(),)
                 )
                 row = cursor.fetchone()
                 if row and row['iptv_password']:
                     password = row['iptv_password']
-                    session['panel_password'] = password  # restore to session
+                    session['panel_password'] = password
         except Exception as e:
-            print(f"SILENT_AUTH: could not fetch iptv_password: {e}", flush=True)
+            print(f"SILENT_AUTH DB LOOKUP ERROR: {e}", flush=True)
 
     if not password:
-        return jsonify({'success': False, 'message': 'Session expired — please log out and back in.'}), 404
-
+        return jsonify({'success': False}), 404
     _cleanup_expired_player_sessions()
     token = secrets.token_urlsafe(24)
     _ios_player_sessions[token] = {

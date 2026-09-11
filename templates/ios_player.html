@@ -306,11 +306,8 @@
     }
 
     async function loadAllSeriesInBackground() {
-        try {
-            const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}`);
-            const data = await resp.json();
-            if (Array.isArray(data)) allSeriesCache = data;
-        } catch(e) {}
+        // Series are too large to fetch all at once — loaded per category instead
+        allSeriesCache = [];
     }
 
     function searchAllMovies(query, clearBtnId) {

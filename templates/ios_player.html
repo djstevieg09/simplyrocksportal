@@ -87,13 +87,15 @@
 
 <div class="wrapper">
 
-    <!-- Auth gate -->
+    <!-- Auth gate - shown only if silent auth fails -->
     <div class="card" id="auth-card">
-        <h3 style="margin-top:0; font-size:14px; color:#60a5fa;">Enter your IPTV password</h3>
-        <p class="muted" style="margin-bottom:10px;">Same password as TiviMate — not saved, session only.</p>
-        <input type="password" id="player-password" class="form-field" placeholder="Your IPTV password">
-        <button class="btn-primary" onclick="authenticatePlayer(this)">Load Content</button>
-        <p id="auth-error" style="color:#f87171; font-size:12px; display:none; margin:6px 0 0 0;"></p>
+        <div id="auth-loading" style="text-align:center; padding:10px 0;">
+            <p style="color:#94a3b8; font-size:13px;">⏳ Loading player...</p>
+        </div>
+        <div id="auth-failed" style="display:none; text-align:center;">
+            <p style="color:#f87171; font-size:13px; margin-bottom:12px;">Session expired. Please log in again.</p>
+            <a href="/" class="btn-primary" style="display:inline-block; text-decoration:none; padding:10px 24px;">← Back to Portal</a>
+        </div>
     </div>
 
     <!-- Add to Home Screen -->
@@ -279,39 +281,6 @@
             tile.onclick = () => playVod(id, name, ext, tile);
         }
         return tile;
-    }
-
-    // --- Auth ---
-    async function authenticatePlayer(btn) {
-        const password = document.getElementById('player-password').value;
-        const errorEl = document.getElementById('auth-error');
-        errorEl.style.display = 'none';
-        if (!password) { errorEl.textContent = 'Please enter your password.'; errorEl.style.display = 'block'; return; }
-        const orig = btn.innerText; btn.disabled = true; btn.innerText = 'Checking...';
-        try {
-            const resp = await fetch('/ios_player/authenticate', {
-                method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password })
-            });
-            const data = await resp.json();
-            if (data.success) {
-                playerToken = data.token;
-                currentPassword = password;
-                document.getElementById('auth-card').style.display = 'none';
-                document.getElementById('player-card').style.display = 'block';
-                document.getElementById('browse-card').style.display = 'block';
-                loadBouquets();
-                loadMovieCategories();
-                loadSeriesCategories();
-                loadAllMoviesInBackground();
-                loadAllSeriesInBackground();
-            } else {
-                errorEl.textContent = data.message || 'Incorrect password.';
-                errorEl.style.display = 'block';
-            }
-        } catch(e) {
-            errorEl.textContent = 'Server error - please try again.';
-            errorEl.style.display = 'block';
-        } finally { btn.disabled = false; btn.innerText = orig; }
     }
 
     // --- Tabs ---
@@ -626,15 +595,27 @@
     function openInVlc() {
         if (!currentStreamUrl) return;
         document.getElementById('get-vlc-prompt').style.display = 'none';
+
+        function launchUrl(url) {
+            // Use anchor click — more reliable than window.location.href
+            // in Samsung Browser for custom protocol/intent URLs
+            const a = document.createElement('a');
+            a.href = url;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => document.body.removeChild(a), 1000);
+        }
+
         if (isAndroid()) {
             const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
             const fallback = setTimeout(() => {
                 document.getElementById('get-vlc-link').href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
                 document.getElementById('get-vlc-prompt').style.display = 'block';
-            }, 2000);
+            }, 2500);
             const onHide = () => { if (document.hidden) { clearTimeout(fallback); document.removeEventListener('visibilitychange', onHide); }};
             document.addEventListener('visibilitychange', onHide);
-            window.location.href = intentUrl;
+            launchUrl(intentUrl);
         } else {
             const check = setTimeout(() => {
                 if (!document.hidden) {
@@ -646,7 +627,7 @@
             }, 1800);
             const onHide = () => { if (document.hidden) { clearTimeout(check); document.removeEventListener('visibilitychange', onHide); }};
             document.addEventListener('visibilitychange', onHide);
-            window.location.href = 'vlc://' + currentStreamUrl;
+            launchUrl('vlc://' + currentStreamUrl);
         }
     }
 
@@ -698,11 +679,16 @@
                     loadSeriesCategories();
                     loadAllMoviesInBackground();
                     loadAllSeriesInBackground();
+                } else {
+                    // Silent auth failed — session expired, redirect to portal
+                    document.getElementById('auth-loading').style.display = 'none';
+                    document.getElementById('auth-failed').style.display = 'block';
                 }
-                // If it fails, the password prompt stays visible as fallback
             })
             .catch(() => {
-                // Network error - password prompt stays visible
+                // Network error - show redirect message
+                document.getElementById('auth-loading').style.display = 'none';
+                document.getElementById('auth-failed').style.display = 'block';
             });
     });
 </script>

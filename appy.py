@@ -37,7 +37,6 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
-BACKUP_DNS = "http://simplyapple.xyz"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 FOOTBALL_API_KEY = os.environ.get('FOOTBALL_API_KEY')
 
@@ -1485,36 +1484,20 @@ def verify_xtream_credentials(dns, username, password):
         print("VERIFY_XTREAM_CREDENTIALS ERROR: no DNS configured to check against.")
         return False, None
 
-    # Try primary DNS first, fall back to backup if it fails
-    dns_candidates = [dns_base]
-    if BACKUP_DNS and BACKUP_DNS.rstrip('/') != dns_base.rstrip('/'):
-        dns_candidates.append(BACKUP_DNS.rstrip('/'))
+    try:
+        url = f"{dns_base.rstrip('/')}/player_api.php"
+        resp = requests.get(
+            url,
+            params={'username': username.strip(), 'password': password.strip()},
+            headers={'User-Agent': XTREAM_USER_AGENT},
+            timeout=15
+        )
+    except requests.exceptions.RequestException:
+        print("VERIFY_XTREAM_CREDENTIALS ERROR: could not reach the panel.")
+        return False, None
 
-    resp = None
-    used_dns = dns_base
-    for candidate in dns_candidates:
-        try:
-            url = f"{candidate.rstrip('/')}/player_api.php"
-            r = requests.get(
-                url,
-                params={'username': username.strip(), 'password': password.strip()},
-                headers={'User-Agent': XTREAM_USER_AGENT},
-                timeout=10
-            )
-            if r.status_code == 200:
-                resp = r
-                used_dns = candidate
-                if candidate != dns_base:
-                    print(f"VERIFY_XTREAM_CREDENTIALS: using backup DNS {candidate}", flush=True)
-                break
-            else:
-                print(f"VERIFY_XTREAM_CREDENTIALS: {candidate} returned HTTP {r.status_code}, trying next...", flush=True)
-        except requests.exceptions.RequestException as e:
-            print(f"VERIFY_XTREAM_CREDENTIALS: {candidate} unreachable ({type(e).__name__}), trying next...", flush=True)
-            continue
-
-    if resp is None:
-        print("VERIFY_XTREAM_CREDENTIALS ERROR: all DNS endpoints failed.", flush=True)
+    if resp.status_code != 200:
+        print(f"VERIFY_XTREAM_CREDENTIALS: panel returned HTTP {resp.status_code}.")
         return False, None
 
     try:
@@ -1530,6 +1513,9 @@ def verify_xtream_credentials(dns, username, password):
     if not (auth_ok and status_ok):
         return False, None
 
+    # Real, active line confirmed by the panel itself - auto-provision the
+    # local portal_users record so the rest of the portal's features
+    # (wallet, referrals, requests, admin visibility) work for this user.
     upsert_portal_user_from_panel(username.strip(), password.strip(), user_info)
 
     return True, user_info
@@ -1651,20 +1637,30 @@ def fetch_xtream_api_as_user(dns, username, password, action, extra_params=None,
     used for the web player, which needs to see exactly the channels/EPG
     that user's own line actually has access to.
     """
-    url = f"{dns.rstrip('/')}/player_api.php"
     params = {'username': username, 'password': password, 'action': action}
     if extra_params:
         params.update(extra_params)
 
-    try:
-        resp = requests.get(url, params=params, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=timeout)
-    except requests.exceptions.RequestException:
-        raise RuntimeError("Could not connect to the IPTV panel.") from None
+    # Try primary DNS, fall back to BACKUP_DNS if it fails
+    dns_list = [dns.rstrip('/')]
+    if BACKUP_DNS and BACKUP_DNS.rstrip('/') not in dns_list:
+        dns_list.append(BACKUP_DNS.rstrip('/'))
 
-    if resp.status_code != 200:
-        raise RuntimeError(f"Panel returned HTTP {resp.status_code}.")
+    last_err = None
+    for dns_candidate in dns_list:
+        url = f"{dns_candidate}/player_api.php"
+        try:
+            resp = requests.get(url, params=params, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=timeout)
+            if resp.status_code == 200:
+                if dns_candidate != dns.rstrip('/'):
+                    print(f"XTREAM_API: using backup DNS {dns_candidate} for action={action}", flush=True)
+                return resp.json()
+            last_err = f"HTTP {resp.status_code}"
+        except requests.exceptions.RequestException as e:
+            last_err = type(e).__name__
+            continue
 
-    return resp.json()
+    raise RuntimeError(f"Could not reach IPTV panel (tried {len(dns_list)} endpoint(s)): {last_err}") from None
 
 
 def parse_xtream_title(raw_name):
@@ -2412,6 +2408,7 @@ def ios_player_page():
         'ios_player.html',
         username=username,
         dns=DEFAULT_DNS.rstrip('/'),
+        backup_dns=BACKUP_DNS.rstrip('/') if BACKUP_DNS else '',
         auto_token=auto_token
     )
 
@@ -2764,14 +2761,27 @@ def ios_player_manifest(stream_id):
 
     upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
 
-    try:
-        resp = sess['http_session'].get(upstream_url, headers=IOS_PLAYER_STREAM_HEADERS, timeout=15)
-    except requests.exceptions.RequestException as e:
-        print(f"IOS_PLAYER_MANIFEST NETWORK ERROR: {type(e).__name__}", flush=True)
-        return "Could not reach the streaming server.", 502
+    resp = None
+    for dns in [DEFAULT_DNS, BACKUP_DNS]:
+        if not dns:
+            continue
+        try:
+            url = f"{dns.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
+            r = sess['http_session'].get(url, headers=IOS_PLAYER_STREAM_HEADERS, timeout=10)
+            if r.status_code == 200:
+                resp = r
+                upstream_url = url
+                if dns != DEFAULT_DNS:
+                    print(f"IOS_PLAYER_MANIFEST: using backup DNS {dns}", flush=True)
+                break
+            else:
+                print(f"IOS_PLAYER_MANIFEST: {dns} returned HTTP {r.status_code}", flush=True)
+        except requests.exceptions.RequestException as e:
+            print(f"IOS_PLAYER_MANIFEST: {dns} unreachable ({type(e).__name__})", flush=True)
 
-    if resp.status_code != 200:
-        print(f"IOS_PLAYER_MANIFEST UPSTREAM ERROR: HTTP {resp.status_code} - body starts: {resp.text[:200]!r}", flush=True)
+    if resp is None:
+        print("IOS_PLAYER_MANIFEST: all DNS endpoints failed", flush=True)
+        return "Could not reach the streaming server.", 502
         return f"Streaming server returned HTTP {resp.status_code}.", 502
 
     rewritten = _rewrite_hls_manifest(resp.text, upstream_url, token)

@@ -621,25 +621,14 @@
     }
     function isAndroid() { return /android/.test(navigator.userAgent.toLowerCase()); }
     function isIos() { return /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()); }
-    function openInVlc(retryWithBackup) {
+    function openInVlc() {
         if (!currentStreamUrl) return;
-        // If primary DNS is down, try swapping to backup
-        let streamUrl = currentStreamUrl;
-        if (retryWithBackup && DNS_BACKUP && streamUrl.includes(DNS_BASE)) {
-            streamUrl = streamUrl.replace(DNS_BASE, DNS_BACKUP);
-            console.log('Retrying with backup DNS:', streamUrl);
-        }
         document.getElementById('get-vlc-prompt').style.display = 'none';
         if (isAndroid()) {
-            const intentUrl = `intent:${streamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
+            const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
             const fallback = setTimeout(() => {
-                if (!retryWithBackup && DNS_BACKUP) {
-                    // First failure — try backup DNS before showing install prompt
-                    openInVlc(true);
-                } else {
-                    document.getElementById('get-vlc-link').href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
-                    document.getElementById('get-vlc-prompt').style.display = 'block';
-                }
+                document.getElementById('get-vlc-link').href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
+                document.getElementById('get-vlc-prompt').style.display = 'block';
             }, 2000);
             const onHide = () => { if (document.hidden) { clearTimeout(fallback); document.removeEventListener('visibilitychange', onHide); }};
             document.addEventListener('visibilitychange', onHide);
@@ -647,19 +636,15 @@
         } else {
             const check = setTimeout(() => {
                 if (!document.hidden) {
-                    if (!retryWithBackup && DNS_BACKUP) {
-                        openInVlc(true);
-                    } else {
-                        document.getElementById('get-vlc-link').href = isIos()
-                            ? 'https://apps.apple.com/app/vlc-media-player/id650377962'
-                            : 'https://www.videolan.org/vlc/';
-                        document.getElementById('get-vlc-prompt').style.display = 'block';
-                    }
+                    document.getElementById('get-vlc-link').href = isIos()
+                        ? 'https://apps.apple.com/app/vlc-media-player/id650377962'
+                        : 'https://www.videolan.org/vlc/';
+                    document.getElementById('get-vlc-prompt').style.display = 'block';
                 }
             }, 1800);
             const onHide = () => { if (document.hidden) { clearTimeout(check); document.removeEventListener('visibilitychange', onHide); }};
             document.addEventListener('visibilitychange', onHide);
-            window.location.href = 'vlc://' + streamUrl;
+            window.location.href = 'vlc://' + currentStreamUrl;
         }
     }
 

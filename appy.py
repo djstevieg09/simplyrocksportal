@@ -5316,10 +5316,7 @@ def admin_delete_request(req_id):
             conn.commit()
 
         if req_row:
-            send_telegram_message_to_user(
-                req_row['username'],
-                f"Update on your request: \"{req_row['title']}\" has been removed from the queue."
-            )
+            pass  # No notification sent to user on deletion
 
         return jsonify({'success': True})
     except Exception as e:

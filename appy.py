@@ -2115,9 +2115,20 @@ def login():
                     "UPDATE portal_users SET iptv_password = ? WHERE LOWER(username) = LOWER(?)",
                     (password, username.lower())
                 )
+                # If no row was updated, insert one
+                cursor_chk = conn.execute(
+                    "SELECT COUNT(*) FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                    (username.lower(),)
+                )
+                if cursor_chk.fetchone()[0] == 0:
+                    conn.execute(
+                        "INSERT INTO portal_users (username, password, expiry_date, expiry_timestamp, iptv_password) VALUES (?,?,?,?,?)",
+                        (username, '', '', 0, password)
+                    )
                 conn.commit()
-        except Exception:
-            pass
+                print(f"IPTV_PASSWORD: saved for {username}", flush=True)
+        except Exception as e:
+            print(f"SAVE_IPTV_PASSWORD ERROR: {e}", flush=True)
 
         log_activity(username, "User login")
 
@@ -2504,8 +2515,9 @@ def ios_player_silent_auth():
     if not session.get('logged_in'):
         return jsonify({'success': False}), 401
 
-    password = session.get('panel_password')
+    password = session.get('panel_password') or None
     username = session.get('username', '')
+    print(f'SILENT_AUTH: user={username} password_len={len(password) if password else 0}', flush=True)
 
     if not password:
         try:
@@ -2723,9 +2735,14 @@ def ios_player_series_list():
     sess = _get_player_session(token)
     if not sess:
         return jsonify({'expired': True}), 401
+    # Never fetch all series at once — too large and causes worker timeout
+    if not category_id:
+        return jsonify([])
     try:
-        extra = {'category_id': category_id} if category_id else None
-        series = fetch_xtream_api_as_user(DEFAULT_DNS, sess['username'], sess['password'], 'get_series', extra)
+        series = fetch_xtream_api_as_user(
+            DEFAULT_DNS, sess['username'], sess['password'],
+            'get_series', {'category_id': category_id}, timeout=25
+        )
         if not isinstance(series, list):
             series = []
         return jsonify([{

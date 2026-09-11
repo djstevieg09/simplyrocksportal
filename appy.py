@@ -3466,11 +3466,10 @@ def get_epg_credentials():
 
 def find_match_channel(home_name, away_name, match_utc_dt):
     """
-    Search EPG of the key sports bouquets to find which channel a match is on.
-    Targets: Live Football & Major Events, UK Sky Sports, UK TNT Sports.
-    Uses the customer panel (DEFAULT_DNS) with reseller credentials.
+    Find which channel a match is on. Two-stage approach:
+    1. Check if team names appear directly in channel names (Live Football bouquet)
+    2. Fall back to EPG lookup on Sky Sports / TNT Sports channels
     """
-    # The category names to search — partial match, case insensitive
     TARGET_BOUQUETS = [
         'live football',
         'major event',
@@ -3479,6 +3478,117 @@ def find_match_channel(home_name, away_name, match_utc_dt):
         'tnt sport',
         'bt sport',
     ]
+
+    import base64
+    def decode_epg(s):
+        try:
+            return base64.b64decode(s).decode('utf-8', errors='replace')
+        except Exception:
+            return s or ''
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT stream_id, name, category_name FROM live_channels")
+            all_channels = cursor.fetchall()
+
+        # Build name variants to search for
+        home = home_name.lower()
+        away = away_name.lower()
+        # Short names e.g. "Aston Villa" -> "Villa", "Man City" -> "City"
+        home_short = home.split()[-1] if home.split() else home
+        away_short = away.split()[-1] if away.split() else away
+
+        # STAGE 1: Check if team names are in channel name directly
+        # e.g. "Aston Villa v Arsenal", "PL: Villa vs Arsenal HD"
+        for ch in all_channels:
+            ch_name = ch['name'].lower()
+            cat = (ch['category_name'] or '').lower()
+            # Only check football bouquets for channel-name matching
+            if not any(kw in cat for kw in ['live football', 'major event', 'football', 'sport']):
+                continue
+            # Both team names (or short versions) must appear in channel name
+            has_home = home in ch_name or home_short in ch_name
+            has_away = away in ch_name or away_short in ch_name
+            if has_home and has_away:
+                print(f"EPG LOOKUP: Channel name match — '{ch['name']}'", flush=True)
+                return ch['name']
+
+        # STAGE 2: EPG lookup on Sky Sports / TNT channels
+        priority_channels = [
+            ch for ch in all_channels
+            if any(kw in (ch['category_name'] or '').lower() for kw in TARGET_BOUQUETS)
+        ]
+        fallback_channels = [
+            ch for ch in all_channels
+            if ch not in priority_channels
+            and any(kw in ch['name'].lower() for kw in ['sky sport', 'tnt sport', 'bt sport'])
+        ]
+        sport_channels = priority_channels + fallback_channels
+
+        print(f"EPG LOOKUP: {home_name} vs {away_name} — {len(priority_channels)} priority + {len(fallback_channels)} fallback", flush=True)
+
+        if not sport_channels:
+            print("EPG LOOKUP: No channels found — run a channel sync", flush=True)
+            return None
+
+        epg_user, epg_pass = get_epg_credentials()
+        if not epg_user or not epg_pass:
+            print("EPG LOOKUP: No customer credentials available", flush=True)
+            return None
+
+        search_terms = [home, away, home_short, away_short]
+        football_terms = [
+            'premier league', 'championship', 'fa cup', 'carabao',
+            'champions league', 'europa league', 'football', ' v ', ' vs '
+        ]
+
+        match_ts = int(match_utc_dt.timestamp())
+        window_start = match_ts - 3600
+        window_end = match_ts + 7200
+
+        for ch in sport_channels[:60]:
+            try:
+                result = fetch_xtream_api_as_user(
+                    DEFAULT_DNS, epg_user, epg_pass,
+                    'get_short_epg', {'stream_id': ch['stream_id'], 'limit': 10}
+                )
+                listings = (result or {}).get('epg_listings', [])
+
+                for listing in listings:
+                    raw_title = listing.get('title') or ''
+                    raw_desc = listing.get('description') or ''
+                    title = decode_epg(raw_title).lower()
+                    desc = decode_epg(raw_desc).lower()
+                    text = title + ' ' + desc
+
+                    try:
+                        start_ts = int(listing.get('start_timestamp', 0))
+                        end_ts = int(listing.get('stop_timestamp', 0))
+                        if not (window_start <= start_ts <= window_end or
+                                window_start <= end_ts <= window_end or
+                                (start_ts <= window_start and end_ts >= window_end)):
+                            continue
+                    except Exception:
+                        continue
+
+                    has_team = any(t in text for t in search_terms if len(t) > 2)
+                    has_football = any(t in text for t in football_terms)
+                    if has_team and has_football:
+                        print(f"EPG LOOKUP: Found '{ch['name']}' — title: '{decode_epg(raw_title)}'", flush=True)
+                        return ch['name']
+            except Exception:
+                continue
+
+        print(f"EPG LOOKUP: No channel found for {home_name} vs {away_name}", flush=True)
+
+    except Exception as e:
+        print(f"FIND_MATCH_CHANNEL ERROR: {e}", flush=True)
+
+    return None
+
+
 
     import base64
     def decode_epg(s):

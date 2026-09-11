@@ -412,11 +412,13 @@
             select.innerHTML = '<option value="">Select a bouquet...</option>' +
                 data.map(b => `<option value="${b.category_id}">${b.category_name}</option>`).join('');
             // Restore last selected bouquet
-            const saved = localStorage.getItem('iptv_last_bouquet');
-            if (saved) {
-                select.value = saved;
-                if (select.value === saved) loadChannels(saved);
-            }
+            try {
+                const saved = localStorage.getItem('iptv_last_bouquet');
+                if (saved) {
+                    select.value = saved;
+                    if (select.value === saved) loadChannels(saved);
+                }
+            } catch(e) {}
         } catch(e) {}
     }
 
@@ -443,7 +445,7 @@
         const grid = document.getElementById('channel-grid');
         const searchBar = document.getElementById('channel-search-bar');
         if (!categoryId) { grid.innerHTML = ''; if (searchBar) searchBar.style.display = 'none'; return; }
-        localStorage.setItem('iptv_last_bouquet', categoryId);
+        try { localStorage.setItem('iptv_last_bouquet', categoryId); } catch(e) {}
         clearChannelSearch();
         grid.innerHTML = '<p class="muted">Loading...</p>';
         if (searchBar) searchBar.style.display = 'none';

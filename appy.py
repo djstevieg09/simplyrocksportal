@@ -37,7 +37,6 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
-BACKUP_DNS = "http://simplyapple.xyz"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 FOOTBALL_API_KEY = os.environ.get('FOOTBALL_API_KEY')
 
@@ -750,6 +749,11 @@ def init_db():
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 print(f"DATABASE UPDATE NOTICE: {e}")
+
+        try:
+            cursor.execute("ALTER TABLE portal_users ADD COLUMN iptv_password TEXT")
+        except sqlite3.OperationalError:
+            pass
 
         # completed_at powers the 30-day auto-cleanup of old completed
         # requests. requested_from_supplier_at is a manual "I've placed the
@@ -2103,6 +2107,17 @@ def login():
         # the browser session - it's never written to disk or logged.
         session['panel_password'] = password
 
+        # Save plaintext IPTV password so silent_auth works after remember-me restore
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.execute(
+                    "UPDATE portal_users SET iptv_password = ? WHERE LOWER(username) = LOWER(?)",
+                    (password, username.lower())
+                )
+                conn.commit()
+        except Exception:
+            pass
+
         log_activity(username, "User login")
 
         raw_exp = user_info.get('exp_date')
@@ -2399,7 +2414,6 @@ def ios_player_page():
         'ios_player.html',
         username=username,
         dns=DEFAULT_DNS.rstrip('/'),
-        backup_dns=BACKUP_DNS.rstrip('/'),
         auto_token=auto_token
     )
 
@@ -2489,9 +2503,31 @@ def ios_player_silent_auth():
     """
     if not session.get('logged_in'):
         return jsonify({'success': False}), 401
+
     password = session.get('panel_password')
+
+    # If password not in session (e.g. restored via remember-me cookie),
+    # look it up from the iptv_password column in portal_users
     if not password:
-        return jsonify({'success': False}), 404
+        username = session.get('username')
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT iptv_password FROM portal_users WHERE LOWER(username) = LOWER(?)",
+                    (username.lower(),)
+                )
+                row = cursor.fetchone()
+                if row and row['iptv_password']:
+                    password = row['iptv_password']
+                    session['panel_password'] = password  # restore to session
+        except Exception as e:
+            print(f"SILENT_AUTH: could not fetch iptv_password: {e}", flush=True)
+
+    if not password:
+        return jsonify({'success': False, 'message': 'Session expired — please log out and back in.'}), 404
+
     _cleanup_expired_player_sessions()
     token = secrets.token_urlsafe(24)
     _ios_player_sessions[token] = {

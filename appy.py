@@ -3483,12 +3483,21 @@ def find_match_channel(home_name, away_name, match_utc_dt):
     2. Fall back to EPG lookup on Sky Sports / TNT Sports channels
     """
     TARGET_BOUQUETS = [
+        'live football & major events',
         'live football',
         'major event',
-        'sky sports',
-        'sky sport',
-        'tnt sport',
-        'bt sport',
+        'uk sky sports',
+        'uk tnt sports',
+        'uk sky 5.1',
+        'uk sky sports+',
+        'foot other football',
+    ]
+
+    # Categories to search for channel-name matching (Live Football bouquet)
+    CHANNEL_NAME_CATS = [
+        'live football',
+        'major event',
+        'foot other football',
     ]
 
     import base64
@@ -3508,21 +3517,25 @@ def find_match_channel(home_name, away_name, match_utc_dt):
         # Build name variants to search for
         home = home_name.lower()
         away = away_name.lower()
-        # Short names e.g. "Aston Villa" -> "Villa", "Man City" -> "City"
-        home_short = home.split()[-1] if home.split() else home
-        away_short = away.split()[-1] if away.split() else away
+        # Short names e.g. "Aston Villa" -> "Villa", "West Ham United" -> "West Ham" or "Ham"
+        home_words = home.split()
+        away_words = away.split()
+        home_short = home_words[-1] if home_words else home
+        away_short = away_words[-1] if away_words else away
+        # First two words e.g. "West Ham United" -> "West Ham"
+        home_two = ' '.join(home_words[:2]) if len(home_words) >= 2 else home
+        away_two = ' '.join(away_words[:2]) if len(away_words) >= 2 else away
 
         # STAGE 1: Check if team names are in channel name directly
-        # e.g. "Aston Villa v Arsenal", "PL: Villa vs Arsenal HD"
+        # e.g. "West Ham United vs Wrexham 8pm", "FOOT 02 | West Ham United vs Wrexham"
         for ch in all_channels:
             ch_name = ch['name'].lower()
             cat = (ch['category_name'] or '').lower()
-            # Only check football bouquets for channel-name matching
-            if not any(kw in cat for kw in ['live football', 'major event', 'football', 'sport']):
+            if not any(kw in cat for kw in CHANNEL_NAME_CATS):
                 continue
-            # Both team names (or short versions) must appear in channel name
-            has_home = home in ch_name or home_short in ch_name
-            has_away = away in ch_name or away_short in ch_name
+            # Match if home AND away team names appear in channel name
+            has_home = home in ch_name or home_two in ch_name or home_short in ch_name
+            has_away = away in ch_name or away_two in ch_name or away_short in ch_name
             if has_home and has_away:
                 print(f"EPG LOOKUP: Channel name match — '{ch['name']}'", flush=True)
                 return ch['name']

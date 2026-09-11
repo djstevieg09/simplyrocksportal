@@ -37,6 +37,7 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 # --- 2. GLOBAL SYSTEM CONFIGURATION & PATHS ---
 DEFAULT_DNS = "http://simplyrocks.org:80"
+BACKUP_DNS = "http://simplyapple.xyz"
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY')
 FOOTBALL_API_KEY = os.environ.get('FOOTBALL_API_KEY')
 
@@ -1637,30 +1638,20 @@ def fetch_xtream_api_as_user(dns, username, password, action, extra_params=None,
     used for the web player, which needs to see exactly the channels/EPG
     that user's own line actually has access to.
     """
+    url = f"{dns.rstrip('/')}/player_api.php"
     params = {'username': username, 'password': password, 'action': action}
     if extra_params:
         params.update(extra_params)
 
-    # Try primary DNS, fall back to BACKUP_DNS if it fails
-    dns_list = [dns.rstrip('/')]
-    if BACKUP_DNS and BACKUP_DNS.rstrip('/') not in dns_list:
-        dns_list.append(BACKUP_DNS.rstrip('/'))
+    try:
+        resp = requests.get(url, params=params, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=timeout)
+    except requests.exceptions.RequestException:
+        raise RuntimeError("Could not connect to the IPTV panel.") from None
 
-    last_err = None
-    for dns_candidate in dns_list:
-        url = f"{dns_candidate}/player_api.php"
-        try:
-            resp = requests.get(url, params=params, headers={'User-Agent': XTREAM_USER_AGENT}, timeout=timeout)
-            if resp.status_code == 200:
-                if dns_candidate != dns.rstrip('/'):
-                    print(f"XTREAM_API: using backup DNS {dns_candidate} for action={action}", flush=True)
-                return resp.json()
-            last_err = f"HTTP {resp.status_code}"
-        except requests.exceptions.RequestException as e:
-            last_err = type(e).__name__
-            continue
+    if resp.status_code != 200:
+        raise RuntimeError(f"Panel returned HTTP {resp.status_code}.")
 
-    raise RuntimeError(f"Could not reach IPTV panel (tried {len(dns_list)} endpoint(s)): {last_err}") from None
+    return resp.json()
 
 
 def parse_xtream_title(raw_name):
@@ -2408,7 +2399,7 @@ def ios_player_page():
         'ios_player.html',
         username=username,
         dns=DEFAULT_DNS.rstrip('/'),
-        backup_dns=BACKUP_DNS.rstrip('/') if BACKUP_DNS else '',
+        backup_dns=BACKUP_DNS.rstrip('/'),
         auto_token=auto_token
     )
 
@@ -2761,27 +2752,14 @@ def ios_player_manifest(stream_id):
 
     upstream_url = f"{DEFAULT_DNS.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
 
-    resp = None
-    for dns in [DEFAULT_DNS, BACKUP_DNS]:
-        if not dns:
-            continue
-        try:
-            url = f"{dns.rstrip('/')}/live/{sess['username']}/{sess['password']}/{stream_id}.m3u8"
-            r = sess['http_session'].get(url, headers=IOS_PLAYER_STREAM_HEADERS, timeout=10)
-            if r.status_code == 200:
-                resp = r
-                upstream_url = url
-                if dns != DEFAULT_DNS:
-                    print(f"IOS_PLAYER_MANIFEST: using backup DNS {dns}", flush=True)
-                break
-            else:
-                print(f"IOS_PLAYER_MANIFEST: {dns} returned HTTP {r.status_code}", flush=True)
-        except requests.exceptions.RequestException as e:
-            print(f"IOS_PLAYER_MANIFEST: {dns} unreachable ({type(e).__name__})", flush=True)
-
-    if resp is None:
-        print("IOS_PLAYER_MANIFEST: all DNS endpoints failed", flush=True)
+    try:
+        resp = sess['http_session'].get(upstream_url, headers=IOS_PLAYER_STREAM_HEADERS, timeout=15)
+    except requests.exceptions.RequestException as e:
+        print(f"IOS_PLAYER_MANIFEST NETWORK ERROR: {type(e).__name__}", flush=True)
         return "Could not reach the streaming server.", 502
+
+    if resp.status_code != 200:
+        print(f"IOS_PLAYER_MANIFEST UPSTREAM ERROR: HTTP {resp.status_code} - body starts: {resp.text[:200]!r}", flush=True)
         return f"Streaming server returned HTTP {resp.status_code}.", 502
 
     rewritten = _rewrite_hls_manifest(resp.text, upstream_url, token)

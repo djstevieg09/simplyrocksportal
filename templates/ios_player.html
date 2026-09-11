@@ -187,7 +187,7 @@
 
 <script>
     const DNS_BASE = {{ dns | tojson }};
-    const DNS_BACKUP = {{ backup_dns | tojson if backup_dns else '""' }};
+    const DNS_BACKUP = {{ (backup_dns or '') | tojson }};
     let currentDNS = DNS_BASE;
     const CURRENT_USERNAME = {{ username | tojson }};
     const AUTO_TOKEN = {{ (auto_token or '') | tojson }};

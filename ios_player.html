@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>IPTV Player</title>
+    <link rel="manifest" href="/static/player-manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="/static/player-apple-touch-icon.png">
+    <link rel="icon" type="image/png" href="/static/player-icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IPTV Player">
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/player-sw.js');
+        }
+    </script>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body { background-color:#0f172a; color:#fff; font-family:Arial,sans-serif; margin:0; padding:0; }
+        nav { background-color:#1e293b; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:20; }
+        nav h1 { color:#60a5fa; margin:0; font-size:16px; }
+        nav a { color:#94a3b8; text-decoration:none; font-size:12px; }
+        .wrapper { max-width:900px; margin:0 auto; padding:12px; }
+        .card { background-color:#1e293b; border-radius:10px; padding:14px; margin-bottom:12px; }
+        .form-field { width:100%; padding:10px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:14px; margin-bottom:8px; }
+        .btn-primary { width:100%; background:linear-gradient(90deg,#2563eb,#38bdf8); color:white; border:none; padding:11px; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; display:block; text-align:center; }
+        .btn-secondary { width:100%; background-color:#334155; color:#e2e8f0; border:1px solid #475569; padding:10px; border-radius:6px; font-weight:bold; font-size:13px; cursor:pointer; }
+        select { width:100%; padding:10px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:14px; margin-bottom:10px; }
+
+        /* Tabs */
+        .tabs { display:flex; gap:3px; margin-bottom:12px; background-color:#1e293b; border-radius:10px; padding:4px; }
+        .tab-btn { flex:1; padding:9px 2px; background:none; border:none; color:#94a3b8; font-size:12px; font-weight:bold; cursor:pointer; border-radius:7px; }
+        .tab-btn.active { background-color:#2563eb; color:#fff; }
+
+        /* Search bar */
+        .search-bar { position:relative; margin-bottom:10px; }
+        .search-bar input { width:100%; padding:9px 34px 9px 10px; background-color:#334155; border:1px solid #475569; border-radius:6px; color:#fff; font-size:13px; }
+        .search-bar .clear-btn { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:#94a3b8; font-size:16px; cursor:pointer; padding:0; line-height:1; display:none; }
+
+        /* Poster grid - 3-column layout with proper aspect ratio for movie posters */
+        .poster-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:520px; overflow-y:auto; }
+        .poster-tile { background-color:#334155; border-radius:8px; overflow:hidden; cursor:pointer; border:2px solid transparent; position:relative; }
+        .poster-tile.active { border-color:#38bdf8; }
+        .poster-tile:active { opacity:0.8; }
+        .poster-tile .poster-img-wrap { width:100%; aspect-ratio:2/3; background-color:#0f172a; overflow:hidden; }
+        .poster-tile .poster-img-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
+        .poster-tile .poster-img-wrap .no-poster { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:28px; color:#475569; }
+        .poster-tile .poster-title { font-size:10px; padding:4px 5px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e2e8f0; }
+        .poster-tile .fav-btn { position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.6); border:none; border-radius:50%; width:22px; height:22px; font-size:13px; cursor:pointer; line-height:22px; text-align:center; padding:0; }
+
+        /* Live TV channel grid - wider tiles since they have horizontal logos */
+        .channel-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; max-height:450px; overflow-y:auto; }
+        .channel-tile { background-color:#334155; border-radius:8px; padding:6px; text-align:center; cursor:pointer; border:2px solid transparent; }
+        .channel-tile.active { border-color:#38bdf8; }
+        .channel-tile:active { opacity:0.75; }
+        .channel-tile .ch-logo { width:100%; height:44px; object-fit:contain; border-radius:4px; margin-bottom:4px; background-color:#0f172a; display:block; }
+        .channel-tile span { font-size:11px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* Episode list */
+        .ep-list { max-height:300px; overflow-y:auto; }
+        .ep-row { display:flex; justify-content:space-between; align-items:center; padding:8px; background-color:#334155; border-radius:6px; margin-bottom:6px; }
+        .ep-row span { font-size:13px; }
+        .ep-row .play-btn { background-color:#2563eb; color:white; border:none; padding:6px 12px; border-radius:5px; font-size:12px; cursor:pointer; white-space:nowrap; }
+
+        /* Favourites */
+        .fav-section-title { font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold; margin:0 0 8px 0; }
+
+        .epg-line { font-size:12px; color:#cbd5e1; margin:2px 0; }
+        .epg-line b { color:#38bdf8; }
+        .muted { font-size:11px; color:#94a3b8; margin:0; }
+
+        #add-home-modal-overlay { display:none; position:fixed; inset:0; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; padding:16px; }
+        #add-home-modal-overlay .box { background-color:#1e293b; border:1px solid rgba(37,99,235,0.6); border-radius:12px; padding:24px; max-width:380px; width:100%; text-align:center; }
+    </style>
+</head>
+<body>
+
+<nav>
+    <h1>📺 IPTV Player</h1>
+    <a href="/dashboard">← Portal</a>
+</nav>
+
+<div class="wrapper">
+
+    <!-- Auth gate -->
+    <div class="card" id="auth-card">
+        <h3 style="margin-top:0; font-size:14px; color:#60a5fa;">Enter your IPTV password</h3>
+        <p class="muted" style="margin-bottom:10px;">Same password as TiviMate — not saved, session only.</p>
+        <input type="password" id="player-password" class="form-field" placeholder="Your IPTV password">
+        <button class="btn-primary" onclick="authenticatePlayer(this)">Load Content</button>
+        <p id="auth-error" style="color:#f87171; font-size:12px; display:none; margin:6px 0 0 0;"></p>
+    </div>
+
+    <!-- Add to Home Screen -->
+    <div class="card" id="add-home-card" style="display:block;">
+        <button type="button" onclick="handleAddToHomeScreen()" class="btn-secondary">📲 Add IPTV Player to Home Screen</button>
+    </div>
+
+    <!-- Now playing -->
+    <div class="card" id="player-card" style="display:none;">
+        <p id="now-playing-label" style="font-size:14px; font-weight:bold; margin:0 0 6px 0;"></p>
+        <div id="epg-info"></div>
+        <div id="get-vlc-prompt" style="display:none; margin-top:10px; padding:10px; background-color:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.4); border-radius:8px; text-align:center;">
+            <p style="font-size:12px; color:#fecaca; margin:0 0 8px 0;">Doesn't look like VLC is installed.</p>
+            <a id="get-vlc-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="display:block; text-decoration:none;">⬇️ Get VLC</a>
+        </div>
+        <p class="muted" style="margin-top:8px;">Tap any item to play in VLC.</p>
+    </div>
+
+    <!-- Tabs + browse -->
+    <div id="browse-card" style="display:none;">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('live',this)">📡 Live</button>
+            <button class="tab-btn" onclick="switchTab('movies',this)">🎬 Movies</button>
+            <button class="tab-btn" onclick="switchTab('series',this)">📺 Series</button>
+            <button class="tab-btn" onclick="switchTab('favs',this)">❤️ Favs</button>
+        </div>
+
+        <!-- Live TV -->
+        <div id="tab-live" class="card">
+            <select id="bouquet-select" onchange="loadChannels(this.value)">
+                <option value="">Select a bouquet...</option>
+            </select>
+            <div class="search-bar" id="channel-search-bar" style="display:none; margin-bottom:10px;">
+                <input type="text" id="channel-search" placeholder="Search channels..." oninput="filterChannels(this.value)">
+                <button class="clear-btn" id="channel-search-clear" onclick="clearChannelSearch()">✕</button>
+            </div>
+            <div id="channel-grid" class="channel-grid"></div>
+        </div>
+
+        <!-- Movies -->
+        <div id="tab-movies" class="card" style="display:none;">
+            <div class="search-bar" id="movie-search-bar">
+                <input type="text" id="movie-search" placeholder="Search all movies..." oninput="searchAllMovies(this.value, 'movie-search-clear')">
+                <button class="clear-btn" id="movie-search-clear" onclick="clearMovieSearch()">✕</button>
+            </div>
+            <select id="movie-cat-select" onchange="loadMovies(this.value)">
+                <option value="">— or browse by category —</option>
+            </select>
+            <div id="movie-grid" class="poster-grid"></div>
+        </div>
+
+        <!-- Series -->
+        <div id="tab-series" class="card" style="display:none;">
+            <div class="search-bar" id="series-search-bar">
+                <input type="text" id="series-search" placeholder="Search all series..." oninput="searchAllSeries(this.value, 'series-search-clear')">
+                <button class="clear-btn" id="series-search-clear" onclick="clearSeriesSearch()">✕</button>
+            </div>
+            <select id="series-cat-select" onchange="loadSeriesList(this.value)">
+                <option value="">— or browse by category —</option>
+            </select>
+            <div id="series-grid" class="poster-grid"></div>
+
+            <!-- Episode drill-down -->
+            <div id="series-detail" style="display:none; margin-top:10px; border-top:1px solid #334155; padding-top:10px;">
+                <p id="series-detail-title" style="font-size:14px; font-weight:bold; margin:0 0 8px 0;"></p>
+                <select id="season-select" onchange="loadEpisodes(this.value)">
+                    <option value="">Select a season...</option>
+                </select>
+                <div id="episode-list" class="ep-list"></div>
+            </div>
+        </div>
+
+        <!-- Favourites -->
+        <div id="tab-favs" class="card" style="display:none;">
+            <p id="favs-empty" class="muted" style="display:none; padding:10px 0;">No favourites yet — tap ❤️ on any movie or series to save it here.</p>
+            <div id="favs-grid" class="poster-grid"></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Add to Home Screen modal -->
+<div id="add-home-modal-overlay">
+    <div class="box">
+        <div style="font-size:38px; margin-bottom:6px;">📲</div>
+        <h2 style="color:#60a5fa; margin:0 0 12px 0; font-size:18px;">Add to Home Screen</h2>
+        <div id="add-home-modal-steps" style="text-align:left; font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:16px;"></div>
+        <button type="button" onclick="document.getElementById('add-home-modal-overlay').style.display='none';" class="btn-secondary">Got it</button>
+    </div>
+</div>
+
+<script>
+    const DNS_BASE = {{ dns | tojson }};
+    const DNS_BACKUP = {{ backup_dns | tojson if backup_dns else '""' }};
+    let currentDNS = DNS_BASE;
+    const CURRENT_USERNAME = {{ username | tojson }};
+    const AUTO_TOKEN = {{ (auto_token or '') | tojson }};
+    let playerToken = null;
+    let currentPassword = null;
+    let currentStreamUrl = null;
+    let currentSeriesData = null;
+    let allMoviesCache = [];   // all movies across all categories, for global search
+    let allSeriesCache = [];   // all series across all categories, for global search
+
+    // --- Favourites (localStorage, persists between sessions) ---
+    const FAV_KEY = 'iptv_player_favs';
+    function loadFavs() {
+        try { return JSON.parse(localStorage.getItem(FAV_KEY) || '{}'); } catch(e) { return {}; }
+    }
+    function saveFavs(favs) {
+        try { localStorage.setItem(FAV_KEY, JSON.stringify(favs)); } catch(e) {}
+    }
+    function isFav(id) { return !!loadFavs()[id]; }
+    function toggleFav(id, name, icon, type, ext, e) {
+        e.stopPropagation();
+        const favs = loadFavs();
+        const btn = e.currentTarget;
+        if (favs[id]) {
+            delete favs[id];
+            btn.textContent = '🤍';
+        } else {
+            favs[id] = { id, name, icon, type, ext };
+            btn.textContent = '❤️';
+        }
+        saveFavs(favs);
+        if (document.getElementById('tab-favs').style.display !== 'none') renderFavs();
+    }
+    function renderFavs() {
+        const favs = loadFavs();
+        const grid = document.getElementById('favs-grid');
+        const emptyMsg = document.getElementById('favs-empty');
+        const items = Object.values(favs);
+        if (!items.length) {
+            emptyMsg.style.display = 'block'; grid.innerHTML = ''; return;
+        }
+        emptyMsg.style.display = 'none';
+        grid.innerHTML = '';
+        items.forEach(item => {
+            const tile = makePosterTile(
+                item.id, item.name, item.icon, item.type, item.ext || 'mp4',
+                item.type === 'series' ? (id, n, ext, el) => openSeriesDetailById(id, n, el) : null
+            );
+            grid.appendChild(tile);
+        });
+    }
+
+    // --- Poster tile builder (shared by movies, series, favs) ---
+    function makePosterTile(id, name, icon, type, ext, overrideClick) {
+        const tile = document.createElement('div');
+        tile.className = 'poster-tile';
+        tile.dataset.name = name.toLowerCase();
+        tile.dataset.id = id;
+
+        const imgWrap = document.createElement('div');
+        imgWrap.className = 'poster-img-wrap';
+        if (icon) {
+            const img = document.createElement('img');
+            img.src = icon;
+            img.alt = name;
+            img.onerror = () => { imgWrap.innerHTML = `<div class="no-poster">🎬</div>`; };
+            imgWrap.appendChild(img);
+        } else {
+            imgWrap.innerHTML = `<div class="no-poster">${type === 'series' ? '📺' : '🎬'}</div>`;
+        }
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'poster-title';
+        titleEl.textContent = name;
+
+        const favBtn = document.createElement('button');
+        favBtn.className = 'fav-btn';
+        favBtn.title = 'Favourite';
+        favBtn.textContent = isFav(id) ? '❤️' : '🤍';
+        favBtn.onclick = (e) => toggleFav(id, name, icon, type, ext, e);
+
+        tile.appendChild(imgWrap);
+        tile.appendChild(titleEl);
+        tile.appendChild(favBtn);
+
+        if (overrideClick) {
+            tile.onclick = () => overrideClick(id, name, ext, tile);
+        } else {
+            tile.onclick = () => playVod(id, name, ext, tile);
+        }
+        return tile;
+    }
+
+    // --- Auth ---
+    async function authenticatePlayer(btn) {
+        const password = document.getElementById('player-password').value;
+        const errorEl = document.getElementById('auth-error');
+        errorEl.style.display = 'none';
+        if (!password) { errorEl.textContent = 'Please enter your password.'; errorEl.style.display = 'block'; return; }
+        const orig = btn.innerText; btn.disabled = true; btn.innerText = 'Checking...';
+        try {
+            const resp = await fetch('/ios_player/authenticate', {
+                method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                playerToken = data.token;
+                currentPassword = password;
+                document.getElementById('auth-card').style.display = 'none';
+                document.getElementById('player-card').style.display = 'block';
+                document.getElementById('browse-card').style.display = 'block';
+                loadBouquets();
+                loadMovieCategories();
+                loadSeriesCategories();
+                loadAllMoviesInBackground();
+                loadAllSeriesInBackground();
+            } else {
+                errorEl.textContent = data.message || 'Incorrect password.';
+                errorEl.style.display = 'block';
+            }
+        } catch(e) {
+            errorEl.textContent = 'Server error - please try again.';
+            errorEl.style.display = 'block';
+        } finally { btn.disabled = false; btn.innerText = orig; }
+    }
+
+    // --- Tabs ---
+    function switchTab(tab, btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ['live','movies','series','favs'].forEach(t => {
+            document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+        });
+        if (tab === 'favs') renderFavs();
+    }
+
+    // --- Search: cross-category, searches the full background-loaded cache ---
+    let movieSearchTimeout = null;
+    let seriesSearchTimeout = null;
+
+    async function loadAllMoviesInBackground() {
+        try {
+            const resp = await fetch(`/ios_player/vod_streams?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (Array.isArray(data)) allMoviesCache = data;
+        } catch(e) {}
+    }
+
+    async function loadAllSeriesInBackground() {
+        try {
+            const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (Array.isArray(data)) allSeriesCache = data;
+        } catch(e) {}
+    }
+
+    function searchAllMovies(query, clearBtnId) {
+        const clearBtn = document.getElementById(clearBtnId);
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        if (!query.trim()) {
+            // Empty search: revert to category browse
+            document.getElementById('movie-grid').innerHTML = '';
+            document.getElementById('movie-cat-select').value = '';
+            return;
+        }
+        if (movieSearchTimeout) clearTimeout(movieSearchTimeout);
+        movieSearchTimeout = setTimeout(() => {
+            const q = query.toLowerCase().trim();
+            const results = allMoviesCache.filter(m => m.name && m.name.toLowerCase().includes(q));
+            const grid = document.getElementById('movie-grid');
+            grid.innerHTML = '';
+            document.getElementById('movie-cat-select').value = '';
+            if (!results.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No results found.</p>'; return; }
+            results.forEach(m => {
+                grid.appendChild(makePosterTile(m.stream_id, m.name, m.stream_icon, 'movie', m.container_extension || 'mp4', null));
+            });
+        }, 250);
+    }
+
+    function searchAllSeries(query, clearBtnId) {
+        const clearBtn = document.getElementById(clearBtnId);
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        if (!query.trim()) {
+            document.getElementById('series-grid').innerHTML = '';
+            document.getElementById('series-detail').style.display = 'none';
+            document.getElementById('series-cat-select').value = '';
+            return;
+        }
+        if (seriesSearchTimeout) clearTimeout(seriesSearchTimeout);
+        seriesSearchTimeout = setTimeout(() => {
+            const q = query.toLowerCase().trim();
+            const results = allSeriesCache.filter(s => s.name && s.name.toLowerCase().includes(q));
+            const grid = document.getElementById('series-grid');
+            grid.innerHTML = '';
+            document.getElementById('series-cat-select').value = '';
+            document.getElementById('series-detail').style.display = 'none';
+            if (!results.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No results found.</p>'; return; }
+            results.forEach(s => {
+                grid.appendChild(makePosterTile(s.series_id, s.name, s.cover, 'series', 'mp4',
+                    (id, name, ext, el) => openSeriesDetail(id, name, el)));
+            });
+        }, 250);
+    }
+
+    function clearMovieSearch() {
+        const input = document.getElementById('movie-search');
+        if (input) { input.value = ''; searchAllMovies('', 'movie-search-clear'); }
+    }
+
+    function clearSeriesSearch() {
+        const input = document.getElementById('series-search');
+        if (input) { input.value = ''; searchAllSeries('', 'series-search-clear'); }
+    }
+
+    // --- Live TV ---
+    async function loadBouquets() {
+        const select = document.getElementById('bouquet-select');
+        try {
+            const resp = await fetch(`/ios_player/bouquets?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { select.innerHTML = '<option>No bouquets found</option>'; return; }
+            select.innerHTML = '<option value="">Select a bouquet...</option>' +
+                data.map(b => `<option value="${b.category_id}">${b.category_name}</option>`).join('');
+            // Restore last selected bouquet
+            try {
+                const saved = localStorage.getItem('iptv_last_bouquet');
+                if (saved) {
+                    select.value = saved;
+                    if (select.value === saved) loadChannels(saved);
+                }
+            } catch(e) {}
+        } catch(e) {}
+    }
+
+    function filterChannels(query) {
+        const clearBtn = document.getElementById('channel-search-clear');
+        if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+        const grid = document.getElementById('channel-grid');
+        if (!grid) return;
+        const q = query.toLowerCase();
+        grid.querySelectorAll('.channel-tile').forEach(tile => {
+            const name = (tile.dataset.name || '').toLowerCase();
+            tile.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+
+    function clearChannelSearch() {
+        const input = document.getElementById('channel-search');
+        if (input) { input.value = ''; filterChannels(''); }
+        const clearBtn = document.getElementById('channel-search-clear');
+        if (clearBtn) clearBtn.style.display = 'none';
+    }
+
+    async function loadChannels(categoryId) {
+        const grid = document.getElementById('channel-grid');
+        const searchBar = document.getElementById('channel-search-bar');
+        if (!categoryId) { grid.innerHTML = ''; if (searchBar) searchBar.style.display = 'none'; return; }
+        try { localStorage.setItem('iptv_last_bouquet', categoryId); } catch(e) {}
+        clearChannelSearch();
+        grid.innerHTML = '<p class="muted">Loading...</p>';
+        if (searchBar) searchBar.style.display = 'none';
+        try {
+            const resp = await fetch(`/ios_player/channels?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted">No channels.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(ch => {
+                const tile = document.createElement('div');
+                tile.className = 'channel-tile';
+                tile.dataset.name = ch.name;
+                tile.innerHTML = ch.stream_icon
+                    ? `<img class="ch-logo" src="${ch.stream_icon}" onerror="this.style.display='none';"><span>${ch.name}</span>`
+                    : `<span style="padding:14px 0;display:block;">${ch.name}</span>`;
+                tile.onclick = () => playLive(ch.stream_id, ch.name, tile);
+                grid.appendChild(tile);
+            });
+            if (searchBar) searchBar.style.display = 'block';
+        } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;">Error loading channels.</p>'; }
+    }
+
+    function playLive(streamId, name, tileEl) {
+        document.querySelectorAll('.channel-tile.active,.poster-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+        currentStreamUrl = `${DNS_BASE}/live/${CURRENT_USERNAME}/${currentPassword}/${streamId}.m3u8`;
+        setNowPlaying(`📡 ${name}`);
+        loadEpg(streamId);
+        openInVlc();
+    }
+
+    async function loadEpg(streamId) {
+        const div = document.getElementById('epg-info');
+        div.innerHTML = '';
+        try {
+            const resp = await fetch(`/ios_player/epg?token=${encodeURIComponent(playerToken)}&stream_id=${encodeURIComponent(streamId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            ['Now','Next','Then'].forEach((label, i) => {
+                if (!data[i]) return;
+                const p = document.createElement('p');
+                p.className = 'epg-line';
+                p.innerHTML = `<b>${label}:</b> ${data[i].title || 'No info'}`;
+                div.appendChild(p);
+            });
+        } catch(e) {}
+    }
+
+    // --- Movies ---
+    async function loadMovieCategories() {
+        const select = document.getElementById('movie-cat-select');
+        try {
+            const resp = await fetch(`/ios_player/vod_categories?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            select.innerHTML = '<option value="">Select a category...</option>' +
+                data.map(c => `<option value="${c.category_id}">${c.category_name}</option>`).join('');
+        } catch(e) {}
+    }
+
+    async function loadMovies(categoryId) {
+        const grid = document.getElementById('movie-grid');
+        // Clear the search box when the user browses by category
+        const searchInput = document.getElementById('movie-search');
+        if (searchInput) { searchInput.value = ''; document.getElementById('movie-search-clear').style.display = 'none'; }
+        if (!categoryId) { grid.innerHTML = ''; return; }
+        grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">Loading...</p>';
+        try {
+            const resp = await fetch(`/ios_player/vod_streams?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No movies.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(m => {
+                const ext = m.container_extension || 'mp4';
+                grid.appendChild(makePosterTile(m.stream_id, m.name, m.stream_icon, 'movie', ext, null));
+            });
+        } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;grid-column:1/-1;">Error loading.</p>'; }
+    }
+
+    function playVod(streamId, name, ext, tileEl) {
+        document.querySelectorAll('.channel-tile.active,.poster-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+        currentStreamUrl = `${DNS_BASE}/movie/${CURRENT_USERNAME}/${currentPassword}/${streamId}.${ext}`;
+        setNowPlaying(`🎬 ${name}`);
+        document.getElementById('epg-info').innerHTML = '';
+        openInVlc();
+    }
+
+    // --- Series ---
+    async function loadSeriesCategories() {
+        const select = document.getElementById('series-cat-select');
+        try {
+            const resp = await fetch(`/ios_player/series_categories?token=${encodeURIComponent(playerToken)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) return;
+            select.innerHTML = '<option value="">Select a category...</option>' +
+                data.map(c => `<option value="${c.category_id}">${c.category_name}</option>`).join('');
+        } catch(e) {}
+    }
+
+    async function loadSeriesList(categoryId) {
+        const grid = document.getElementById('series-grid');
+        document.getElementById('series-detail').style.display = 'none';
+        // Clear the search box when the user browses by category
+        const searchInput = document.getElementById('series-search');
+        if (searchInput) { searchInput.value = ''; document.getElementById('series-search-clear').style.display = 'none'; }
+        if (!categoryId) { grid.innerHTML = ''; return; }
+        grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">Loading...</p>';
+        try {
+            const resp = await fetch(`/ios_player/series_list?token=${encodeURIComponent(playerToken)}&category_id=${encodeURIComponent(categoryId)}`);
+            const data = await resp.json();
+            if (!Array.isArray(data) || !data.length) { grid.innerHTML = '<p class="muted" style="grid-column:1/-1;">No series.</p>'; return; }
+            grid.innerHTML = '';
+            data.forEach(s => {
+                grid.appendChild(makePosterTile(s.series_id, s.name, s.cover, 'series', 'mp4',
+                    (id, name, ext, el) => openSeriesDetail(id, name, el)));
+            });
+        } catch(e) { grid.innerHTML = '<p style="color:#f87171;font-size:12px;grid-column:1/-1;">Error loading.</p>'; }
+    }
+
+    async function openSeriesDetail(seriesId, name, tileEl) {
+        document.querySelectorAll('.poster-tile.active').forEach(el => el.classList.remove('active'));
+        if (tileEl) tileEl.classList.add('active');
+        const detail = document.getElementById('series-detail');
+        const seasonSelect = document.getElementById('season-select');
+        document.getElementById('series-detail-title').textContent = name;
+        document.getElementById('episode-list').innerHTML = '';
+        seasonSelect.innerHTML = '<option>Loading...</option>';
+        detail.style.display = 'block';
+        detail.scrollIntoView({ behavior:'smooth', block:'start' });
+        try {
+            const resp = await fetch(`/ios_player/series_info?token=${encodeURIComponent(playerToken)}&series_id=${encodeURIComponent(seriesId)}`);
+            const data = await resp.json();
+            currentSeriesData = data.seasons || {};
+            const nums = Object.keys(currentSeriesData).sort((a,b) => parseInt(a)-parseInt(b));
+            if (!nums.length) { seasonSelect.innerHTML = '<option>No seasons found</option>'; return; }
+            seasonSelect.innerHTML = '<option value="">Select a season...</option>' +
+                nums.map(s => `<option value="${s}">Season ${s}</option>`).join('');
+        } catch(e) { seasonSelect.innerHTML = '<option>Error loading</option>'; }
+    }
+
+    async function openSeriesDetailById(seriesId, name, tileEl) {
+        switchTab('series', document.querySelector('.tab-btn:nth-child(3)'));
+        openSeriesDetail(seriesId, name, tileEl);
+    }
+
+    function loadEpisodes(seasonNum) {
+        const epList = document.getElementById('episode-list');
+        epList.innerHTML = '';
+        if (!seasonNum || !currentSeriesData || !currentSeriesData[seasonNum]) return;
+        currentSeriesData[seasonNum].forEach(ep => {
+            const row = document.createElement('div');
+            row.className = 'ep-row';
+            const safeTitle = (ep.title || `Episode ${ep.episode_num}`).replace(/'/g, "\\'");
+            const ext = ep.container_extension || 'mp4';
+            row.innerHTML = `<span>Ep ${ep.episode_num}${ep.title ? ` — ${ep.title}` : ''}</span>
+                <button class="play-btn" onclick="playEpisode(${ep.id},'${safeTitle}','${ext}')">▶ Play</button>`;
+            epList.appendChild(row);
+        });
+    }
+
+    function playEpisode(id, title, ext) {
+        document.querySelectorAll('.poster-tile.active,.channel-tile.active').forEach(el => el.classList.remove('active'));
+        currentStreamUrl = `${DNS_BASE}/series/${CURRENT_USERNAME}/${currentPassword}/${id}.${ext}`;
+        setNowPlaying(`📺 ${title}`);
+        document.getElementById('epg-info').innerHTML = '';
+        openInVlc();
+        window.scrollTo({ top:0, behavior:'smooth' });
+    }
+
+    // --- VLC handoff ---
+    function setNowPlaying(label) {
+        document.getElementById('now-playing-label').textContent = label;
+        document.getElementById('get-vlc-prompt').style.display = 'none';
+    }
+    function isAndroid() { return /android/.test(navigator.userAgent.toLowerCase()); }
+    function isIos() { return /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase()); }
+    function openInVlc() {
+        if (!currentStreamUrl) return;
+        document.getElementById('get-vlc-prompt').style.display = 'none';
+        if (isAndroid()) {
+            const intentUrl = `intent:${currentStreamUrl}#Intent;package=org.videolan.vlc;action=android.intent.action.VIEW;type=video/any;end`;
+            const fallback = setTimeout(() => {
+                document.getElementById('get-vlc-link').href = 'https://play.google.com/store/apps/details?id=org.videolan.vlc';
+                document.getElementById('get-vlc-prompt').style.display = 'block';
+            }, 2000);
+            const onHide = () => { if (document.hidden) { clearTimeout(fallback); document.removeEventListener('visibilitychange', onHide); }};
+            document.addEventListener('visibilitychange', onHide);
+            window.location.href = intentUrl;
+        } else {
+            const check = setTimeout(() => {
+                if (!document.hidden) {
+                    document.getElementById('get-vlc-link').href = isIos()
+                        ? 'https://apps.apple.com/app/vlc-media-player/id650377962'
+                        : 'https://www.videolan.org/vlc/';
+                    document.getElementById('get-vlc-prompt').style.display = 'block';
+                }
+            }, 1800);
+            const onHide = () => { if (document.hidden) { clearTimeout(check); document.removeEventListener('visibilitychange', onHide); }};
+            document.addEventListener('visibilitychange', onHide);
+            window.location.href = 'vlc://' + currentStreamUrl;
+        }
+    }
+
+    // --- Add to Home Screen ---
+    let deferredInstallPrompt = null;
+    function isRunningStandalone() { return (navigator.standalone===true) || window.matchMedia('(display-mode:standalone)').matches; }
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; const c = document.getElementById('add-home-card'); if(c) c.style.display='block'; });
+    window.addEventListener('appinstalled', () => { const c = document.getElementById('add-home-card'); if(c) c.style.display='none'; deferredInstallPrompt = null; });
+    async function handleAddToHomeScreen() {
+        if (deferredInstallPrompt) {
+            deferredInstallPrompt.prompt();
+            try { await deferredInstallPrompt.userChoice; } catch(e) {}
+            deferredInstallPrompt = null;
+            return;
+        }
+
+        const s = document.getElementById('add-home-modal-steps');
+
+        if (isIos()) {
+            s.innerHTML = `<p style="margin:0 0 10px 0; color:#fbbf24;"><b>⚠️ Opened from Telegram?</b> Tap Share → <b>Open in Safari</b> first, then Share again.</p><p style="margin:0 0 6px 0;">Already in Safari:</p><p style="margin:0 0 6px 0;">1️⃣ Tap <b>Share</b> (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
+        } else if (isAndroid()) {
+            s.innerHTML = `<p style="margin:0 0 8px 0;">Almost ready! The app needs a moment to finish setting up.</p><p style="margin:0 0 6px 0;">1️⃣ <b>Refresh this page</b></p><p style="margin:0;">2️⃣ Tap <b>"Add to Home Screen"</b> again — it should install with the icon this time</p>`;
+        } else {
+            s.innerHTML = `<p style="margin:0 0 10px 0; color:#fbbf24;"><b>⚠️ Opened from Telegram?</b> Tap Share → <b>Open in Safari</b> first, then Share again.</p><p style="margin:0 0 6px 0;">Already in Safari:</p><p style="margin:0 0 6px 0;">1️⃣ Tap <b>Share</b> (□↑) at the bottom</p><p style="margin:0 0 6px 0;">2️⃣ Scroll down — tap <b>"Add to Home Screen"</b></p><p style="margin:0;">3️⃣ Tap <b>"Add"</b></p>`;
+        }
+        document.getElementById('add-home-modal-overlay').style.display = 'flex';
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        // Hide Add to Home Screen button only if already running as installed PWA
+        const c = document.getElementById('add-home-card');
+        if (c && isRunningStandalone()) c.style.display = 'none';
+
+        // Always try to silently authenticate via the server session on
+        // page load - this handles all cases: fresh load, server restart
+        // (which clears in-memory player sessions), and returning visits.
+        // Only shows the password prompt if the server session has expired
+        // (i.e. they've been logged out of the portal too).
+        fetch('/ios_player/silent_auth', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    playerToken = data.token;
+                    currentPassword = data.password;
+                    document.getElementById('auth-card').style.display = 'none';
+                    document.getElementById('player-card').style.display = 'block';
+                    document.getElementById('browse-card').style.display = 'block';
+                    loadBouquets();
+                    loadMovieCategories();
+                    loadSeriesCategories();
+                    loadAllMoviesInBackground();
+                    loadAllSeriesInBackground();
+                }
+                // If it fails, the password prompt stays visible as fallback
+            })
+            .catch(() => {
+                // Network error - password prompt stays visible
+            });
+    });
+</script>
+</body>
+</html>

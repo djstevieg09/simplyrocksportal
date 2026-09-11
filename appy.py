@@ -3289,6 +3289,18 @@ def sports_unsubscribe():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/sports/refresh_fixtures', methods=['POST'])
+def sports_refresh_fixtures():
+    """Manually refresh fixtures for all teams the user follows."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False}), 401
+    username = session.get('username')
+    def _do_refresh():
+        refresh_all_user_fixtures(username)
+    Thread(target=_do_refresh, daemon=True).start()
+    return jsonify({'success': True, 'message': 'Refreshing fixtures in the background — check back in 15 seconds.'})
+
+
 @app.route('/sports/next_fixtures')
 def sports_next_fixtures():
     """Read cached fixtures from DB — instant response, no API calls."""
@@ -7360,6 +7372,31 @@ def _sports_notification_loop():
 
 _sports_thread = Thread(target=_sports_notification_loop, daemon=True)
 _sports_thread.start()
+
+
+def _sports_fixture_refresh_loop():
+    """Refreshes cached fixtures for all followed teams every 3 hours."""
+    time.sleep(120)  # initial delay
+    while True:
+        try:
+            print("SPORTS: Starting scheduled fixture refresh...", flush=True)
+            with sqlite3.connect(DB_FILE) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT DISTINCT team_id, team_name FROM sports_team_subscriptions")
+                teams = cursor.fetchall()
+            for team in teams:
+                try:
+                    refresh_team_fixture(team['team_id'], team['team_name'])
+                except Exception as e:
+                    print(f"SPORTS FIXTURE REFRESH ERROR {team['team_name']}: {e}", flush=True)
+            print(f"SPORTS: Fixture refresh done for {len(teams)} team(s)", flush=True)
+        except Exception as e:
+            print(f"SPORTS FIXTURE REFRESH LOOP ERROR: {e}", flush=True)
+        time.sleep(10800)  # 3 hours
+
+_sports_fixture_thread = Thread(target=_sports_fixture_refresh_loop, daemon=True)
+_sports_fixture_thread.start()
 
 # Resolve the bot's own @username (needed to build t.me linking links) and
 # register the webhook so Telegram forwards incoming messages to us - both

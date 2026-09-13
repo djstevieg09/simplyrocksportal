@@ -854,6 +854,17 @@ def init_db():
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                suggestion TEXT NOT NULL,
+                status TEXT DEFAULT 'Pending',
+                admin_reply TEXT DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Sports team subscriptions — users pick teams and get Telegram
         # alerts 30 minutes before each match.
         cursor.execute('''
@@ -3837,6 +3848,109 @@ def whats_new():
         return jsonify({'movies': [], 'series': []})
 
 
+@app.route('/submit_suggestion', methods=['POST'])
+def submit_suggestion():
+    """User submits a suggestion."""
+    if not session.get('logged_in'):
+        return jsonify({'success': False}), 401
+    username = session.get('username')
+    data = request.json or {}
+    suggestion = (data.get('suggestion') or '').strip()
+    if not suggestion:
+        return jsonify({'success': False, 'message': 'Please enter a suggestion.'}), 400
+    if len(suggestion) > 1000:
+        return jsonify({'success': False, 'message': 'Suggestion too long (max 1000 characters).'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute(
+                "INSERT INTO suggestions (username, suggestion) VALUES (?, ?)",
+                (username, suggestion)
+            )
+            conn.commit()
+        # Thank you message to user
+        send_telegram_message_to_user(
+            username,
+            f"💡 Thanks for your suggestion! We've received it and will review it shortly.\n\n"
+            f"<i>\"{suggestion[:100]}{'...' if len(suggestion) > 100 else ''}\"</i>"
+        )
+        # Alert to admin
+        send_telegram_alert_direct(
+            f"💡 <b>New Suggestion from {username}</b>\n\n{suggestion}"
+        )
+        log_activity(username, f"Submitted suggestion: {suggestion[:50]}")
+        return jsonify({'success': True, 'message': 'Thank you! Your suggestion has been received.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/get_my_suggestions')
+def get_my_suggestions():
+    """Return the logged-in user's suggestions and any admin replies."""
+    if not session.get('logged_in'):
+        return jsonify([]), 401
+    username = session.get('username')
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, suggestion, status, admin_reply, created_at FROM suggestions WHERE username = ? ORDER BY created_at DESC",
+                (username,)
+            )
+            return jsonify([dict(r) for r in cursor.fetchall()])
+    except Exception as e:
+        return jsonify([]), 500
+
+
+@app.route('/admin/reply_suggestion/<int:suggestion_id>', methods=['POST'])
+def admin_reply_suggestion(suggestion_id):
+    """Admin replies to a suggestion."""
+    if not is_admin():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    data = request.json or {}
+    reply = (data.get('reply') or '').strip()
+    if not reply:
+        return jsonify({'success': False, 'message': 'Reply cannot be empty.'}), 400
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT username, suggestion FROM suggestions WHERE id = ?", (suggestion_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': 'Suggestion not found.'}), 404
+            cursor.execute(
+                "UPDATE suggestions SET admin_reply = ?, status = 'Replied' WHERE id = ?",
+                (reply, suggestion_id)
+            )
+            conn.commit()
+        send_telegram_message_to_user(
+            row['username'],
+            f"💬 <b>Reply to your suggestion:</b>\n"
+            f"<i>\"{row['suggestion'][:80]}{'...' if len(row['suggestion']) > 80 else ''}\"</i>\n\n"
+            f"{reply}"
+        )
+        log_activity(session.get('username', 'admin'), f"Replied to suggestion #{suggestion_id} from {row['username']}")
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/get_suggestions')
+def admin_get_suggestions():
+    """Return all suggestions for the admin panel."""
+    if not is_admin():
+        return jsonify([]), 403
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM suggestions ORDER BY created_at DESC")
+            return jsonify([dict(r) for r in cursor.fetchall()])
+    except Exception as e:
+        return jsonify([]), 500
+
+
 @app.route('/get_referral_balance')
 def get_referral_balance():
     """Return current referral wallet balance for logged in user."""
@@ -5058,6 +5172,19 @@ def build_admin_todo_list():
                 'detail': f"Expires {row['expiry_date']} - contact them to renew",
                 'timestamp': row['expiry_date']
             })
+
+    # Pending suggestions
+    try:
+        cursor.execute("SELECT id, username, suggestion, created_at FROM suggestions WHERE status = 'Pending'")
+        for row in cursor.fetchall():
+            todo_items.append({
+                'kind': 'suggestion', 'id': row['id'],
+                'label': f"Suggestion from {row['username']}",
+                'detail': row['suggestion'][:80] + ('...' if len(row['suggestion']) > 80 else ''),
+                'timestamp': row['created_at']
+            })
+    except Exception:
+        pass
 
     todo_items.sort(key=lambda x: x['timestamp'] or '')
     return todo_items

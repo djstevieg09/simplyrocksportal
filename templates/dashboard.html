@@ -464,6 +464,7 @@
             <div class="dash-nav-item" onclick="showDash('spotify',this)"><span>🎵</span><span>Spotify</span></div>
             <div class="dash-sidebar-label">Referrals</div>
             <div class="dash-nav-item" onclick="showDash('refer',this)"><span>👥</span><span>Refer a Friend</span></div>
+            <div class="dash-nav-item" onclick="showDash('suggestions',this)"><span>💡</span><span>Suggestions</span></div>
             <div class="dash-sidebar-label">Account</div>
             <div class="dash-nav-item" onclick="showDash('downloads',this)"><span>📲</span><span>Download Centre</span></div>
             <div class="dash-nav-item" onclick="showDash('account',this)"><span>👤</span><span>Account</span></div>
@@ -931,6 +932,29 @@
                 </div>
 
         </div><!-- end dash-refer -->
+
+        <!-- SUGGESTIONS -->
+        <div class="dash-section" id="dash-suggestions">
+            <div class="card" style="border:1px solid rgba(251,191,36,0.4);">
+                <h2 style="color:#fbbf24;">💡 Submit a Suggestion</h2>
+                <p style="font-size:13px; color:#94a3b8; margin-bottom:12px;">Got an idea to improve the service? We'd love to hear it!</p>
+                <textarea id="suggestion-text" placeholder="Type your suggestion here..." rows="4"
+                    style="width:100%; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#fff; padding:10px; font-size:13px; resize:vertical; box-sizing:border-box; margin-bottom:10px;"></textarea>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="suggestion-char-count" style="font-size:11px; color:#64748b;">0 / 1000</span>
+                    <button onclick="submitSuggestion(this)" style="background:linear-gradient(90deg,#d97706,#fbbf24); color:#000; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">Send Suggestion</button>
+                </div>
+                <p id="suggestion-msg" style="display:none; font-size:12px; margin:8px 0 0 0;"></p>
+            </div>
+
+            <!-- My previous suggestions -->
+            <div class="card" style="border:1px solid #334155;">
+                <h2 style="color:#94a3b8;">My Suggestions</h2>
+                <div id="my-suggestions-list">
+                    <p style="font-size:12px; color:#64748b;">Loading...</p>
+                </div>
+            </div>
+        </div>
 
         <div class="dash-section" id="dash-downloads">
             <!-- Download Centre -->
@@ -2861,6 +2885,69 @@
         initPayPalWhenReady();
         setTimeout(validateReferralFormInputs, 500);
         fetchReferralFriends();
+        // --- Suggestions ---
+        async function submitSuggestion(btn) {
+            const text = document.getElementById('suggestion-text').value.trim();
+            const msg = document.getElementById('suggestion-msg');
+            if (!text) { msg.style.display='block'; msg.style.color='#f87171'; msg.textContent='Please enter a suggestion.'; return; }
+            const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Sending...';
+            try {
+                const resp = await fetch('/submit_suggestion', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ suggestion: text })
+                });
+                const data = await resp.json();
+                msg.style.display = 'block';
+                if (data.success) {
+                    msg.style.color = '#4ade80';
+                    msg.textContent = data.message;
+                    document.getElementById('suggestion-text').value = '';
+                    document.getElementById('suggestion-char-count').textContent = '0 / 1000';
+                    loadMySuggestions();
+                } else {
+                    msg.style.color = '#f87171';
+                    msg.textContent = data.message || 'Error sending suggestion.';
+                }
+            } catch(e) { msg.style.color='#f87171'; msg.textContent='Server error.'; msg.style.display='block'; }
+            finally { btn.disabled = false; btn.textContent = orig; }
+        }
+
+        async function loadMySuggestions() {
+            const el = document.getElementById('my-suggestions-list');
+            try {
+                const resp = await fetch('/get_my_suggestions');
+                const data = await resp.json();
+                if (!data.length) { el.innerHTML = '<p style="font-size:12px; color:#64748b;">No suggestions yet.</p>'; return; }
+                el.innerHTML = data.map(s => `
+                    <div style="border-bottom:1px solid #1e293b; padding:10px 0;">
+                        <div style="font-size:13px; color:#e2e8f0;">${s.suggestion}</div>
+                        <div style="font-size:11px; color:#64748b; margin-top:4px;">${s.created_at.split(' ')[0]}
+                            &nbsp;·&nbsp; <span style="color:${s.status==='Replied'?'#4ade80':'#fbbf24'};">${s.status}</span>
+                        </div>
+                        ${s.admin_reply ? `<div style="margin-top:8px; background:#0f172a; border-left:3px solid #4ade80; padding:8px 10px; border-radius:4px; font-size:12px; color:#94a3b8;">
+                            <span style="color:#4ade80; font-weight:bold;">Reply:</span> ${s.admin_reply}
+                        </div>` : ''}
+                    </div>`).join('');
+            } catch(e) { el.innerHTML = '<p style="font-size:12px; color:#f87171;">Error loading suggestions.</p>'; }
+        }
+
+        // Char counter for suggestion box
+        document.addEventListener('DOMContentLoaded', () => {
+            const ta = document.getElementById('suggestion-text');
+            if (ta) {
+                ta.addEventListener('input', () => {
+                    document.getElementById('suggestion-char-count').textContent = `${ta.value.length} / 1000`;
+                });
+            }
+        });
+
+        // Load suggestions when tab opens
+        const _origShowDashSugg = showDash;
+        showDash = function(id, el) {
+            _origShowDashSugg(id, el);
+            if (id === 'suggestions') loadMySuggestions();
+        };
+
         loadWhatsNew();
 
         async function refreshFixtures(btn) {
